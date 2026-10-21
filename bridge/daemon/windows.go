@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 )
 
 const (
@@ -109,10 +111,7 @@ func (*schtasksManager) Stop() error {
 }
 
 func (*schtasksManager) Restart() error {
-	if err := stopWindowsTask(); err != nil {
-		slog.Warn("schtasks: stop before restart failed", "error", err)
-	}
-	return startWindowsTask()
+	return stopOrRestartWindowsTask(true)
 }
 
 func (*schtasksManager) Status() (*Status, error) {
@@ -228,37 +227,97 @@ func powerShellLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-// stopWindowsTask stops the task and everything its wrapper script started. Stop-ScheduledTask
-// only ends the wrapper powershell.exe; the cc-connect it runs (and that one's agent CLIs) kept
-// running as orphans, so `daemon stop` / `uninstall` left the bot online. The wrapper's process
-// tree is collected first (by its command line: -File "<task script>", see windowsTaskActionArgs;
-// not this PowerShell itself, whose command line also names the script) and ended after.
-func stopWindowsTask() error {
-	out, err := runPowerShell(fmt.Sprintf(`
-$task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
-if ($null -eq $task) { exit 0 }
-$needle = '-File "' + %s + '"'
+// stopWindowsTask stops the service: the task and everything its wrapper script started.
+func stopWindowsTask() error { return stopOrRestartWindowsTask(false) }
+
+// windowsProcessTreePS collects the wrapper's process tree into $tree and this PowerShell's
+// ancestors into $anc. The wrapper is found by its command line (-File "<task script>", see
+// windowsTaskActionArgs; $needle) — not this PowerShell, whose own command line names the
+// script too. A child only counts when it was created after its parent, so a recycled PID
+// whose old parent is gone is not mistaken for part of the tree.
+const windowsProcessTreePS = `
 $all = @(Get-CimInstance Win32_Process)
-$tree = @($all | Where-Object { $_.ProcessId -ne $PID -and $_.Name -ieq 'powershell.exe' -and $_.CommandLine -and $_.CommandLine.Contains($needle) } | ForEach-Object { $_.ProcessId })
+$byId = @{}
+foreach ($p in $all) { $byId[[int]$p.ProcessId] = $p }
+$tree = @($all | Where-Object { $_.ProcessId -ne $PID -and $_.Name -ieq 'powershell.exe' -and $_.CommandLine -and $_.CommandLine.Contains($needle) } | ForEach-Object { [int]$_.ProcessId })
 for ($i = 0; $i -lt $tree.Count; $i++) {
-	$tree += @($all | Where-Object { $_.ParentProcessId -eq $tree[$i] -and $tree -notcontains $_.ProcessId } | ForEach-Object { $_.ProcessId })
+	$parent = $byId[$tree[$i]]
+	$tree += @($all | Where-Object { $_.ParentProcessId -eq $tree[$i] -and $tree -notcontains [int]$_.ProcessId -and $_.CreationDate -ge $parent.CreationDate } | ForEach-Object { [int]$_.ProcessId })
 }
-if ($task.State -eq 'Running') {
-	Stop-ScheduledTask -TaskName %s
+$anc = @()
+$cur = $byId[[int]$PID]
+for ($d = 0; $d -lt 64 -and $null -ne $cur; $d++) {
+	$anc += [int]$cur.ProcessId
+	$up = $byId[[int]$cur.ParentProcessId]
+	if ($null -eq $up -or $up.CreationDate -gt $cur.CreationDate) { break }
+	$cur = $up
 }
+`
+
+// windowsStopScript ends the task and the wrapper's whole process tree, then (start) starts the
+// task again. Stop-ScheduledTask alone only ends the wrapper powershell.exe: the cc-connect it
+// runs, and that one's agent CLIs, kept running as orphans and the bot stayed online.
+func windowsStopScript(start bool) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "$needle = '-File \"' + %s + '\"'\n", powerShellLiteral(windowsTaskScriptPath()))
+	sb.WriteString(windowsProcessTreePS)
+	fmt.Fprintf(&sb, `
+$task = Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue
+if ($null -ne $task -and $task.State -eq 'Running') { Stop-ScheduledTask -TaskName %[1]s }
 foreach ($id in $tree) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+$stopped = $false
 for ($i = 0; $i -lt 20; $i++) {
-	$task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
-	if ($null -eq $task -or $task.State -ne 'Running') { exit 0 }
+	$task = Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue
+	if ($null -eq $task -or $task.State -ne 'Running') { $stopped = $true; break }
 	Start-Sleep -Milliseconds 500
 }
-Write-Error 'scheduled task did not stop within timeout'
-exit 1
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskScriptPath()), powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+if (-not $stopped) { Write-Error 'scheduled task did not stop within timeout'; exit 1 }
+`, powerShellLiteral(windowsTaskName))
+	if start {
+		fmt.Fprintf(&sb, "if ($null -ne (Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue)) { Start-ScheduledTask -TaskName %[1]s }\n", powerShellLiteral(windowsTaskName))
+	}
+	sb.WriteString("exit 0\n")
+	return sb.String()
+}
+
+// stopOrRestartWindowsTask runs windowsStopScript, except when the caller is itself inside the
+// service's process tree — e.g. an agent the bot started runs `cc-connect daemon restart`, as
+// setup apply's next_steps suggest. Ending the tree would then kill the caller (and this
+// PowerShell) before the task is started again, leaving the bot down. In that case the same
+// script runs in a new process created through WMI (Win32_Process.Create), whose parent is the
+// WMI service, outside the tree; this call returns once it has been started.
+func stopOrRestartWindowsTask(start bool) error {
+	inner := windowsStopScript(start)
+	enc := base64.StdEncoding.EncodeToString(utf16LE(strictPowerShell(inner)))
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "$needle = '-File \"' + %s + '\"'\n", powerShellLiteral(windowsTaskScriptPath()))
+	sb.WriteString(windowsProcessTreePS)
+	fmt.Fprintf(&sb, `
+if (@($tree | Where-Object { $anc -contains $_ }).Count -gt 0) {
+	$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand %s' }
+	if ($r.ReturnValue -ne 0) { Write-Error ('could not start the detached stop: Win32_Process.Create returned ' + $r.ReturnValue); exit 1 }
+	Write-Output 'detached'
+	exit 0
+}
+`, enc)
+	sb.WriteString(inner)
+	out, err := runPowerShell(sb.String())
 	if err != nil {
 		return fmt.Errorf("stop scheduled task: %s (%w)", out, err)
 	}
+	if strings.TrimSpace(out) == "detached" {
+		slog.Info("schtasks: called from inside the service; stop/restart continues in a detached process")
+	}
 	return nil
+}
+
+func utf16LE(s string) []byte {
+	u := utf16.Encode([]rune(s))
+	b := make([]byte, 2*len(u))
+	for i, c := range u {
+		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
+	}
+	return b
 }
 
 func startWindowsTask() error {

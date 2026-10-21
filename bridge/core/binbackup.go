@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,9 +15,20 @@ import (
 // next update fail. Each update therefore gets its own backup name, and old backups are removed
 // when possible.
 
-// BinaryBackupPath returns a fresh backup name for target: "<target>.old-<unix nanoseconds>".
+var backupSeq atomic.Int64
+
+// BinaryBackupPath returns a fresh backup name for target: "<target>.old-<n>", n = Unix
+// microseconds × 1000 + a per-process sequence (macOS clocks stop at microseconds, so the time
+// alone repeats), moved on while a file of that name exists.
 func BinaryBackupPath(target string) string {
-	return fmt.Sprintf("%s.old-%d", target, time.Now().UnixNano())
+	n := time.Now().UnixMicro()*1000 + backupSeq.Add(1)%1000
+	for {
+		p := fmt.Sprintf("%s.old-%d", target, n)
+		if _, err := os.Lstat(p); os.IsNotExist(err) {
+			return p
+		}
+		n++
+	}
 }
 
 func isBinaryBackupOf(name, base string) bool {

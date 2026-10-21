@@ -28,8 +28,18 @@ const (
 	envSupervised   = "CC_SUPERVISED"
 )
 
+// restartByExit: started by the service script or by a supervising cc-connect. Read once at
+// startup and removed from the environment, so agents and their children do not inherit it (a
+// cc-connect they start would otherwise think it is supervised).
+var restartByExit = func() bool {
+	v := os.Getenv(envRestartChild) == "1" || os.Getenv(envSupervised) == "1"
+	_ = os.Unsetenv(envRestartChild)
+	_ = os.Unsetenv(envSupervised)
+	return v
+}()
+
 func restartProcess(execPath string) error {
-	if os.Getenv(envRestartChild) == "1" || os.Getenv(envSupervised) == "1" {
+	if restartByExit {
 		os.Exit(restartExitCode)
 	}
 	// Ctrl+C / Ctrl+Break reach every process on the console: the child shuts down cleanly, the

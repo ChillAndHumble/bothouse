@@ -21,6 +21,7 @@ function Install-CcConnect {
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
   $repo = if ($env:CONEST_REPO) { $env:CONEST_REPO } else { 'Zssan12/conest' }
+  if ($repo -notmatch '^[\w.-]+/[\w.-]+$') { throw "install.ps1: CONEST_REPO must look like owner/name, got '$repo'" }
   $installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
 
   function Fail($msg) { throw "install.ps1: $msg" }
@@ -63,7 +64,8 @@ function Install-CcConnect {
     }
 
     $asset = "cc-connect-$tag-windows-$arch.zip"
-    Write-Host "Installing cc-connect $tag (windows/$arch) into $installDir"
+    $from = if ($repo -ne 'Zssan12/conest') { " from $repo" } else { '' }
+    Write-Host "Installing cc-connect $tag (windows/$arch)$from into $installDir"
 
     # 2. download
     $zip = Join-Path $tmp $asset

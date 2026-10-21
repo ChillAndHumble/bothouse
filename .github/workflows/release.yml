@@ -230,6 +230,26 @@ jobs:
           $after = @(Get-Process cc-connect -ErrorAction SilentlyContinue)
           Write-Host "cc-connect processes under the service: before restart $before, after restart $($after.Count)"
           if ($after.Count -ne 1) { throw "expected exactly one cc-connect after a restart under the service" }
+          # an agent the bot started runs `cc-connect daemon restart` (setup apply's next_steps):
+          # the command runs inside the service's own process tree and must still bring it back
+          $old = $after[0]
+          $exe = (Get-Command cc-connect).Source
+          $agentLog = Join-Path $env:RUNNER_TEMP 'agent-daemon-restart.log'
+          $agentPid = & .github/release-check/spawn_under.ps1 -ParentId $old.Id -CommandLine "cmd.exe /c `"`"$exe`" daemon restart > `"$agentLog`" 2>&1`""
+          $agentProc = Get-CimInstance Win32_Process -Filter "ProcessId = $agentPid"
+          Write-Host "agent stand-in pid $agentPid, parent $($agentProc.ParentProcessId) (service cc-connect pid $($old.Id))"
+          if ($agentProc.ParentProcessId -ne $old.Id) { throw "stand-in is not a child of the service's cc-connect" }
+          $back = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Milliseconds 500
+            $now = @(Get-Process cc-connect -ErrorAction SilentlyContinue)
+            $st = (Get-ScheduledTask -TaskName cc-connect).State
+            if ($st -eq 'Running' -and $now.Count -eq 1 -and $now[0].Id -ne $old.Id -and (& $wait)) { $back = $true; break }
+          }
+          if (Test-Path -LiteralPath $agentLog) { Write-Host "agent's daemon restart output: $((Get-Content -LiteralPath $agentLog -Raw))" }
+          $now = @(Get-Process cc-connect -ErrorAction SilentlyContinue)
+          Write-Host "after daemon restart from inside the service: task $((Get-ScheduledTask -TaskName cc-connect).State), cc-connect pids $($now.Id -join ',') (was $($old.Id))"
+          if (-not $back) { throw "service did not come back after daemon restart from inside its own process tree" }
           cc-connect daemon stop
           if ($LASTEXITCODE -ne 0) { throw "daemon stop exit $LASTEXITCODE" }
           cc-connect daemon uninstall

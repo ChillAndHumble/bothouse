@@ -49,7 +49,7 @@ gh api repos/Zssan12/conest/contents/install.ps1 -H "Accept: application/vnd.git
 - **没查到机器人的所有者**：为了安全机器人先谁都不听，按提示填上你自己的 Discord 用户 ID。
 - **机器人还没进服务器**：点邀请链接把它拉进去。
 - 都没有就是好了。日志里出现 `discord: connected` 就是上线，去频道里 @ 机器人说一句试试。
-- 想关掉终端也一直在线：`cc-connect daemon install`（装成后台服务、开机登录后自动起：macOS 用 launchd，Linux 用 systemd，Windows 用「任务计划程序」）。
+- 想关掉终端也一直在线：`cc-connect daemon install`（装成后台服务、开机登录后自动起：macOS 用 launchd，Linux 用 systemd，Windows 用「任务计划程序」）。Windows 上 `cc-connect daemon stop` / `uninstall` 会结束这个服务启动的全部进程，包括机器人正在跑的 AI CLI；在机器人里让 AI 跑 `cc-connect daemon restart` 也可以，服务会在后台重新起来。
 
 **gate 可以不装。** 没有 gate 时，被 @ 的角色照常回，其余消息都由兜底角色回。想让 AI 自己判断一句话该谁回再装 gate（[线 1](ccm-and-wiki.md) 第 3 步）：第一次要装 Python 依赖、下载约 3GB 模型，要几十分钟。
 
