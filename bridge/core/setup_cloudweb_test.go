@@ -356,45 +356,80 @@ func TestApplyWizardCloudWebTeamSurvivesDiscordRun(t *testing.T) {
 	}
 }
 
-// L1/L2: hub.json exists and its port is taken but nothing answers the handshake: no second hub
-// on the same hub.sqlite3, no move to another port (config.toml's ws_url points at this one).
-func TestStartLocalHubPortTakenNoSecondInstance(t *testing.T) {
+// L1/L2/N1: hub.json exists and its port is taken. Never a second hub, never another port; who
+// holds the port decides: timeout → ours, busy (running); 401 → someone else's hub (address only);
+// any other HTTP answer → another program (error with how to find it).
+func TestStartLocalHubPortTaken(t *testing.T) {
 	noLocalHub(t)
 	oldFS, oldLook := hubSourceFS, lookPath
 	hubSourceFS = fstest.MapFS{"rh/hub.py": &fstest.MapFile{Data: []byte("# hub")}}
 	lookPath = func(bin string) (string, bool, error) { return "/nonexistent/uv", true, nil }
 	t.Cleanup(func() { hubSourceFS, lookPath = oldFS, oldLook })
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	go func() { // accepts and never answers: a hub too busy to answer
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			defer c.Close()
-		}
-	}()
-	port := l.Addr().(*net.TCPAddr).Port
-	dir := t.TempDir()
-	if err := writeJSONFile(filepath.Join(dir, "hub", "hub.json"), localHubState{Port: port, WebToken: "w", BotToken: "b"}, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	old := cloudWebTestTimeout
 	cloudWebTestTimeout = 300 * time.Millisecond // 来源：测试里不用等满 5 秒
 	t.Cleanup(func() { cloudWebTestTimeout = old })
-	st, err := StartLocalHub(context.Background(), dir, "zh")
-	if err != nil || !st.Running || st.URL != localHubURL(port) {
-		t.Fatalf("status = %+v, %v", st, err)
+
+	silent := func(t *testing.T) int { // accepts and never answers: our hub, too busy
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { l.Close() })
+		go func() {
+			for {
+				c, err := l.Accept()
+				if err != nil {
+					return
+				}
+				t.Cleanup(func() { c.Close() })
+			}
+		}()
+		return l.Addr().(*net.TCPAddr).Port
 	}
-	if s, _ := loadLocalHubState(dir); s.Port != port {
-		t.Fatalf("port moved to %d", s.Port)
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("some web app")) }))
+	defer other.Close()
+	foreignHub := fakeHub(t, "someone-elses-token")
+	portOf := func(u string) int {
+		_, p, _ := net.SplitHostPort(strings.TrimPrefix(u, "http://"))
+		n, _ := strconv.Atoi(p)
+		return n
 	}
-	if _, err := os.Stat(filepath.Join(dir, "hub", "hub.log")); err == nil {
-		t.Fatal("a second hub was started")
+	cases := []struct {
+		name  string
+		port  int
+		check func(t *testing.T, st LocalHubStatus, err error)
+	}{
+		{"timeout: ours, busy", silent(t), func(t *testing.T, st LocalHubStatus, err error) {
+			if err != nil || !st.Running || !st.Managed || !st.TokenKnown {
+				t.Fatalf("%+v %v", st, err)
+			}
+		}},
+		{"401: someone else's hub", portOf(foreignHub.URL), func(t *testing.T, st LocalHubStatus, err error) {
+			if err != nil || !st.Running || st.Managed || st.TokenKnown || st.OpenURL != "" {
+				t.Fatalf("%+v %v", st, err)
+			}
+		}},
+		{"200: another program", portOf(other.URL), func(t *testing.T, st LocalHubStatus, err error) {
+			if err == nil || st.Running || !strings.Contains(err.Error(), "被别的程序占着") || !strings.Contains(err.Error(), "lsof -i :") {
+				t.Fatalf("%+v %v", st, err)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := writeJSONFile(filepath.Join(dir, "hub", "hub.json"), localHubState{Port: c.port, WebToken: "w", BotToken: "b"}, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			st, err := StartLocalHub(context.Background(), dir, "zh")
+			c.check(t, st, err)
+			if s, _ := loadLocalHubState(dir); s.Port != c.port {
+				t.Fatalf("port moved to %d", s.Port)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "hub", "hub.log")); err == nil {
+				t.Fatal("a second hub was started")
+			}
+		})
 	}
 }
 
@@ -437,7 +472,7 @@ func TestApplyWizardCloudWebFallbackByName(t *testing.T) {
 
 // L5: localhost is this machine: same hub as 127.0.0.1, so the local token is filled in.
 func TestCloudWebLocalhostIsLocal(t *testing.T) {
-	if got, _ := cloudWebWSBase("http://localhost:8790"); got != "ws://127.0.0.1:8790/cloud-web/ws" {
+	if got, _ := cloudWebWSBase("http://LocalHost:8790"); got != "ws://127.0.0.1:8790/cloud-web/ws" {
 		t.Fatalf("localhost base = %q", got)
 	}
 	dir := t.TempDir()
