@@ -301,7 +301,10 @@ jobs:
           if (-not $try) { throw "no quick-try command in next_steps" }
           # run it exactly as given, in a fresh PowerShell whose home has a space; then make sure it
           # did not leave CC_LOG_FILE set in that window
-          powershell -NoProfile -Command ($try + '; if ($env:CC_LOG_FILE) { Write-Host "CC_LOG_FILE left set"; exit 3 }')
+          # -EncodedCommand: Windows PowerShell drops the inner double quotes when it passes a
+          # plain -Command string to powershell.exe, which would test a different command
+          $text = $try + '; if ($env:CC_LOG_FILE) { Write-Host "CC_LOG_FILE left set"; exit 3 }'
+          powershell -NoProfile -EncodedCommand ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text)))
           if ($LASTEXITCODE -ne 0) { throw "quick-try command failed or left CC_LOG_FILE set (exit $LASTEXITCODE)" }
           $proc = $null
           for ($i = 0; $i -lt 20 -and -not $proc; $i++) { Start-Sleep -Milliseconds 500; $proc = Get-CimInstance Win32_Process -Filter "Name = 'cc-connect.exe'" | Select-Object -First 1 }
