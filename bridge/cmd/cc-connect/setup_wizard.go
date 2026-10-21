@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -238,6 +239,16 @@ func setupNextSteps(lang, configFlag string, running, needsAction bool) []string
 	if configFlag != "" {
 		cmd += " --config " + configFlag
 	}
+	// quick background try: nohup on macOS/Linux; Windows has no nohup, so PowerShell's
+	// Start-Process with the log going to the file cc-connect itself writes (CC_LOG_FILE, main.go).
+	tryCmd, tryLog := "nohup "+cmd+" > ~/.cc-connect/run.log 2>&1 &", "~/.cc-connect/run.log"
+	if nextStepsGOOS == "windows" {
+		start := "Start-Process cc-connect -WindowStyle Hidden"
+		if configFlag != "" {
+			start = "Start-Process cc-connect -ArgumentList '--config','" + strings.ReplaceAll(configFlag, "'", "''") + "' -WindowStyle Hidden"
+		}
+		tryCmd, tryLog = `$env:CC_LOG_FILE="$HOME\.cc-connect\run.log"; `+start, `%USERPROFILE%\.cc-connect\run.log`
+	}
 	zh := strings.HasPrefix(strings.ToLower(lang), "zh")
 	var out []string
 	if needsAction {
@@ -254,13 +265,16 @@ func setupNextSteps(lang, configFlag string, running, needsAction bool) []string
 		out = append(out, "cc-connect is running; restart it to use the new config: click \"Restart to apply\" in the wizard, or cc-connect daemon restart for the service, or Ctrl+C and run "+cmd+" again")
 	case zh:
 		out = append(out, "后台启动并常驻（推荐，AI 也用这个，不要在前台跑 "+cmd+"，会一直占住终端）："+daemonCmd(configFlag)+"；看日志 cc-connect daemon logs -f，出现 \"discord: connected\" 就是上线了，去频道里 @ 机器人说一句试试",
-			"只想先临时试一下：nohup "+cmd+" > ~/.cc-connect/run.log 2>&1 &（日志在 ~/.cc-connect/run.log）")
+			"只想先临时试一下："+tryCmd+"（日志在 "+tryLog+"）")
 	default:
 		out = append(out, "Start in the background as a service (recommended, also for AI agents — do not run "+cmd+" in the foreground, it holds the terminal): "+daemonCmd(configFlag)+"; follow the log with cc-connect daemon logs -f, \"discord: connected\" means it is online — @ the bot in the channel to try",
-			"Just a quick try: nohup "+cmd+" > ~/.cc-connect/run.log 2>&1 & (log in ~/.cc-connect/run.log)")
+			"Just a quick try: "+tryCmd+" (log in "+tryLog+")")
 	}
 	return out
 }
+
+// nextStepsGOOS is runtime.GOOS; swapped in tests.
+var nextStepsGOOS = runtime.GOOS
 
 func daemonCmd(configFlag string) string {
 	if configFlag != "" {

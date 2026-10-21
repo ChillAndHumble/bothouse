@@ -1,7 +1,9 @@
 name: Release cc-connect
 
-# 打 tag（v*）时编 cc-connect 预编译包（带网页安装向导）发到 GitHub Release，
-# 装法见仓库根目录 install.sh。Windows 暂不支持（docs/GETTING_STARTED.md）。
+# 打 tag（v*）时编 cc-connect 预编译包（带网页安装向导）发到 GitHub Release：
+# macOS / Linux 是 .tar.gz（装法见根目录 install.sh），Windows 是 .zip（根目录 install.ps1）。
+# 发布后 verify-windows 在干净的 windows-latest 上按文档那一行命令装一遍，跑首次运行、向导、
+# 重启、退出和 setup apply 假数据（不用任何真凭据）。
 
 on:
   push:
@@ -56,16 +58,22 @@ jobs:
           commit=$(git rev-parse --short HEAD)
           built=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
           # 包名和 cmd/cc-connect/update.go 的 archiveAssetName 一致，`cc-connect update` 能直接用。
-          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+          # Windows: .zip with cc-connect.exe — the name `cc-connect update` (archiveAssetName) and install.ps1 expect.
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
             os=${target%/*}; arch=${target#*/}
             name="cc-connect-${TAG}-${os}-${arch}"
+            exe=cc-connect; [ "$os" = windows ] && exe=cc-connect.exe
             mkdir -p "build/${name}"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -tags goolm \
               -ldflags "-s -w -X main.version=${TAG} -X main.commit=${commit} -X main.buildTime=${built}" \
-              -o "build/${name}/cc-connect" ./cmd/cc-connect
-            tar -C "build/${name}" -czf "../dist/${name}.tar.gz" cc-connect
+              -o "build/${name}/${exe}" ./cmd/cc-connect
+            if [ "$os" = windows ]; then
+              (cd "build/${name}" && zip -q -X "../../../dist/${name}.zip" "${exe}")
+            else
+              tar -C "build/${name}" -czf "../dist/${name}.tar.gz" "${exe}"
+            fi
           done
-          cd ../dist && sha256sum *.tar.gz > checksums.txt && cat checksums.txt
+          cd ../dist && sha256sum *.tar.gz *.zip > checksums.txt && cat checksums.txt
       - name: Smoke test (linux/amd64)
         run: |
           set -euo pipefail
@@ -79,8 +87,34 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  # Same check as the linux/amd64 smoke test, on a real Windows machine, before anything is published.
+  smoke-windows:
     needs: build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+      - name: Smoke test (windows/amd64)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $asset = "cc-connect-$env:TAG-windows-amd64.zip"
+          $want = ((Get-Content dist/checksums.txt | Where-Object { $_ -match " $([regex]::Escape($asset))$" }) -split ' ')[0]
+          $got = (Get-FileHash -Algorithm SHA256 "dist/$asset").Hash.ToLower()
+          if ($want -ne $got) { throw "checksum mismatch: $want vs $got" }
+          Expand-Archive "dist/$asset" -DestinationPath smoke
+          ./smoke/cc-connect.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version exit $LASTEXITCODE" }
+          $help = ./smoke/cc-connect.exe setup --help | Out-String
+          if ($help -notmatch 'setup apply') { throw "setup --help has no 'setup apply'" }
+
+  publish:
+    needs: [build, smoke-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -104,5 +138,82 @@ jobs:
             gh release upload "$TAG" dist/* --clobber
           else
             gh release create "$TAG" dist/* "${pre[@]}" --title "$TAG" \
-              --notes "安装：见仓库根目录 install.sh 和 docs/GETTING_STARTED.md。macOS / Linux（arm64、amd64）；Windows 暂不支持。"
+              --notes "安装：macOS / Linux 用仓库根目录 install.sh，Windows 用 install.ps1（arm64、amd64），见 docs/GETTING_STARTED.md。"
           fi
+
+  # Acceptance on a clean Windows runner, through the published release: the documented one-line
+  # install (private-repo form, gh + this job's read-only token), first run → wizard link → wizard
+  # page over HTTP → "restart to apply" → clean exit, setup apply with fake data, and the
+  # Task Scheduler service (start at logon). No real Discord token anywhere.
+  verify-windows:
+    needs: publish
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Install with the documented one-liner
+        shell: powershell
+        run: |
+          # docs/GETTING_STARTED.md (private repo form); ?ref= pins the install.ps1 of this tag
+          gh api "repos/$env:GITHUB_REPOSITORY/contents/install.ps1?ref=$env:TAG" -H "Accept: application/vnd.github.raw" | Out-String | iex
+      - name: Installed on the user PATH
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $HOME '.local\bin'
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          Write-Host "user PATH: $userPath"
+          if (($userPath -split ';') -notcontains $dir) { throw "$dir is not on the user PATH" }
+          $v = & (Join-Path $dir 'cc-connect.exe') --version | Out-String
+          Write-Host $v
+          if ($v -notmatch [regex]::Escape($env:TAG)) { throw "installed version is not $env:TAG" }
+          # later steps start in a fresh process like a new terminal window: give them the user PATH
+          $dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: First run, wizard page, restart, clean exit
+        shell: powershell
+        run: python .github/release-check/windows_firstrun.py
+      - name: setup apply with fake data fails with a fix and a non-zero exit
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $req = Join-Path $env:RUNNER_TEMP 'fake-setup.json'
+          '{"discord": {"guild_id": "123456789012345678"}, "roles": [{"token": "fake.token.for-ci"}]}' | Out-File -FilePath $req -Encoding ascii
+          $out = cc-connect setup apply --json $req | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $out
+          Write-Host "exit code: $code"
+          $res = $out | ConvertFrom-Json
+          $fix = @($res.warnings | Where-Object { $_.blocking -and $_.fix })
+          if ($code -eq 0 -or $res.ok -or -not $res.error -or $fix.Count -eq 0) { throw "expected ok=false, an error, a blocking warning with a fix, and a non-zero exit" }
+          Write-Host "PASS: error=$($res.error) | fix=$($fix[0].fix) | url=$($fix[0].url) | exit=$code"
+      - name: Background service (Task Scheduler, starts at logon)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cc-connect daemon install
+          if ($LASTEXITCODE -ne 0) { throw "daemon install exit $LASTEXITCODE" }
+          $task = Get-ScheduledTask -TaskName cc-connect
+          Write-Host "task triggers: $(($task.Triggers | ForEach-Object { $_.CimClass.CimClassName }) -join ',')"
+          if (-not ($task.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskLogonTrigger' })) { throw "no logon trigger" }
+          $running = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            $st = cc-connect daemon status | Out-String
+            if ($st -match 'Running') { $running = $true; break }
+            Start-Sleep -Seconds 1
+          }
+          Write-Host $st
+          if (-not $running) { throw "service not running" }
+          cc-connect daemon uninstall
+          if ($LASTEXITCODE -ne 0) { throw "daemon uninstall exit $LASTEXITCODE" }
+          Write-Host "PASS: daemon install / status Running / uninstall"

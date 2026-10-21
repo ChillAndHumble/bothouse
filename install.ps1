@@ -1,0 +1,153 @@
+# CoNest cc-connect installer for Windows: downloads the prebuilt binary (with the setup wizard)
+# from the GitHub Release, puts it in %USERPROFILE%\.local\bin and adds that to your user PATH.
+# No Go or Node needed. Windows PowerShell 5.1 or PowerShell 7, x64 or arm64.
+#
+#   irm https://raw.githubusercontent.com/Zssan12/conest/main/install.ps1 | iex      # public repo
+#   gh api repos/Zssan12/conest/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex   # private repo, gh logged in
+#
+# Environment:
+#   CONEST_VERSION   tag to install (default: the newest release, pre-releases included)
+#   INSTALL_DIR      where to put cc-connect.exe (default: %USERPROFILE%\.local\bin)
+# Same steps as install.sh (macOS / Linux).
+
+# Everything runs from Install-CcConnect, called on the last line: if an `irm | iex` download is
+# cut short, the function is never called and nothing runs. Errors throw instead of `exit`, so the
+# window you pasted into stays open.
+function Install-CcConnect {
+  $ErrorActionPreference = 'Stop'
+  $ProgressPreference = 'SilentlyContinue' # Windows PowerShell 5.1 downloads are very slow with the progress bar
+  # Windows PowerShell 5.1 may still default to TLS 1.0, which GitHub refuses.
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+  $repo = 'Zssan12/conest'
+  $installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
+
+  function Fail($msg) { throw "install.ps1: $msg" }
+  function Test-Gh {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $false }
+    & gh auth status *> $null
+    return ($LASTEXITCODE -eq 0)
+  }
+
+  # OS architecture, not this PowerShell's (x64 PowerShell runs emulated on arm64 Windows).
+  $archName = $null
+  try { $archName = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() } catch { }
+  if (-not $archName) {
+    $archName = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  }
+  switch -Regex ($archName) {
+    '^(X64|AMD64)$' { $arch = 'amd64' }
+    '^(Arm64|ARM64)$' { $arch = 'arm64' }
+    default { Fail "unsupported CPU $($archName): arm64 and amd64 only" }
+  }
+
+  $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("cc-connect-install-" + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $tmp | Out-Null
+  try {
+    # 1. which release: public API first; a private repo answers 404 there, then the logged-in gh
+    $tag = $env:CONEST_VERSION
+    $via = 'web'
+    if (-not $tag) {
+      try {
+        $rel = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$repo/releases?per_page=1"
+        if ($rel) { $tag = @($rel)[0].tag_name }
+      } catch { }
+      if (-not $tag -and (Test-Gh)) {
+        $tag = (& gh api "repos/$repo/releases?per_page=1" --jq '.[0].tag_name' 2>$null | Out-String).Trim()
+        $via = 'gh'
+      }
+      if (-not $tag) {
+        Fail "no release found for $repo. The repo may be private: install the GitHub CLI (winget install GitHub.cli), run 'gh auth login' with an account that can see the repo, and run this again."
+      }
+    }
+
+    $asset = "cc-connect-$tag-windows-$arch.zip"
+    Write-Host "Installing cc-connect $tag (windows/$arch) into $installDir"
+
+    # 2. download
+    $zip = Join-Path $tmp $asset
+    $sums = Join-Path $tmp 'checksums.txt'
+    $fetchWeb = {
+      $base = "https://github.com/$repo/releases/download/$tag"
+      try {
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $zip
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile $sums
+        return $true
+      } catch { return $false }
+    }
+    $fetchGh = {
+      if (-not (Test-Gh)) { return $false }
+      & gh release download $tag -R $repo -p $asset -p checksums.txt -D $tmp --clobber
+      return ($LASTEXITCODE -eq 0)
+    }
+    if ($via -eq 'gh') {
+      if (-not (& $fetchGh)) { Fail "download failed: gh release download $tag -R $repo -p $asset" }
+    } elseif (-not (& $fetchWeb) -and -not (& $fetchGh)) {
+      Fail "download failed: $asset of $tag. Private repo? Install gh (winget install GitHub.cli) and run 'gh auth login' first."
+    }
+
+    # 3. verify and install
+    $expected = $null
+    foreach ($line in Get-Content -LiteralPath $sums) {
+      $parts = $line -split '\s+', 2
+      if ($parts.Count -eq 2 -and $parts[1].TrimStart('*') -eq $asset) { $expected = $parts[0].ToLower() }
+    }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
+    if (-not $expected -or $expected -ne $actual) { Fail "checksum mismatch for $asset" }
+    Write-Host "Checksum OK ($asset sha256 $actual)"
+
+    $unpack = Join-Path $tmp 'unpack'
+    Expand-Archive -LiteralPath $zip -DestinationPath $unpack -Force
+    $newExe = Join-Path $unpack 'cc-connect.exe'
+    if (-not (Test-Path -LiteralPath $newExe)) { Fail "cc-connect.exe not found in $asset" }
+
+    New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+    $target = Join-Path $installDir 'cc-connect.exe'
+    if (Test-Path -LiteralPath $target) {
+      # A running cc-connect.exe cannot be overwritten, but it can be renamed (same as `cc-connect update`).
+      $old = "$target.old"
+      Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+      Move-Item -LiteralPath $target -Destination $old -Force
+    }
+    Move-Item -LiteralPath $newExe -Destination $target -Force
+    & $target --version | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "installed, but $target does not run" }
+    Write-Host "Installed: $target ($tag)"
+
+    # 4. PATH: add the folder to the user PATH (new windows) and to this window's PATH
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $inUser = @($userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $installDir.TrimEnd('\')) }).Count -gt 0
+    if (-not $inUser) {
+      $newPath = if ($userPath) { "$installDir;$userPath" } else { $installDir }
+      [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+      Write-Host "Added $installDir to your user PATH (new terminal windows pick it up)."
+    }
+    $inSession = @($env:Path -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $installDir.TrimEnd('\')) }).Count -gt 0
+    if (-not $inSession) { $env:Path = "$installDir;$env:Path" }
+
+    $run = 'cc-connect'
+    $first = Get-Command cc-connect -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($first -and ($first.Source -ine $target)) {
+      Write-Host ""
+      Write-Host "WARNING: typing 'cc-connect' runs another copy first: $($first.Source)"
+      $otherVersion = (& $first.Source --version 2>$null | Select-Object -First 1)
+      Write-Host "  ($otherVersion) - an older or upstream build without the setup wizard."
+      Write-Host "  Remove it (npm uninstall -g cc-connect if it came from npm), or put $installDir first on your PATH."
+      Write-Host "Until then, use the full path: $target"
+      $run = "& '$target'"
+    }
+    Write-Host ""
+    Write-Host "Next: run   $run"
+    Write-Host "It opens the setup wizard in your browser. Guide: https://github.com/$repo/blob/main/docs/GETTING_STARTED.md"
+  } finally {
+    # only the files this script made, one by one, then the (now empty) folders
+    foreach ($f in @((Join-Path $tmp 'unpack\cc-connect.exe'), (Join-Path $tmp 'checksums.txt'), (Join-Path $tmp "cc-connect-$tag-windows-$arch.zip"))) {
+      Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($d in @((Join-Path $tmp 'unpack'), $tmp)) {
+      Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Install-CcConnect
