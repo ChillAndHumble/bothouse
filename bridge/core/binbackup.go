@@ -24,8 +24,8 @@ func BinaryBackupPath(target string) string {
 	n := time.Now().UnixMicro()*1000 + backupSeq.Add(1)%1000
 	for {
 		p := fmt.Sprintf("%s.old-%d", target, n)
-		if _, err := os.Lstat(p); os.IsNotExist(err) {
-			return p
+		if _, err := os.Lstat(p); err != nil {
+			return p // not there (or not checkable: the rename that follows reports it)
 		}
 		n++
 	}

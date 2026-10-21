@@ -250,6 +250,31 @@ jobs:
           $now = @(Get-Process cc-connect -ErrorAction SilentlyContinue)
           Write-Host "after daemon restart from inside the service: task $((Get-ScheduledTask -TaskName cc-connect).State), cc-connect pids $($now.Id -join ',') (was $($old.Id))"
           if (-not $back) { throw "service did not come back after daemon restart from inside its own process tree" }
+          # stop, install --force and uninstall from inside the service as well: each must finish
+          # (the whole operation moves out of the tree), not leave the service half done
+          $inTree = {
+            param($sub, $check, $what)
+            $svc = @(Get-Process cc-connect -ErrorAction SilentlyContinue)
+            if ($svc.Count -ne 1) { throw "expected one service cc-connect before '$sub', got $($svc.Count)" }
+            $log = Join-Path $env:RUNNER_TEMP ("agent-daemon-" + ($sub -replace '\W', '-') + ".log")
+            $null = & .github/release-check/spawn_under.ps1 -ParentId $svc[0].Id -CommandLine "cmd.exe /c `"`"$exe`" daemon $sub > `"$log`" 2>&1`""
+            $ok = $false
+            for ($i = 0; $i -lt 60; $i++) { Start-Sleep -Milliseconds 500; if (& $check $svc[0].Id) { $ok = $true; break } }
+            if (Test-Path -LiteralPath $log) { Write-Host "agent's daemon $sub output: $((Get-Content -LiteralPath $log -Raw))" }
+            $t = Get-ScheduledTask -TaskName cc-connect -ErrorAction SilentlyContinue
+            Write-Host "after daemon $sub from inside the service: task $(if ($t) { $t.State } else { 'gone' }), cc-connect pids $(@(Get-Process cc-connect -ErrorAction SilentlyContinue).Id -join ',') (was $($svc[0].Id))"
+            if (-not $ok) { throw "daemon $sub from inside the service: $what" }
+          }
+          & $inTree 'stop' { param($was) ((Get-ScheduledTask -TaskName cc-connect).State -ne 'Running') -and @(Get-Process cc-connect -ErrorAction SilentlyContinue).Count -eq 0 } 'expected the task stopped and no cc-connect'
+          cc-connect daemon start
+          for ($i = 0; $i -lt 30 -and -not ((Get-ScheduledTask -TaskName cc-connect).State -eq 'Running' -and @(Get-Process cc-connect -ErrorAction SilentlyContinue).Count -eq 1); $i++) { Start-Sleep -Milliseconds 500 }
+          & $inTree 'install --force' { param($was) $t = Get-ScheduledTask -TaskName cc-connect -ErrorAction SilentlyContinue; $p = @(Get-Process cc-connect -ErrorAction SilentlyContinue); $t -and $t.State -eq 'Running' -and $p.Count -eq 1 -and $p[0].Id -ne $was } 'expected the task reinstalled and running with one new cc-connect'
+          & $inTree 'uninstall' { param($was) $null -eq (Get-ScheduledTask -TaskName cc-connect -ErrorAction SilentlyContinue) -and @(Get-Process cc-connect -ErrorAction SilentlyContinue).Count -eq 0 -and -not (Test-Path (Join-Path $HOME '.cc-connect\cc-connect-daemon.ps1')) } 'expected the task, the script and every cc-connect gone'
+          Write-Host "hand-off log:"; Get-Content (Join-Path $HOME '.cc-connect\logs\daemon-handoff.log')
+          # back to a running service for the outside stop/uninstall check below
+          cc-connect daemon install
+          if ($LASTEXITCODE -ne 0) { throw "daemon install (again) exit $LASTEXITCODE" }
+          for ($i = 0; $i -lt 30 -and (Get-ScheduledTask -TaskName cc-connect).State -ne 'Running'; $i++) { Start-Sleep -Milliseconds 500 }
           cc-connect daemon stop
           if ($LASTEXITCODE -ne 0) { throw "daemon stop exit $LASTEXITCODE" }
           cc-connect daemon uninstall
