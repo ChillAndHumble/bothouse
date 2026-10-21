@@ -197,6 +197,7 @@ jobs:
           $fix = @($res.warnings | Where-Object { $_.blocking -and $_.fix })
           if ($code -eq 0 -or $res.ok -or -not $res.error -or $fix.Count -eq 0) { throw "expected ok=false, an error, a blocking warning with a fix, and a non-zero exit" }
           Write-Host "PASS: error=$($res.error) | fix=$($fix[0].fix) | url=$($fix[0].url) | exit=$code"
+          exit 0  # the step would otherwise end with cc-connect's (expected) exit code 1
       - name: Background service (Task Scheduler, starts at logon)
         shell: powershell
         run: |
