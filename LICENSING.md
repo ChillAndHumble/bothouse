@@ -6,7 +6,7 @@ CoNest（共栖）按层使用不同许可。本页说明每个目录适用什�
 
 - 平台层：[AGPL-3.0](LICENSE)，另提供商业授权（双许可）。
 - 适配器层（接 Claude Code、Codex、OpenClaw、DSH 等智能体的代码）：[Apache-2.0](LICENSES/Apache-2.0.txt)。
-- 固件：众筹期不公开，首批发货日起以 GPL-3.0 公开。公开前，固件目录不随本仓库授权。
+- 固件：众筹期不公开，首批发货日起以 GPL-3.0 公开。公开前，固件不在本仓库。
 - 第三方代码和素材：保留各自原许可，本项目不对它们重新授权。
 
 除非某个文件或目录另有声明，本仓库中 CoNest 新增的内容按下表授权。
@@ -19,12 +19,9 @@ CoNest（共栖）按层使用不同许可。本页说明每个目录适用什�
 | `bridge/agent/` | 适配器层 | Apache-2.0 | 同上，上游部分保留 MIT |
 | `integrations/` | 适配器层 | Apache-2.0 | 无 |
 | `companion/` | 平台层 | AGPL-3.0 或商业授权 | 来自 Zssan12/yijiazi，权利人与本仓库所有者相同 |
-| `role-household/`（除下面两项） | 平台层 | AGPL-3.0 或商业授权 | 无 |
-| `role-household/avatars/` | 素材 | 不授权 | 角色头像授权未核实：同一套角色的其他头像记录为第三方角色的二次创作、原作不能商用；不随本仓库授权 |
-| `role-household/firmware-xiaozhi/` | 固件 | 公开前不授权；公开后 GPL-3.0 | 对 [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32/blob/v2.5.2/LICENSE) v2.5.2 的补丁，上游为 MIT（Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. 与 Project Contributors），上游部分保留 MIT |
-| `firmware/` | 固件 | 公开前不授权；公开后 GPL-3.0 | 无 |
+| `role-household/` | 平台层 | AGPL-3.0 或商业授权 | 无 |
 | `prototypes/device-ui/`（代码） | 平台层 | AGPL-3.0 或商业授权 | Codex visualize 导出外壳，见该目录 README |
-| `prototypes/device-ui/assets/`、`preview.png`、`test-artifacts/` | 素材 | 不授权 | 角色美术来自 [fywdy/chatgpt-chibi-pets](https://github.com/fywdy/chatgpt-chibi-pets/tree/d5bbb27c79e5c08e8b8ab44d4023cd35a67418e2) 及其衍生视频和截图，按 CC BY-NC 4.0（禁止商用），见 [UPSTREAM-NOTICE.md](prototypes/device-ui/UPSTREAM-NOTICE.md)；商业授权不包含这些素材 |
+| 固件（`firmware/`、`role-household/firmware-xiaozhi/`）、角色头像（`role-household/avatars/`）、圆屏原型素材和截图（`prototypes/device-ui/assets/`、`preview.png`、`test-artifacts/`） | — | 不在本仓库 | 固件和硬件资料暂不公开。素材含授权未核实的头像和 CC BY-NC 4.0 美术，不随本仓库授权 |
 | `docs/` | 文档 | AGPL-3.0 或商业授权 | 无 |
 | `experiments/` | 平台层 | AGPL-3.0 或商业授权 | 运行时下载的模型和权重不在仓库内，按各自许可 |
 | `skills/` | 适配器层 | Apache-2.0 | 无 |
@@ -36,7 +33,7 @@ CoNest（共栖）按层使用不同许可。本页说明每个目录适用什�
 
 ## AGPLv3 第 7 条附加条款
 
-修改版须保留署名 `Built on CoNest` 和原项目链接 https://github.com/Zssan12/conest ，有界面的放在关于、法律、页脚或署名位置，并按第 7(c) 条标出改动。全文见 [NOTICE](NOTICE)。网页控制台的页脚（`bridge/web/src/components/Layout/Footer.tsx`）已带这条署名。
+修改版须保留署名 `Built on CoNest` 和原项目链接 https://github.com/zuiho-kai/conest ，有界面的放在关于、法律、页脚或署名位置，并按第 7(c) 条标出改动。全文见 [NOTICE](NOTICE)。网页控制台的页脚（`bridge/web/src/components/Layout/Footer.tsx`）已带这条署名。
 
 ## 依赖
 

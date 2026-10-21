@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import struct
 import sys
 import tempfile
 import unittest
+import zlib
+from unittest import mock
 from pathlib import Path
 
 import aiohttp
@@ -19,6 +23,29 @@ from rh.host import Host
 from rh.hub import MAX_BODY, Hub, make_app
 from rh.meeting import Meeting
 from tests.test_meeting import FakeBrain
+
+
+def png_bytes(side: int) -> bytes:
+    """side×side 的纯色 RGB PNG。公开仓库不带角色头像，测试自己造图。"""
+    def chunk(t: bytes, b: bytes) -> bytes:
+        return struct.pack(">I", len(b)) + t + b + struct.pack(">I", zlib.crc32(t + b) & 0xFFFFFFFF)
+    rows = (b"\x00" + b"\xff\x80\x00" * side) * side
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", side, side, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+
+def temp_dir(test: unittest.TestCase) -> Path:
+    d = Path(tempfile.mkdtemp())
+    test.addCleanup(shutil.rmtree, d, True)
+    return d
+
+
+def tiny_png_root(test: unittest.TestCase) -> Path:
+    """临时目录里放一张 1×1 PNG（avatars/ju.png），当作角色目录。"""
+    d = temp_dir(test)
+    (d / "avatars").mkdir()
+    (d / "avatars" / "ju.png").write_bytes(png_bytes(1))
+    return d
 
 try:
     from playwright.async_api import async_playwright
@@ -254,7 +281,7 @@ class HubMessages(HubBase):
     async def test_member_avatar(self):
         """头像随成员表上报：图片 data URL 存下、推给网页；别的 URL 和超长的拒掉。"""
         from rh.config import avatar_data_url
-        url = avatar_data_url(Role("ju", "橘", "p", avatar="avatars/ju.png"), ROOT)
+        url = avatar_data_url(Role("ju", "橘", "p", avatar="avatars/ju.png"), tiny_png_root(self))
         self.assertTrue(url.startswith("data:image/png;base64,"))
         async with self.http.put(self.url + "/api/members", json=[{"id": "ju", "name": "橘", "avatar": url}],
                                  headers=AUTH) as r:
@@ -300,7 +327,7 @@ class HubWeb(HubBase):
     async def test_avatar_shown_in_head(self):
         """网页虚拟头显示角色头像。"""
         from rh.config import avatar_data_url
-        url = avatar_data_url(Role("ju", "橘", "p", avatar="avatars/ju.png"), ROOT)
+        url = avatar_data_url(Role("ju", "橘", "p", avatar="avatars/ju.png"), tiny_png_root(self))
         self.hub.set_members([{"id": "ju", "name": "橘", "avatar": url}, {"id": "b", "name": "B"}])
         await self.open()
         self.assertEqual(await self.page.locator("#head-ju img.face").count(), 1)
@@ -384,6 +411,15 @@ class DialWeb(HubBase):
     """圆屏表盘页 /dial：四个表盘渲染；真数据下正在说的那个亮；龙娘标未加入频道；?role= 单个；?demo=1 自己演示。"""
 
     async def asyncSetUp(self):
+        # 表盘图 avatars/dial/<角色>.jpg 不随公开仓库发布：换成临时目录里的 466×466 图
+        # （内容是 PNG，浏览器按内容识别，扩展名不影响）。466 = 用例断言的 naturalWidth。
+        dial = temp_dir(self) / "dial"
+        dial.mkdir()
+        for rid in ("ju", "jing", "mao", "long"):
+            (dial / f"{rid}.jpg").write_bytes(png_bytes(466))
+        patcher = mock.patch("rh.hub.AVATARS", dial.parent)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         await super().asyncSetUp()
         self.pw = await async_playwright().start()
         self.browser = await self.pw.chromium.launch()

@@ -22,7 +22,7 @@ Modified versions that present a user interface must also preserve a visible
 link to the original project in a prominent about, legal, footer, or
 attribution location:
 
-https://github.com/Zssan12/conest
+https://github.com/zuiho-kai/conest
 
 Modified versions must not misrepresent the origin of the software and must
 mark their changes in accordance with AGPLv3 Section 7(c).
@@ -33,19 +33,14 @@ bridge/ is developed based on cc-connect (https://github.com/chenhg5/cc-connect)
 licensed under the MIT License. The MIT license text and copyright notice are
 in bridge/LICENSE-MIT-upstream and must be preserved.
 
-role-household/firmware-xiaozhi/ contains patches to xiaozhi-esp32
-(https://github.com/78/xiaozhi-esp32, v2.5.2), licensed under the MIT License,
-Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and
-Copyright (c) 2025 Project Contributors.
-
 ==== Third-Party Notices ====
 
 This product includes third-party open source software. License terms for
 direct third-party dependencies are listed in THIRD-PARTY-LICENSES.md.
 No Apache-2.0 NOTICE files were found in the direct dependencies listed there.
 
-Art assets under prototypes/device-ui/assets/ are derived from
-fywdy/chatgpt-chibi-pets and are licensed under CC BY-NC 4.0, not under the
-licenses of this project. See prototypes/device-ui/UPSTREAM-NOTICE.md.
+Character art from fywdy/chatgpt-chibi-pets (CC BY-NC 4.0) used by
+prototypes/device-ui/ is not included in this repository.
+See prototypes/device-ui/UPSTREAM-NOTICE.md.
 
 ==== End of Notices ====
