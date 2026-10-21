@@ -157,10 +157,17 @@ func TestApplyWizardCloudWebDryRunPlansOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := pl.writes[0].Options
-	wantWS := "ws" + strings.TrimPrefix(hub.URL, "http") + "/cloud-web/ws?bot=juzi&name=Juzi"
+	leadID := cloudWebMentionID(nil, "", base, "juzi")
+	wantWS := "ws" + strings.TrimPrefix(hub.URL, "http") + "/cloud-web/ws?bot=juzi&name=Juzi&mention_id=" + leadID
 	if pl.writes[0].PlatformType != "cloud_web" || o["transport"] != "websocket" || o["ws_url"] != wantWS || o["token"] != "bot-secret" ||
 		o["allow_from"] != "user" || o["share_session_in_channel"] != true || o["group_reply_all"] != true {
 		t.Fatalf("options = %v", o)
+	}
+	// two roles = a team: the sub names the lead (team_lead_bot = the lead's mention_id) so work the
+	// lead hands it comes back with <@lead>; the lead names no lead
+	if len(leadID) != 18 || pl.writes[1].Options["team_lead_bot"] != leadID || pl.writes[0].Options["team_lead_bot"] != nil ||
+		!strings.Contains(pl.writes[1].Options["ws_url"].(string), "&mention_id="+cloudWebMentionID(nil, "", base, "role-2")) {
+		t.Fatalf("team ids: lead=%q sub=%v", leadID, pl.writes[1].Options)
 	}
 	// two roles = a team: lead answers when no gate decides, the other only when named
 	if *pl.writes[0].GateFallback != "reply" || *pl.writes[1].GateFallback != "context" || *pl.writes[1].GateURL != defaultGateURL+"?bot=role-2" {
@@ -481,5 +488,85 @@ func TestCloudWebLocalhostIsLocal(t *testing.T) {
 	}
 	if _, tok := resolveCloudWeb(dir, "http://localhost:8790/", ""); tok != "b" {
 		t.Fatalf("localhost did not get the local token: %q", tok)
+	}
+}
+
+// A team saved by the previous wizard (no mention_id, no team_lead_bot): adding a role upgrades the
+// earlier members — each gets a mention_id, the sub names the lead — and the ids stay the same on re-runs.
+func TestApplyWizardCloudWebTeamIDsUpgradeAndStable(t *testing.T) {
+	noHardware(t)
+	noLocalHub(t)
+	hub := fakeHub(t, "bot-secret")
+	store := newMemStore()
+	dir := t.TempDir()
+	env := WizardEnv{Store: store, DataDir: dir, CLIs: testCLIs}
+	if res := ApplyWizard(context.Background(), env, cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "a"}, WizardRole{Name: "b"})); !res.Saved {
+		t.Fatalf("first: %+v", res)
+	}
+	// make it look like the previous version's output
+	for _, n := range []string{"a", "b"} {
+		o := store.projects[n].Options
+		o["ws_url"] = stripQuery(o["ws_url"].(string)) + "?bot=" + n
+		delete(o, "team_lead_bot")
+	}
+	st := LoadSetupState(dir)
+	for i := range st.CloudWebTeam {
+		st.CloudWebTeam[i].BotID = ""
+	}
+	_ = writeJSONFile(filepath.Join(dir, setupStateFile), st, 0o644)
+
+	if res := ApplyWizard(context.Background(), env, cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "c"})); !res.Saved || res.FallbackRole != "a" {
+		t.Fatalf("add c: %+v", res)
+	}
+	id := func(n string) string {
+		return cloudWebQuery(store.projects[n].Options["ws_url"].(string), "mention_id")
+	}
+	a, b, c := id("a"), id("b"), id("c")
+	if a == "" || b == "" || c == "" || a == b || b == c {
+		t.Fatalf("mention ids: a=%q b=%q c=%q", a, b, c)
+	}
+	if store.projects["b"].Options["team_lead_bot"] != a || store.projects["c"].Options["team_lead_bot"] != a || store.projects["a"].Options["team_lead_bot"] != nil {
+		t.Fatalf("team_lead_bot: a=%v b=%v c=%v", store.projects["a"].Options["team_lead_bot"], store.projects["b"].Options["team_lead_bot"], store.projects["c"].Options["team_lead_bot"])
+	}
+	// re-run: same ids
+	if res := ApplyWizard(context.Background(), env, cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "a"}, WizardRole{Name: "c"})); !res.Saved {
+		t.Fatalf("re-run: %+v", res)
+	}
+	if id("a") != a || id("c") != c || store.projects["c"].Options["team_lead_bot"] != a {
+		t.Fatalf("ids changed on re-run: a %s→%s c %s→%s", a, id("a"), c, id("c"))
+	}
+}
+
+// The lead's persona says whom it can hand work to (by @name), the sub's says who leads; a re-run
+// replaces the line instead of adding another; a hand-written persona without a wizard marker is
+// left alone.
+func TestApplyWizardCloudWebTeamPersonaLine(t *testing.T) {
+	noHardware(t)
+	noLocalHub(t)
+	hub := fakeHub(t, "bot-secret")
+	store := newMemStore()
+	dir := t.TempDir()
+	hand := filepath.Join(dir, "hand")
+	_ = os.MkdirAll(hand, 0o755)
+	_ = os.WriteFile(filepath.Join(hand, "CLAUDE.md"), []byte("# 我自己写的\n"), 0o644)
+	store.existing = []WizardExistingBot{{Project: "hand", AgentType: "claudecode", WorkDir: hand, Token: fakeToken("333")}}
+	env := WizardEnv{Store: store, DataDir: dir, CLIs: testCLIs}
+	req := cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "队长", Project: "lead"}, WizardRole{Name: "小龙", Project: "xl"}, WizardRole{ReuseProject: "hand", Name: "手写"})
+	for run := 0; run < 2; run++ {
+		if res := ApplyWizard(context.Background(), env, req); !res.Saved {
+			t.Fatalf("run %d: %+v", run, res)
+		}
+	}
+	read := func(p string) string { b, _ := os.ReadFile(p); return string(b) }
+	lead := read(filepath.Join(dir, "roles", "lead", "CLAUDE.md"))
+	sub := read(filepath.Join(dir, "roles", "xl", "CLAUDE.md"))
+	if strings.Count(lead, teamMarker) != 1 || !strings.Contains(lead, "队长") || !strings.Contains(lead, "小龙、手写") || !strings.Contains(lead, "@名字") {
+		t.Fatalf("lead persona:\n%s", lead)
+	}
+	if strings.Count(sub, teamMarker) != 1 || !strings.Contains(sub, "队长是「队长」") {
+		t.Fatalf("sub persona:\n%s", sub)
+	}
+	if got := read(filepath.Join(hand, "CLAUDE.md")); got != "# 我自己写的\n" {
+		t.Fatalf("hand-written persona changed: %q", got)
 	}
 }

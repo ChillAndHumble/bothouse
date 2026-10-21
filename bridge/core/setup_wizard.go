@@ -14,6 +14,8 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -984,6 +987,31 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 		addStep(res, step, nil, stepPersonaWritten(req.Language, r.project, path))
 	}
 
+	// 自建平台 team: every member's wizard-made persona (one with a conest marker) gets the team line;
+	// a hand-written persona without one is left alone (H1)
+	if cloudWeb && len(pl.team) > 1 {
+		after, _ := env.Store.Snapshot()
+		for _, t := range pl.team {
+			p, ok := after.project(t.Project)
+			if !ok || p.WorkDir == "" {
+				continue
+			}
+			path := PersonaFilePath(p.AgentType, p.WorkDir)
+			b, err := os.ReadFile(path)
+			if err != nil || !(strings.Contains(string(b), replyLanguageMarker) || strings.Contains(string(b), teamMarker)) {
+				continue
+			}
+			lang := req.Language
+			if c, _ := PersonaReplyLanguage(string(b)); c != "" {
+				lang = c
+			}
+			if err := AtomicWriteFile(path, []byte(WithTeam(string(b), cloudWebTeamLine(lang, pl.team, pl.fallback, t.Project))), 0o644); err != nil {
+				return fail("team", err)
+			}
+		}
+		addStep(res, "team", nil, stepTeam(req.Language, len(pl.team), pl.fallbackName))
+	}
+
 	if req.Platform == "discord" && len(pl.team) > 1 {
 		gt := map[string]any{"lead": map[string]any{"name": pl.fallbackName, "aliases": []string{pl.fallback}}, "subs": map[string]any{}}
 		for _, t := range pl.team {
@@ -1180,6 +1208,9 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 				r.agentCmd = c.Path // found outside PATH: tell the service where it is (L2)
 			}
 		}
+		if cloudWeb {
+			r.mentionID = cloudWebMentionID(s.projectPlatform(r.project, "cloud_web"), r.mentionID, cwBase, r.project)
+		}
 		pl.roles = append(pl.roles, r)
 	}
 
@@ -1208,7 +1239,11 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 		}
 	}
 	for _, r := range pl.roles {
-		pl.team = append(pl.team, SetupTeamEntry{Project: r.project, Name: r.Name, BotID: r.botID, AgentType: r.AgentType})
+		id := r.botID
+		if cloudWeb { // on the platform a bot is known by its mention_id (rh/cloudweb.py user_mention_id)
+			id = r.mentionID
+		}
+		pl.team = append(pl.team, SetupTeamEntry{Project: r.project, Name: r.Name, BotID: id, AgentType: r.AgentType})
 	}
 
 	// fallback role (unit = bot): one of the team's bots, else the first bot of this run (L3)
@@ -1316,7 +1351,7 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 		pl.writes = mergeTeamWrites(pl.writes, pl.team, byProject, pl.fallback, pl.fallbackBot)
 	}
 	if cloudWeb && len(pl.team) > 1 {
-		pl.writes = cloudWebTeamWrites(pl.writes, pl.team, s, pl.fallback)
+		pl.writes = cloudWebTeamWrites(pl.writes, pl.team, s, pl.fallback, cwBase)
 	}
 	return pl, nil
 }
@@ -1357,33 +1392,95 @@ func sameCloudWebMember(s WizardSnapshot, cwBase string, w wizardIdentity, used 
 	return ""
 }
 
+// cloudWebMentionID is a role's mention_id on the platform, kept stable across runs: the one its
+// ws_url already has; else the Discord bot ID of a reused Discord bot (so <@id> written for Discord
+// reaches it on the hub too, like the hand-made production configs); else a number derived from the
+// platform address and the project name. The hub takes digits only (rh/cloudweb.py handle: gate.py
+// recognises <@digits>); 18 digits like a Discord ID (来源：线上 mention_id 是 18–19 位 Discord ID).
+func cloudWebMentionID(cur map[string]any, discordID, cwBase, project string) string {
+	if u, _ := cur["ws_url"].(string); u != "" {
+		if m := cloudWebQuery(u, "mention_id"); m != "" && isDigits(m) {
+			return m
+		}
+	}
+	if discordID != "" && isDigits(discordID) {
+		return discordID
+	}
+	h := sha256.Sum256([]byte(cwBase + "\x00" + project))
+	const lo, span = uint64(100000000000000000), uint64(900000000000000000) // [10^17, 10^18): 18 digits
+	return strconv.FormatUint(lo+binary.BigEndian.Uint64(h[:8])%span, 10)
+}
+
+func isDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
 // cloudWebTeamWrites wires several roles on one platform the way a Discord team is wired
-// (mergeTeamWrites): the fallback role answers when no gate can decide ("reply"), the others only
-// listen unless named ("context"); an @-mentioned role always answers (core/gate.go fallbackFor).
-// gate_url / gate_fallback are project-wide, so a project that already has a gate_url from its
-// Discord team or set by hand keeps it.
-func cloudWebTeamWrites(writes []WizardProjectWrite, team []SetupTeamEntry, s WizardSnapshot, fallback string) []WizardProjectWrite {
+// (mergeTeamWrites):
+//   - every member has a mention_id in its ws_url (earlier members configured without one get it);
+//   - every member but the lead (the fallback role) has team_lead_bot = the lead's mention_id, so a sub
+//     that finishes work the lead @-ed it for hands the answer back with <@lead> (platform/cloud-web
+//     lead_return.go). A team_lead_bot outside the team (set by hand) is kept;
+//   - gate_url / gate_fallback: the lead answers when no gate can decide ("reply"), the others only
+//     listen unless named ("context"); an @-mentioned role always answers (core/gate.go fallbackFor).
+//     They are project-wide, so a project that already has a gate_url from its Discord team or set
+//     by hand keeps it.
+func cloudWebTeamWrites(writes []WizardProjectWrite, team []SetupTeamEntry, s WizardSnapshot, fallback, cwBase string) []WizardProjectWrite {
 	idx := map[string]int{}
 	for i, w := range writes {
 		idx[w.Name] = i
 	}
+	write := func(project string) *WizardProjectWrite {
+		i, ok := idx[project]
+		if !ok {
+			writes = append(writes, WizardProjectWrite{Name: project, PlatformType: "cloud_web", Options: map[string]any{}})
+			i = len(writes) - 1
+			idx[project] = i
+		}
+		return &writes[i]
+	}
+	lead := ""
+	teamIDs := map[string]bool{}
+	for i := range team {
+		cur := s.projectPlatform(team[i].Project, "cloud_web")
+		if team[i].BotID == "" { // an earlier member saved before mention IDs were written
+			team[i].BotID = cloudWebMentionID(cur, "", cwBase, team[i].Project)
+		}
+		teamIDs[team[i].BotID] = true
+		if team[i].Project == fallback {
+			lead = team[i].BotID
+		}
+	}
 	for _, t := range team {
+		cur := s.projectPlatform(t.Project, "cloud_web")
+		w := write(t.Project)
+		if u, _ := cur["ws_url"].(string); u != "" && cloudWebQuery(u, "mention_id") == "" && w.Options["ws_url"] == nil {
+			w.PlatformType = "cloud_web"
+			w.Options["ws_url"] = cloudWebBotURL(stripQuery(u), cloudWebQuery(u, "bot"), cloudWebQuery(u, "name"), t.BotID)
+		}
+		if lb, _ := cur["team_lead_bot"].(string); lb == "" || teamIDs[lb] {
+			switch {
+			case t.Project == fallback && lb != "":
+				w.PlatformType, w.Options["team_lead_bot"] = "cloud_web", "" // the lead names no lead ("" deletes)
+			case t.Project != fallback && lead != "":
+				w.PlatformType, w.Options["team_lead_bot"] = "cloud_web", lead
+			}
+		}
 		ex, _ := s.project(t.Project)
 		_, hasDiscord := ex.Platforms["discord"]
 		if ex.GateURL != "" && (hasDiscord || !isWizardGateURL(ex.GateURL)) {
 			continue
 		}
-		i, ok := idx[t.Project]
-		if !ok {
-			writes = append(writes, WizardProjectWrite{Name: t.Project, Options: map[string]any{}})
-			i = len(writes) - 1
-			idx[t.Project] = i
-		}
 		gate, fb := defaultGateURL+"?bot="+t.Project, "context"
 		if t.Project == fallback {
 			gate, fb = defaultGateURL, "reply"
 		}
-		writes[i].GateURL, writes[i].GateFallback = &gate, &fb
+		w.GateURL, w.GateFallback = &gate, &fb
 	}
 	return writes
 }
