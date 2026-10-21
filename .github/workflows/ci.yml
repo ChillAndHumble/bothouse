@@ -45,6 +45,18 @@ jobs:
           go-version-file: bridge/go.mod
           cache-dependency-path: bridge/go.sum
       - run: node --test ../integrations/dsh-public-output/*.test.mjs
+      - run: node --test ../dsh/collab/*.test.mjs
+      - name: Install channel test dependencies
+        working-directory: .
+        # Keep each job's tools isolated, and install the committed dependency tree.
+        run: |
+          test_tools=$(mktemp -d "$RUNNER_TEMP/conest-vitest.XXXXXX")
+          cp dsh/package.json dsh/package-lock.json "$test_tools/"
+          npm ci --prefix "$test_tools" --no-audit --no-fund
+          echo "CONEST_VITEST=$test_tools/node_modules/.bin/vitest" >> "$GITHUB_ENV"
+      - name: Channel client regressions
+        working-directory: .
+        run: '"$CONEST_VITEST" run --config dsh/vitest.config.mjs'
       - run: go mod verify
       - run: go build -tags no_web ./...
       # Windows is a supported platform (install.ps1): the code and its tests must keep compiling there.
