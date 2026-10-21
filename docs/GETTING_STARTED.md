@@ -1,6 +1,6 @@
-# 从零用起 CoNest
+# 从零用起 bothouse
 
-CoNest 本体 = **ccm + wiki**：一群 AI 伙伴在聊天软件里一起说话、干活（ccm，即 cc-connect 的 maomao 分支，在 `bridge/`），
+bothouse = **团队协作 + wiki 记忆**：一群 AI 伙伴在聊天软件里一起说话、干活（随附的 cc-connect 桥接在 `bridge/`），
 加上一份它们共用、会自己长的记忆（wiki，[llm-wiki](https://github.com/zuiho-kai/llm-wiki)）。
 走完线 1 和线 2 就能完整用。
 
@@ -47,6 +47,7 @@ gh api repos/zuiho-kai/bothouse/contents/install.ps1 -H "Accept: application/vnd
 
 - 人：运行 `cc-connect`。第一次运行会自动在浏览器打开安装向导（打不开就把带口令的链接打印出来，复制到浏览器）。
   按页面点：选平台 → 填机器人 token → 选服务器和频道 → 每个角色选本机 CLI → 人设 → 兜底角色 → jev（可跳过）→ 保存 → 「重启生效」。
+  以上 token、服务器和频道步骤适用于 Discord。选「自建平台」时，点「在本机启动」、填写角色名即可，不用注册 Discord 机器人；详见[自建平台步骤](connect-discord-feishu.md#7-自建平台)。
 - AI：对 Claude Code / Codex 说「帮我把 cc-connect 配好接上 Discord」。它按 [AGENTS.md](../AGENTS.md) 一次问齐要的东西，跑 `cc-connect setup apply`。
 
 要你准备的只有：每个角色一个 Discord 机器人 token（开发者后台 → Bot → Reset Token，并打开 **Message Content Intent**），和本机一个已登录的 CLI（`claude`、`codex`、`gemini`……）。

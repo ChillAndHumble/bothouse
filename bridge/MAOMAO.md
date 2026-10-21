@@ -43,7 +43,7 @@ team_name = "龙娘"
 allow_bots = "<the other bots' IDs>"   # teammates' messages: @ me → turn; otherwise listen-only context
 allow_bots_file = "~/path/allow.txt"   # more allowed bot/webhook IDs, one per line (# comments); re-read on
                                        # change, no restart. role-household appends the webhooks it creates here
-team_lead_bot = "<main bot ID>"        # two subs @-ing each other > 3 rounds → escalated to the lead
+team_lead_bot = "<main bot ID>"        # final replies to work assigned by the lead automatically @ the lead
 share_session_in_channel = true        # one session per channel, so context reaches the same session
 aux_channels = { "<main channel ID>" = "<log channel ID>" }  # progress card, sub-agent table and ♻️/⏰/⏳ notices of
                                        # that main channel go to its log channel; replies and results stay (unlisted channels: unchanged)
@@ -52,12 +52,7 @@ aux_channels = { "<main channel ID>" = "<log channel ID>" }  # progress card, su
 - Extra gate action `context`: like `silent`, but attachments may be silenced too (noted as text).
 - Teammate messages are labelled `【name】`, usage footers and cc-connect notices are stripped, and core
   never starts a turn from a non-@ bot message (no loops even without a gate).
-- Bot→bot handoffs: lead↔sub rounds are never cut (the lead annotates "round N"); sub↔sub ping-pong
-  beyond 3 rounds goes to the lead with the recent messages; 20 handoffs per channel without a human is
-  a fuse (one ⏸ notice, then context only). A human message resets the counters; so does a
-  30-minute interval without bot handoffs, allowing independent scheduled activities to start
-  a new bounded round. Blocked handoffs also extend that quiet interval, so a continuing loop
-  cannot periodically replenish its budget.
+- Bot→bot handoffs require an @ to start a turn. There is no fixed hop or round cap.
 
 ## Example gate
 

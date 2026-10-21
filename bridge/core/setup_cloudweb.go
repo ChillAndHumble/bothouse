@@ -661,3 +661,96 @@ func resolveCloudWeb(dataDir, rawURL, token string) (string, string) {
 	}
 	return rawURL, token
 }
+
+// ── team line in the persona ──────────────────────────────────
+
+// teamMarker starts the one-line team section the wizard keeps in the persona of each member of a
+// team on the self-hosted platform, the same way as the reply-language line (WithReplyLanguage):
+// the lead has to know whom it can hand work to, and by what name, to @ them in the channel.
+const teamMarker = "<!-- conest:team -->"
+
+// WithTeam replaces the line after the team marker, or appends marker + line when there is none.
+func WithTeam(persona, line string) string {
+	eol := "\n"
+	if strings.Contains(persona, "\r\n") {
+		eol = "\r\n"
+	}
+	if i := strings.Index(persona, teamMarker); i >= 0 {
+		rest := strings.TrimPrefix(strings.TrimPrefix(persona[i+len(teamMarker):], "\r"), "\n")
+		after := ""
+		if j := strings.Index(rest, "\n"); j >= 0 {
+			after = rest[j+1:]
+		}
+		return persona[:i] + teamMarker + eol + line + eol + after
+	}
+	persona = strings.TrimRight(persona, "\r\n")
+	if persona != "" {
+		persona += eol + eol
+	}
+	return persona + teamMarker + eol + line + eol
+}
+
+// cloudWebTeamLine: who is on the team and how hand-offs work, for member self. The persona may be
+// shared with Discord (a reused Discord bot also joins the platform), so the line says it is about
+// the self-hosted platform. Names lose line breaks: one line under the marker (WithTeam).
+func cloudWebTeamLine(lang string, team []SetupTeamEntry, fallback, self string) string {
+	leadName := ""
+	var subs []string
+	for _, t := range team {
+		if t.Project == fallback {
+			leadName = oneLine(t.Name)
+		} else {
+			subs = append(subs, oneLine(t.Name))
+		}
+	}
+	if self == fallback {
+		return tr3(lang,
+			"在自建平台上，你是团队的队长，队员有："+strings.Join(subs, "、")+"（都在同一个频道里）。要把活派给谁，就在频道里写「@名字」加上要做的事；她做完的最终回复会自动 @ 回你，你再汇总给提问的人。",
+			"自前プラットフォームでは、あなたはチームのリーダーです。メンバー："+strings.Join(subs, "、")+"（同じチャンネルにいます）。仕事を任せるときはチャンネルで「@名前」と書いて内容を伝えてください。終わった最終回答は自動であなたに @ が付いて返ってくるので、まとめて質問者に伝えてください。",
+			"On the self-hosted platform you lead the team; members: "+strings.Join(subs, ", ")+" (all in the same channel). To hand work to one, write \"@name\" and the task in the channel; her final answer comes back to you with an @ automatically, then you sum up for whoever asked.")
+	}
+	return tr3(lang,
+		"在自建平台上，你在一个团队里，队长是「"+leadName+"」（都在同一个频道里）。队长 @ 你派的活，做完后你的最终回复会自动 @ 回队长；要找队友就在频道里写「@名字」。",
+		"自前プラットフォームでは、あなたはチームの一員で、リーダーは「"+leadName+"」です（同じチャンネルにいます）。リーダーが @ で任せた仕事の最終回答には自動でリーダーへの @ が付きます。仲間を呼ぶときはチャンネルで「@名前」と書いてください。",
+		"On the self-hosted platform you are on a team led by \""+leadName+"\" (all in the same channel). When the lead @-s you with work, your final answer goes back to the lead with an @ automatically; to call a teammate, write \"@name\" in the channel.")
+}
+
+// oneLine joins a name's lines with spaces.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// withQueryParam appends key=value to a URL as written, leaving everything else in it as it was
+// (no re-encoding or re-ordering of the other parameters).
+func withQueryParam(raw, key, value string) string {
+	frag := ""
+	if i := strings.Index(raw, "#"); i >= 0 {
+		raw, frag = raw[:i], raw[i:]
+	}
+	sep := "?"
+	if strings.Contains(raw, "?") {
+		sep = "&"
+		if strings.HasSuffix(raw, "?") || strings.HasSuffix(raw, "&") {
+			sep = ""
+		}
+	}
+	return raw + sep + url.QueryEscape(key) + "=" + url.QueryEscape(value) + frag
+}
+
+// The team step says what happened to each member's persona: the team line is kept up to date
+// even when "edit this bot's persona" was not ticked (it is only that one marked line; the lead
+// needs it to know whom to hand work to), and a hand-written persona without a wizard marker is
+// not touched at all.
+func stepTeamLineWritten(lang, name, path string) string {
+	name = oneLine(name)
+	return tr3(lang,
+		"「"+name+"」的人设里更新了自建平台的队伍那一行（"+path+"，<!-- conest:team --> 下面那行）。没勾「改人设」也会更新这一行，人设其余内容不动。",
+		"「"+name+"」のペルソナで自前プラットフォームのチームの行を更新しました（"+path+"、<!-- conest:team --> の次の行）。「ペルソナを編集」にチェックしていなくてもこの行だけは更新し、ほかの内容は変えません。",
+		"Updated the self-hosted platform team line in \""+name+"\"'s persona ("+path+", the line under <!-- conest:team -->). This one line is kept up to date even without \"edit persona\"; the rest of the persona is unchanged.")
+}
+
+func stepTeamLineSkipped(lang, name, path string) string {
+	name = oneLine(name)
+	return tr3(lang,
+		"「"+name+"」的人设是自己写的（"+path+" 里没有向导的标记），没写队伍那一行，原样不动：要它知道队伍，在人设里自己写上，或在向导里勾「改这个机器人现有的人设」重新生成。",
+		"「"+name+"」のペルソナは手書きです（"+path+" にウィザードの印がありません）。チームの行は書かず、そのままにしました。チームを知らせるには自分で書き足すか、ウィザードで「このボットの既存ペルソナを編集する」にチェックして作り直してください。",
+		"\""+name+"\"'s persona is hand-written (no wizard marker in "+path+"), so no team line was added and it is left as is: to tell it about the team, write it in yourself, or tick \"Edit this bot's existing persona\" in the wizard to regenerate it.")
+}
