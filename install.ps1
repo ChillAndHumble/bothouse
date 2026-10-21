@@ -8,6 +8,7 @@
 # Environment:
 #   CONEST_VERSION   tag to install (default: the newest release, pre-releases included)
 #   INSTALL_DIR      where to put cc-connect.exe (default: %USERPROFILE%\.local\bin)
+#   CONEST_REPO      owner/name to install from (default: Zssan12/conest; CI uses it for a test copy)
 # Same steps as install.sh (macOS / Linux).
 
 # Everything runs from Install-CcConnect, called on the last line: if an `irm | iex` download is
@@ -19,7 +20,7 @@ function Install-CcConnect {
   # Windows PowerShell 5.1 may still default to TLS 1.0, which GitHub refuses.
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-  $repo = 'Zssan12/conest'
+  $repo = if ($env:CONEST_REPO) { $env:CONEST_REPO } else { 'Zssan12/conest' }
   $installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
 
   function Fail($msg) { throw "install.ps1: $msg" }
