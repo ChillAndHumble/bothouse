@@ -26,3 +26,6 @@ role-household/roles.toml
 # CI 截图脚本的依赖（.github/workflows/ui-preview.yml 里 npm install）
 .github/ui-preview/node_modules/
 .github/ui-preview/package-lock.json
+
+# 打进 cc-connect 的自建平台源码，构建时由 bridge/Makefile 的 hubsrc 复制（bridge/internal/rhhub/embed.go）
+bridge/internal/rhhub/src/rh/

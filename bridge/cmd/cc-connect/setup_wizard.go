@@ -277,6 +277,18 @@ func setupNextSteps(lang, configFlag string, running, needsAction bool) []string
 	return out
 }
 
+// cloudWebNextStep: how to check a role on the self-hosted platform (the Discord wording of
+// setupNextSteps says "discord: connected"; cloud_web logs "cloud_web: websocket connected").
+func cloudWebNextStep(lang, page string) string {
+	switch {
+	case strings.HasPrefix(strings.ToLower(lang), "zh"):
+		return "自建平台：日志出现 \"cloud_web: websocket connected\" 就是连上了；打开平台网页 " + page + "（本机向导启动的平台用 cc-connect setup hub 输出里的 open_url 登录），发一句「@角色名 你好」试试"
+	case strings.HasPrefix(strings.ToLower(lang), "ja"):
+		return "自前プラットフォーム：ログに \"cloud_web: websocket connected\" が出たら接続済みです。プラットフォームの Web ページ " + page + " を開き（このマシンでウィザードが起動したものは cc-connect setup hub の open_url でログイン）、「@ロール名 こんにちは」と送ってみてください"
+	}
+	return "Self-hosted platform: \"cloud_web: websocket connected\" in the log means it is connected; open the platform's page " + page + " (for the one started on this machine, sign in with open_url from cc-connect setup hub) and send \"@<role name> hi\""
+}
+
 // nextStepsGOOS is runtime.GOOS; swapped in tests.
 var nextStepsGOOS = runtime.GOOS
 
@@ -296,7 +308,7 @@ func daemonCmd(configFlag string) string {
 }
 
 // runSetup: `cc-connect setup apply --json <file|->` (one-shot config for AI
-// agents), `cc-connect setup clis`, `cc-connect setup matrix`, `cc-connect setup personas`.
+// agents), `cc-connect setup clis`, `cc-connect setup matrix`, `cc-connect setup hub [start]`, `cc-connect setup personas`.
 // Output is JSON on stdout.
 func runSetup(args []string) {
 	if len(args) == 0 {
@@ -320,7 +332,18 @@ func runSetup(args []string) {
 	jsonPath := fs.String("json", "", "wizard request JSON file, or - for stdin")
 	dryRun := fs.Bool("dry-run", false, "validate and print the plan without writing")
 	lang := fs.String("lang", "", "personas: language of the examples (zh|en; default: system). apply: reply language of the bots (zh|en|ja|…), same as \"language\" in the request")
-	_ = fs.Parse(args[1:])
+	rest, hubStart := args[1:], false
+	if sub == "hub" { // "setup hub start [--config path]": the word may come before or after the flags
+		rest = nil
+		for _, a := range args[1:] {
+			if a == "start" {
+				hubStart = true
+				continue
+			}
+			rest = append(rest, a)
+		}
+	}
+	_ = fs.Parse(rest)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	switch sub {
@@ -332,6 +355,28 @@ func runSetup(args []string) {
 		}
 	case "matrix":
 		_ = enc.Encode(map[string]any{"vendors": core.WizardVendors, "matrix": core.VendorMatrix()})
+	case "hub":
+		// the self-hosted platform on this machine (core/setup_cloudweb.go); "start" starts it
+		initConfigPath(*configFile)
+		dataDir := defaultDataDir()
+		if _, err := os.Stat(config.ConfigPath); err == nil {
+			if cfg, err := config.LoadForSetup(config.ConfigPath); err == nil && cfg.DataDir != "" {
+				dataDir = cfg.DataDir
+			}
+		}
+		l := *lang
+		if l == "" {
+			l = core.SystemLanguage()
+		}
+		if hubStart {
+			st, err := core.StartLocalHub(context.Background(), dataDir, l)
+			if err != nil {
+				fail(err)
+			}
+			_ = enc.Encode(st)
+			return
+		}
+		_ = enc.Encode(core.GetLocalHubStatus(context.Background(), dataDir, l))
 	case "personas":
 		l := *lang
 		if l == "" {
@@ -389,6 +434,9 @@ func runSetup(args []string) {
 				lang = core.SystemLanguage()
 			}
 			res.NextSteps = setupNextSteps(lang, *configFile, instanceRunning(config.ConfigPath), res.NeedsUserAction)
+			if res.CloudWeb != nil {
+				res.NextSteps = append(res.NextSteps, cloudWebNextStep(lang, res.CloudWeb.PageURL))
+			}
 		}
 		_ = enc.Encode(res)
 		if !res.OK {

@@ -357,6 +357,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// the self-hosted platform the setup wizard started on this machine (<data_dir>/hub/hub.json):
+	// start it again if it is not running (after a reboot); the cloud_web bots reconnect on their own
+	go core.EnsureLocalHub(context.Background(), cfg.DataDir)
+
 	engines := make([]*core.Engine, 0, len(cfg.Projects))
 	effectiveWorkDirs := make([]string, 0, len(cfg.Projects))
 

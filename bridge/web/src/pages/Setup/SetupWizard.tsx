@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Bot, Check, CheckCircle2, Copy, ExternalLink, Loader2, MessageSquare, Plus, RefreshCw, Smartphone, Trash2, XCircle } from 'lucide-react';
+import { Bot, Check, CheckCircle2, Copy, ExternalLink, Globe, Loader2, MessageSquare, Plus, RefreshCw, Smartphone, Trash2, XCircle } from 'lucide-react';
 import { Badge, Button, Card, Input, Textarea } from '@/components/ui';
 import PlatformSetupQR from '@/pages/Projects/PlatformSetupQR';
 import { restartSystem } from '@/api/status';
 import {
-  applyWizard, checkDiscord, getSetupPersona, getCLIs, getExistingBots, getMatrix, getPersonas, getSetupState, listChannels, listFeishuChats, testJev, saveJev,
-  type DiscordBotInfo, type DiscordChannel, type ExistingBot, type LocalCLI, type MatrixCell, type PersonaPreset,
+  applyWizard, checkDiscord, getSetupPersona, getCLIs, getExistingBots, getLocalHub, getMatrix, getPersonas, getSetupState, listChannels, listFeishuChats,
+  startLocalHub, testCloudWeb, testJev, saveJev,
+  type CloudWebTest, type DiscordBotInfo, type LocalHubStatus, type DiscordChannel, type ExistingBot, type LocalCLI, type MatrixCell, type PersonaPreset,
   type SetupPersona, type SetupStateResp, type WizardRequest, type WizardResult, type WizardVendor,
 } from '@/api/wizard';
 import { isZhLang, keptLangLabel, langLabel, replyLangOptions, stepLabel, wizardTexts } from './texts';
@@ -15,6 +16,7 @@ import { isZhLang, keptLangLabel, langLabel, replyLangOptions, stepLabel, wizard
 interface RoleDraft {
   key: number;
   reuse_project?: string;
+  name?: string; // 自建平台: the name shown on the platform (Discord takes the bot's username)
   token: string;
   info?: DiscordBotInfo;
   checking?: boolean;
@@ -55,7 +57,14 @@ export default function SetupWizard() {
   const sysReply = lang;
 
   const [step, setStep] = useState(0);
-  const [platform, setPlatform] = useState<'discord' | 'feishu'>('discord');
+  const [platform, setPlatform] = useState<'discord' | 'feishu' | 'cloud_web'>('discord');
+  // 自建平台 (cloud_web): the hub on this machine, or someone else's (address + token, tested)
+  const [hub, setHub] = useState<LocalHubStatus | null>(null);
+  const [hubBusy, setHubBusy] = useState<'' | 'detect' | 'start'>('');
+  const [hubErr, setHubErr] = useState('');
+  const [cwRemote, setCwRemote] = useState(false);
+  const [cw, setCw] = useState({ url: '', token: '' });
+  const [cwTest, setCwTest] = useState<{ running: boolean; key?: string; result?: CloudWebTest }>({ running: false });
   const [state, setState] = useState<SetupStateResp | null>(null);
   const [clis, setClis] = useState<LocalCLI[] | null>(null);
   const [vendors, setVendors] = useState<WizardVendor[]>([]);
@@ -117,15 +126,15 @@ export default function SetupWizard() {
       if (r.reuse_project) { used.add(r.reuse_project); return r.reuse_project; }
       const same = existing.find((b) => b.bot_id && b.bot_id === r.info?.bot_id);
       if (same) { used.add(same.project); return same.project; } // the same bot is already configured
-      const base = cleanName(r.info?.username || '') || `role-${i + 1}`;
+      const base = cleanName((platform === 'cloud_web' ? r.name : r.info?.username) || '') || `role-${i + 1}`;
       let n = base;
       for (let k = 2; taken.has(n) || used.has(n); k++) n = `${base}-${k}`;
       used.add(n);
       return n;
     });
-  }, [roles, state?.projects, existing]);
+  }, [roles, state?.projects, existing, platform]);
   const projectOf = (r: RoleDraft) => projectNames[roles.indexOf(r)] ?? `role-${roles.indexOf(r) + 1}`;
-  const nameOf = (r: RoleDraft) => r.info?.username || r.reuse_project || projectOf(r);
+  const nameOf = (r: RoleDraft) => (platform === 'cloud_web' ? r.name : r.info?.username) || r.reuse_project || projectOf(r);
   // an existing bot whose persona is left alone keeps the reply language already in it
   const keptLang = (r: RoleDraft) => !!r.reuse_project && !r.editPersona;
   const keptRoles = roles.filter(keptLang);
@@ -174,6 +183,48 @@ export default function SetupWizard() {
     } catch { setChats([]); }
   }, [feishu]);
   useEffect(() => { loadChats(); }, [loadChats]);
+
+  // ── 自建平台 ──
+  const detectHub = useCallback(async () => {
+    setHubBusy('detect'); setHubErr('');
+    try { setHub(await getLocalHub(lang)); } catch (e: any) { setHubErr(e?.message || String(e)); }
+    setHubBusy('');
+  }, [lang]);
+  useEffect(() => { if (platform === 'cloud_web' && step === 1 && !hub) detectHub(); }, [platform, step]); // eslint-disable-line react-hooks/exhaustive-deps
+  const startHub = async () => {
+    setHubBusy('start'); setHubErr('');
+    try { setHub(await startLocalHub(lang)); } catch (e: any) { setHubErr(e?.message || String(e)); }
+    setHubBusy('');
+  };
+  // local hub this wizard started: address and token are filled in by the server (nothing to type or test)
+  const cwLocalKnown = !cwRemote && !!hub?.running && hub.token_known;
+  const cwURL = cwRemote ? cw.url : hub?.running ? hub.url || '' : '';
+  const cwKey = `${cwURL}|${cw.token}`;
+  const cwOK = cwLocalKnown || (cwTest.key === cwKey && cwTest.result?.ok === true);
+  const runCwTest = useCallback(async (url: string, token: string) => {
+    const key = `${url}|${token}`;
+    setCwTest({ running: true, key });
+    try { setCwTest({ running: false, key, result: await testCloudWeb({ url, token, lang }) }); } catch (e: any) {
+      setCwTest({ running: false, key, result: { ok: false, code: 'error', message: e?.message || String(e) } });
+    }
+  }, [lang]);
+  const cwTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    window.clearTimeout(cwTimer.current);
+    if (platform !== 'cloud_web' || cwLocalKnown || !cwURL || !cw.token) return;
+    cwTimer.current = window.setTimeout(() => runCwTest(cwURL, cw.token), 800); // 来源：同 jev，输入停顿后再测（无数据依据的交互延迟）
+    return () => window.clearTimeout(cwTimer.current);
+  }, [platform, cwLocalKnown, cwURL, cw.token, runCwTest]);
+  const cwNames = roles.map((r) => nameOf(r));
+  const cwNameTwice = cwNames.some((n, i) => cwNames.indexOf(n) !== i);
+  // an existing Discord bot also joins the platform: same project (persona, CLI) — its Discord section is kept
+  const pickExisting = (r: RoleDraft, b: ExistingBot) => {
+    patchRole(r.key, { reuse_project: b.project, name: b.username || b.project, agent_type: b.agent_type || r.agent_type,
+      existingWorkDir: b.work_dir, editPersona: false, persona: '', existingPersona: b.work_dir ? undefined : null });
+    if (b.work_dir) {
+      getSetupPersona(b.agent_type, b.work_dir).then((p) => patchRole(r.key, { existingPersona: p })).catch(() => patchRole(r.key, { existingPersona: null }));
+    }
+  };
 
   // ── fallback default = first bot ──
   const projects = roles.map(projectOf);
@@ -237,24 +288,29 @@ export default function SetupWizard() {
   const buildRequest = (maskSecrets = false): WizardRequest => {
     const mask = (s: string, ph: string) => (maskSecrets && s ? ph : s);
     const req: WizardRequest = {
-      platform: platform === 'feishu' ? ((feishu?.platform_type as 'feishu' | 'lark') || 'feishu') : 'discord',
+      platform: platform === 'feishu' ? ((feishu?.platform_type as 'feishu' | 'lark') || 'feishu') : platform,
       language: lang,
       roles: roles.map((r, i) => ({
         ...(r.reuse_project ? { reuse_project: r.reuse_project } : platform === 'discord' ? { token: mask(r.token, `<BOT_TOKEN_${i + 1}>`) } : {}),
         ...(platform === 'feishu' ? { name: 'feishu-bot' } : {}),
+        ...(platform === 'cloud_web' && nameOf(r) ? { name: nameOf(r) } : {}),
         agent_type: r.agent_type,
         ...(!r.reuse_project ? { persona: r.persona || undefined, reply_language: r.reply_language }
           : r.editPersona ? { persona: r.persona || undefined, reply_language: r.reply_language, edit_persona: true } : {}),
         ...(r.useProvider ? { provider: { vendor: r.provider.vendor, base_url: r.provider.base_url || undefined,
           api_key: mask(r.provider.api_key, '<API_KEY>'), model: r.provider.model || undefined } } : {}),
       })),
-      fallback_role: platform === 'discord' ? fallback : undefined,
+      // 自建平台: by display name (unique there) — a re-run reuses an existing member of the same name,
+      // so the project name guessed here (projectNames) can differ from the one the server plans
+      fallback_role: platform === 'cloud_web' ? nameOf(roles.find((r) => projectOf(r) === fallback) || roles[0])
+        : platform !== 'feishu' ? fallback : undefined,
       fallback_bot_id: platform === 'discord' ? roles.find((r) => projectOf(r) === fallback)?.info?.bot_id : undefined,
     };
     if (platform === 'discord') {
       req.discord = { guild_id: guildID, channel_id: channelID };
       if (allowFromValue.trim()) req.allow_from = allowFromValue.trim();
     }
+    if (platform === 'cloud_web') req.cloud_web = cwLocalKnown ? {} : { url: cwURL, token: mask(cw.token, '<PLATFORM_BOT_TOKEN>') };
     if (platform === 'feishu' && feishu) req.feishu = { ...feishu, app_secret: mask(feishu.app_secret, '<APP_SECRET>'), chat_id: chatID };
     if (maskSecrets && jev.base_url) req.jev = { base_url: jev.base_url, api_key: mask(jev.api_key, '<JEV_KEY>'), model: jev.model };
     return req;
@@ -292,7 +348,7 @@ export default function SetupWizard() {
   // ── step validity ──
   const stepOK = [
     true,
-    platform === 'discord' ? roles.every((r) => r.info) && !!guildID : !!feishu,
+    platform === 'discord' ? roles.every((r) => r.info) && !!guildID : platform === 'cloud_web' ? cwOK && !cwNameTwice : !!feishu,
     roles.every((r) => {
       if (!r.agent_type) return false;
       if (!r.useProvider) return true;
@@ -305,7 +361,9 @@ export default function SetupWizard() {
     // jev: empty (= skip), the one already in use, or tested usable; a failing one is never written — try another or skip
     !jevTest.running && !jevSave.saving && (!jev.base_url ? true : !jev.model ? false : jevUnchanged || jevTest.usable === true), true,
   ];
-  const visibleSteps = platform === 'feishu' ? [0, 1, 2, 3, 5, 6] : [0, 1, 2, 3, 4, 5, 6];
+  // 自建平台 with one role: no one to pick between, so no fallback / jev step
+  const visibleSteps = platform === 'feishu' ? [0, 1, 2, 3, 5, 6]
+    : platform === 'cloud_web' && roles.length === 1 ? [0, 1, 2, 3, 6] : [0, 1, 2, 3, 4, 5, 6];
   const pos = visibleSteps.indexOf(step);
   const go = (d: number) => setStep(visibleSteps[Math.min(Math.max(pos + d, 0), visibleSteps.length - 1)]);
 
@@ -345,9 +403,14 @@ export default function SetupWizard() {
         {step === 0 && (
           <div className="space-y-3">
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{T.platformQ}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {([['discord', 'Discord', T.discordDesc, MessageSquare], ['feishu', zh ? '飞书 / Lark' : 'Feishu / Lark', T.feishuDesc, Smartphone]] as const).map(([k, label, desc, Icon]) => (
-                <button key={k} data-testid={`platform-${k}`} onClick={() => { setPlatform(k); if (k === 'feishu') setRoles((rs) => rs.slice(0, 1)); }}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {([['discord', 'Discord', T.discordDesc, MessageSquare], ['feishu', zh ? '飞书 / Lark' : 'Feishu / Lark', T.feishuDesc, Smartphone],
+                ['cloud_web', T.cloudWebLabel, T.cloudWebDesc, Globe]] as const).map(([k, label, desc, Icon]) => (
+                <button key={k} data-testid={`platform-${k}`} onClick={() => {
+                  setPlatform(k);
+                  if (k === 'feishu') setRoles((rs) => rs.slice(0, 1));
+                  if (k === 'cloud_web') setRoles((rs) => rs.map((r, i) => (i === 0 && !r.name && !r.reuse_project ? { ...r, name: T.cwDefaultName } : r)));
+                }}
                   className={`text-left p-4 rounded-xl border transition-all ${platform === k ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'}`}>
                   <div className="flex items-center gap-2 font-medium text-gray-900 dark:text-white"><Icon size={16} />{label}{platform === k && <Check size={14} className="text-accent" />}</div>
                   <p className="text-xs text-gray-500 mt-1">{desc}</p>
@@ -451,6 +514,87 @@ export default function SetupWizard() {
               </div>
             </div>
           )
+        )}
+
+        {/* 1 自建平台 (cloud_web) */}
+        {step === 1 && platform === 'cloud_web' && (
+          <div className="space-y-4">
+            {!cwRemote && (
+              <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 space-y-2" data-testid="cw-local">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{T.cwLocalTitle}</p>
+                {(hubBusy === 'detect' || (!hub && !hubErr)) && <p className="text-xs text-gray-500 flex items-center gap-1"><Loader2 size={12} className="animate-spin" />{T.cwDetecting}</p>}
+                {hub && hubBusy !== 'detect' && (
+                  <>
+                    {hub.running && <p className="text-sm text-emerald-600 flex items-center gap-1" data-testid="cw-local-running"><CheckCircle2 size={14} />{T.cwRunning}{hub.url}</p>}
+                    <p className="text-xs text-gray-600 dark:text-gray-400" data-testid="cw-local-hint">{hub.hint}</p>
+                    {hub.running && !hub.token_known && (
+                      <Input type="password" label={T.cwToken} value={cw.token} data-testid="cw-local-token" onChange={(e) => setCw({ ...cw, token: e.target.value.trim() })} />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {!hub.running && (
+                        <Button onClick={startHub} disabled={!hub.can_start || hubBusy === 'start'} data-testid="cw-start">
+                          {hubBusy === 'start' ? <Loader2 size={14} className="animate-spin" /> : null}{hubBusy === 'start' ? T.cwStarting : T.cwStart}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={detectHub} disabled={!!hubBusy} data-testid="cw-redetect"><RefreshCw size={12} />{T.cwRedetect}</Button>
+                      {hub.missing === 'uv' && <a className="text-xs text-accent inline-flex items-center gap-0.5 self-center" href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noreferrer">{T.cwUvHow}<ExternalLink size={11} /></a>}
+                    </div>
+                  </>
+                )}
+                {hubErr && <p className="text-xs text-red-500 whitespace-pre-wrap flex items-start gap-1" data-testid="cw-local-error"><XCircle size={12} className="mt-0.5" />{hubErr}</p>}
+              </div>
+            )}
+            {cwRemote && (
+              <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 space-y-2" data-testid="cw-remote">
+                <Input label={T.cwURL} placeholder="https://hub.example.com" value={cw.url} data-testid="cw-url" onChange={(e) => setCw({ ...cw, url: e.target.value.trim() })} />
+                <Input type="password" label={T.cwToken} value={cw.token} data-testid="cw-token" onChange={(e) => setCw({ ...cw, token: e.target.value.trim() })} />
+              </div>
+            )}
+            {!cwLocalKnown && cwURL && cw.token && (
+              <div className="text-sm space-y-1" data-testid="cw-test">
+                <Button size="sm" variant="secondary" disabled={cwTest.running} onClick={() => runCwTest(cwURL, cw.token)} data-testid="cw-test-btn">
+                  {cwTest.running ? <Loader2 size={12} className="animate-spin" /> : null}{cwTest.running ? T.cwTesting : T.cwTest}
+                </Button>
+                {!cwTest.running && cwTest.key === cwKey && cwTest.result && (cwTest.result.ok
+                  ? <p className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={13} />{cwTest.result.message}</p>
+                  : <div><p className="text-red-500 flex items-center gap-1"><XCircle size={13} />{cwTest.result.message}</p>
+                    {cwTest.result.fix && <p className="text-xs text-gray-600 dark:text-gray-400">{cwTest.result.fix}</p>}</div>)}
+              </div>
+            )}
+            <Button size="sm" variant="ghost" data-testid="cw-toggle-remote" onClick={() => { setCwRemote(!cwRemote); setCw({ url: '', token: '' }); }}>
+              {cwRemote ? T.cwUseLocal : T.cwRemote}
+            </Button>
+
+            <p className="text-xs text-gray-500">{T.cwRolesNote}</p>
+            {roles.map((r, idx) => (
+              <div key={r.key} className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 space-y-2" data-testid={`cw-role-${idx}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200"><Bot size={14} className="inline mr-1" />{T.roleLabel} {idx + 1}</span>
+                  {roles.length > 1 && <Button size="sm" variant="ghost" onClick={() => setRoles((rs) => rs.filter((x) => x.key !== r.key))}><Trash2 size={12} />{T.remove}</Button>}
+                </div>
+                {existing.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-gray-500">{T.cwExisting}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {existing.map((b) => {
+                        const taken = roles.some((o) => o.key !== r.key && o.reuse_project === b.project);
+                        const sel = r.reuse_project === b.project;
+                        return (
+                          <Button key={b.project} size="sm" variant={sel ? 'primary' : 'secondary'} disabled={taken}
+                            onClick={() => (sel ? patchRole(r.key, { reuse_project: undefined, name: '', existingPersona: undefined, existingWorkDir: undefined }) : pickExisting(r, b))}>
+                            {sel ? <Check size={12} /> : null}{b.username || b.project}<span className="opacity-60">({b.project})</span>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <Input label={T.cwRoleName} value={r.name || ''} data-testid={`cw-name-${idx}`} onChange={(e) => patchRole(r.key, { name: e.target.value })} />
+              </div>
+            ))}
+            {cwNameTwice && <p className="text-xs text-red-500">{T.cwNameTwice}</p>}
+            <Button variant="secondary" size="sm" data-testid="cw-add-role" onClick={() => setRoles((rs) => [...rs, { ...newRole(), agent_type: defaultAgent }])}><Plus size={12} />{T.cwAddRole}</Button>
+          </div>
         )}
 
         {/* 2 CLI per role */}
@@ -614,9 +758,10 @@ export default function SetupWizard() {
                   {roles.map((r) => (
                     <li key={r.key}>• {nameOf(r)} → {r.agent_type}{r.useProvider ? ` + ${r.provider.vendor}` : ''}{keptLang(r)
                       ? <span data-testid="review-reply-lang-kept"> · {T.replyLang}: {keptLangLabel(T, r.existingPersona)}{T.replyLangKept}</span>
-                      : <span data-testid="review-reply-lang"> · {T.replyLang}: {langLabel(r.reply_language)}</span>}{fallback === projectOf(r) && platform === 'discord' ? <Badge variant="info">{T.fallbackTag}</Badge> : null}</li>
+                      : <span data-testid="review-reply-lang"> · {T.replyLang}: {langLabel(r.reply_language)}</span>}{fallback === projectOf(r) && platform !== 'feishu' && roles.length > 1 ? <Badge variant="info">{T.fallbackTag}</Badge> : null}</li>
                   ))}
                   {platform === 'discord' && <li>• {guilds.find((g) => g.id === guildID)?.name} / #{channels.find((c) => c.id === channelID)?.name}</li>}
+                  {platform === 'cloud_web' && <li data-testid="review-cloud-web">• {T.cwReview}{cwURL}{cwLocalKnown ? T.cwLocalTag : ''}</li>}
                   {(jevSave.saved || jevUnchanged) && <li>• jev: {jev.model} @ {jev.base_url} ✓ {T.jevStored}</li>}
                 </ul>
                 {platform === 'discord' && (
@@ -658,8 +803,16 @@ export default function SetupWizard() {
                   </div>
                 )}
                 {result.config_backup && <p className="text-xs text-gray-500">{T.backupNote} <code>{result.config_backup}</code></p>}
-                <p className="text-xs text-gray-500 bg-gray-50 dark:bg-white/[0.04] rounded-lg p-2.5">{result.jev_hint}</p>
+                {/* jev only decides between roles: nothing to say for a single role on the self-hosted platform */}
+                {!(platform === 'cloud_web' && roles.length === 1) && <p className="text-xs text-gray-500 bg-gray-50 dark:bg-white/[0.04] rounded-lg p-2.5">{result.jev_hint}</p>}
                 <Button onClick={async () => { await restartSystem().catch(() => {}); setRestarted(true); }} disabled={restarted}>{restarted ? T.restarted : T.restart}</Button>
+                {platform === 'cloud_web' && (
+                  <div className="text-sm space-y-1" data-testid="cloud-web-open">
+                    <a className="text-accent inline-flex items-center gap-1 underline" target="_blank" rel="noreferrer"
+                      href={(cwLocalKnown && hub?.open_url) || result.cloud_web?.page_url || cwURL}>{T.cwOpen}<ExternalLink size={12} /></a>
+                    <p className="text-xs text-gray-500">{T.cwTry.replace('{name}', nameOf(roles.find((r) => projectOf(r) === fallback) || roles[0]))}</p>
+                  </div>
+                )}
               </div>
             )}
             {result && !result.ok && !result.saved && <p className="text-red-500 text-sm">{T.failed}{result.error}</p>}

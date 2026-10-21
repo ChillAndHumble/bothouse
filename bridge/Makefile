@@ -68,13 +68,24 @@ endif
 _BUILD_TAGS := $(strip $(_EXCLUDE_TAGS) goolm)
 _TAGS_FLAG  := $(if $(_BUILD_TAGS),-tags '$(_BUILD_TAGS)',)
 
-.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-release-local test-performance pre-test lint release release-all web
+.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-release-local test-performance pre-test lint release release-all web hubsrc
 
 web:
 	@if [ ! -d web/node_modules ]; then cd web && npm install; fi
 	cd web && npm run build
 
-build: web
+# The self-hosted platform (role-household hub) bundled for the setup wizard's 「在本机启动」
+# (internal/rhhub). HUB_FILES = rh/hub.py and the modules it imports (internal/rhhub/embed_test.go checks).
+HUB_SRC   := ../role-household/rh
+HUB_DST   := internal/rhhub/src/rh
+HUB_FILES := __init__.py hub.py cloudweb.py webpush.py meeting.py brain.py config.py voice.py lock.py
+
+hubsrc:
+	mkdir -p $(HUB_DST)/static
+	cp $(addprefix $(HUB_SRC)/,$(HUB_FILES)) $(HUB_DST)/
+	cp -R $(HUB_SRC)/static/. $(HUB_DST)/static/
+
+build: web hubsrc
 	go build $(_TAGS_FLAG) -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
 
 build-noweb:

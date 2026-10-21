@@ -50,6 +50,10 @@ jobs:
           corepack prepare pnpm@10.34.7 --activate
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm run build
+      - name: Bundle the self-hosted platform (hub) source
+        # the setup wizard's 「在本机启动」 starts it from the binary (bridge/internal/rhhub)
+        working-directory: bridge
+        run: make hubsrc
       - name: Build binaries
         working-directory: bridge
         run: |
