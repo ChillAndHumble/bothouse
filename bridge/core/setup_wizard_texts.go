@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -21,7 +22,7 @@ func discordTokenInvalidText(lang string) string {
 
 // discordRateLimitedText: Discord kept answering 429.
 func discordRateLimitedText(lang string, wait time.Duration) string {
-	s := fmt.Sprintf("%.0f", wait.Seconds()+0.5)
+	s := fmt.Sprintf("%.0f", math.Ceil(wait.Seconds()))
 	return tr3(lang,
 		"Discord 限流（429），重试几次还是不让查。等 "+s+" 秒左右再试一次；什么都没写。",
 		"Discord のレート制限（429）で、何度か再試行しても確認できませんでした。"+s+" 秒ほど待ってからもう一度実行してください。何も書き込んでいません。",

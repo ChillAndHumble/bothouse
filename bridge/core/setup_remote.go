@@ -203,7 +203,12 @@ func CheckDiscordBot(ctx context.Context, token string) (*DiscordBotInfo, error)
 			OwnerUserID string `json:"owner_user_id"`
 		} `json:"team"`
 	}
-	if err := discordGet(ctx, token, "/oauth2/applications/@me", &app); err == nil {
+	appErr := discordGet(ctx, token, "/oauth2/applications/@me", &app)
+	var rl *ErrDiscordRateLimited
+	if errors.As(appErr, &rl) {
+		return nil, appErr // rate limited: say so, not "Message Content Intent could not be checked"
+	}
+	if appErr == nil {
 		if app.ID != "" {
 			info.ApplicationID = app.ID
 		}

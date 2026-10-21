@@ -54,7 +54,7 @@ const zh = {
   manualOther: '其他平台（手动）',
   replyLangLine: '机器人回复语言：', replyLangHow: '（右上角换语言就会跟着换；每个角色也能在“人设”一步单独改；已有机器人不勾「改现有人设」就保持原来的语言）', replyLangSaved: '回复语言：',
   replyLangKeptLine: '已有机器人沿用现有人设里的语言：', replyLangKeptHow: '（要改：在“人设”一步勾「改这个机器人现有的人设」，再选回答语言）',
-  replyLangKept: '（沿用现有人设，不改）', replyLangNone: '人设里没写，由 CLI 自己决定',
+  replyLangKept: '（沿用现有人设，不改）', replyLangNone: '人设里没写，由 CLI 自己决定', replyLangLoading: '读取中…', replyLangUnknown: '未知（读不到人设文件）',
   stepNames: { config: '配置', 'project name': '项目名', team: '组队', jev: 'jev', fallback_role: '兜底角色', 'gate team': 'gate 组队', state: '向导状态',
     discord: 'Discord', persona: '人设', provider: '第三方 API' } as Record<string, string>,
 } as const;
@@ -116,7 +116,7 @@ const en: Texts = {
   manualOther: 'Other platforms (manual)',
   replyLangLine: 'Bots reply in: ', replyLangHow: " (change the language at the top right; each role can also be changed on the Persona step; an existing bot keeps its language unless you tick \"Edit this bot's existing persona\")", replyLangSaved: 'Reply language: ',
   replyLangKeptLine: 'Existing bots keep the language in their persona: ', replyLangKeptHow: " (to change it: on the Persona step tick \"Edit this bot's existing persona\" and pick a reply language)",
-  replyLangKept: ' (kept from its persona, unchanged)', replyLangNone: 'not set in the persona; the CLI decides',
+  replyLangKept: ' (kept from its persona, unchanged)', replyLangNone: 'not set in the persona; the CLI decides', replyLangLoading: 'reading…', replyLangUnknown: 'unknown (persona file not readable)',
   stepNames: { config: 'config', 'project name': 'project name', team: 'team', jev: 'jev', fallback_role: 'fallback role', 'gate team': 'gate team', state: 'wizard state',
     discord: 'Discord', persona: 'persona', provider: 'third-party API' },
 };
@@ -175,7 +175,7 @@ const ja: Texts = {
   manualOther: 'その他のプラットフォーム（手動）',
   replyLangLine: 'ボットの返答言語：', replyLangHow: '（右上で言語を切り替えると連動します。ロールごとに「ペルソナ」で個別にも変えられます。既存のボットは「既存ペルソナを編集する」にチェックしない限り元の言語のままです）', replyLangSaved: '返答言語：',
   replyLangKeptLine: '既存のボットはペルソナの言語のまま：', replyLangKeptHow: '（変えるには「ペルソナ」のステップで「このボットの既存ペルソナを編集する」にチェックし、返答言語を選んでください）',
-  replyLangKept: '（既存のペルソナのまま、変更なし）', replyLangNone: 'ペルソナに指定なし（CLI まかせ）',
+  replyLangKept: '（既存のペルソナのまま、変更なし）', replyLangNone: 'ペルソナに指定なし（CLI まかせ）', replyLangLoading: '読み込み中…', replyLangUnknown: '不明（ペルソナファイルを読めません）',
   stepNames: { config: '設定', 'project name': 'プロジェクト名', team: 'チーム', jev: 'jev', fallback_role: 'フォールバックロール', 'gate team': 'gate チーム', state: 'ウィザード状態',
     discord: 'Discord', persona: 'ペルソナ', provider: 'サードパーティ API' },
 };
@@ -209,6 +209,8 @@ export const stepLabel = (T: Texts, step: string): string => {
   return T.stepNames[step] ?? step;
 };
 
-/** What an existing bot's persona sets as reply language (GET /setup/persona). */
-export const keptLangLabel = (T: Texts, p?: { reply_language?: string; reply_language_line?: string }): string =>
-  p?.reply_language ? langLabel(p.reply_language) : p?.reply_language_line ? `“${p.reply_language_line}”` : T.replyLangNone;
+/** What an existing bot's persona sets as reply language (GET /setup/persona). p: undefined =
+ * still loading, null = cannot be read (no work_dir, or the request failed). */
+export const keptLangLabel = (T: Texts, p: { reply_language?: string; reply_language_line?: string } | null | undefined): string =>
+  p === undefined ? T.replyLangLoading : p === null ? T.replyLangUnknown
+    : p.reply_language ? langLabel(p.reply_language) : p.reply_language_line ? `“${p.reply_language_line}”` : T.replyLangNone;

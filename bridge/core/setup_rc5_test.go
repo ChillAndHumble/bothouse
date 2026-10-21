@@ -269,8 +269,8 @@ func TestApplyWizardExistingBotReportsPersonaLanguage(t *testing.T) {
 // rc5: every start logged "media library off: script missing path=<home>/im-bridge/bin/watchvid",
 // a maintainer's private path baked into the default. Now it needs an explicit directory.
 func TestEnableMediaLibraryNeedsExplicitDir(t *testing.T) {
-	old, oldWV, oldMA := mediaEnabled, watchvidPath, mediaArchivePath
-	t.Cleanup(func() { mediaEnabled, watchvidPath, mediaArchivePath = old, oldWV, oldMA })
+	old, oldWV, oldMA, oldRoot := mediaEnabled, watchvidPath, mediaArchivePath, mediaNASRoot
+	t.Cleanup(func() { mediaEnabled, watchvidPath, mediaArchivePath, mediaNASRoot = old, oldWV, oldMA, oldRoot })
 	mediaEnabled = false
 	home := t.TempDir()
 	bin := filepath.Join(home, "im-bridge", "bin")
@@ -279,16 +279,61 @@ func TestEnableMediaLibraryNeedsExplicitDir(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(bin, n), []byte("#!/bin/sh\n"), 0o755)
 	}
 	t.Setenv("HOME", home)
-	EnableMediaLibrary("")
+	EnableMediaLibrary("", "")
 	if mediaEnabled {
 		t.Fatal("no directory given: the media library must stay off (no ~/im-bridge default)")
 	}
-	EnableMediaLibrary(t.TempDir())
+	EnableMediaLibrary(t.TempDir(), "")
 	if mediaEnabled {
 		t.Fatal("scripts missing: must stay off")
 	}
-	EnableMediaLibrary(bin)
+	EnableMediaLibrary(bin, "")
 	if !mediaEnabled || watchvidPath != filepath.Join(bin, "watchvid") {
 		t.Fatalf("explicit dir: enabled=%v path=%q", mediaEnabled, watchvidPath)
+	}
+}
+
+// PR #210 review: the NAS root was a private default (/Volumes/<share>). It now comes from
+// CONEST_MEDIA_NAS_ROOT; without it there is no mount check and no "NAS 没挂" note, and the
+// video note names no private wiki path.
+func TestMediaWithoutNASRoot(t *testing.T) {
+	idx := filepath.Join(t.TempDir(), "bili-BV1Aa4y1B7Cd", "watchvid-index.md")
+	withMedia(t, func(context.Context, string) (string, string, error) { return idx + "\n", "", nil }, nil)
+	mediaNASRoot = ""
+	mediaNASMounted = func() bool { t.Error("mount checked without a NAS root"); return false }
+	m := &Message{Content: "https://b23.tv/Xy7Zw3Q", MessageID: "4000", ChannelID: "c", Images: []ImageAttachment{{MimeType: "image/png"}}}
+	newMediaEngine("x").prepareMedia(m)
+	if !strings.Contains(m.Content, idx) || strings.Contains(m.Content, nasMissingNote) || strings.Contains(m.Content, "已存进媒体库") {
+		t.Fatalf("no NAS: %q", m.Content)
+	}
+	mediaNASRoot = "/nas"
+	if n := videoNote(videoLink{URL: "u"}, videoResult{Index: "/nas/x/watchvid-index.md"}); !strings.Contains(n, "已存进媒体库") || strings.Contains(n, "~/wiki") {
+		t.Errorf("private wiki path in note: %q", n)
+	}
+}
+
+// PR #210 review: a 429 on the application lookup was reported as "Message Content Intent could
+// not be checked"; it is a rate limit. And the wait is rounded up, never shown shorter than it is.
+func TestCheckDiscordBotAppLookupRateLimited(t *testing.T) {
+	recordSleeps(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/applications/@me" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"retry_after": 30}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "111", "username": "Juzi"})
+	}))
+	old := discordAPIBase
+	discordAPIBase = srv.URL
+	t.Cleanup(func() { discordAPIBase = old; srv.Close() })
+	var rl *ErrDiscordRateLimited
+	if _, err := CheckDiscordBot(context.Background(), "tok"); !errors.As(err, &rl) {
+		t.Fatalf("app lookup 429: err = %v, want rate limited", err)
+	}
+	for d, want := range map[time.Duration]string{300 * time.Millisecond: "about 1s", 2 * time.Second: "about 2s", 2100 * time.Millisecond: "about 3s"} {
+		if got := discordRateLimitedText("en", d); !strings.Contains(got, want) {
+			t.Errorf("%v → %q, want %q", d, got, want)
+		}
 	}
 }

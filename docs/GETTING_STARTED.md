@@ -24,9 +24,11 @@ gh api repos/Zssan12/conest/contents/install.sh -H 'Accept: application/vnd.gith
 默认装最新的发布版（含预发布版）。要装固定版本（比如几个人用同一版、或者退回上一版），在 `sh` 前面加 `CONEST_VERSION=<tag>`，tag 在仓库的 Releases 页能看到：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Zssan12/conest/main/install.sh | CONEST_VERSION=v0.1.0-rc5 sh
-gh api repos/Zssan12/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | CONEST_VERSION=v0.1.0-rc5 sh
+curl -fsSL https://raw.githubusercontent.com/Zssan12/conest/main/install.sh | CONEST_VERSION=<tag> sh
+gh api repos/Zssan12/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | CONEST_VERSION=<tag> sh
 ```
+
+`<tag>` 换成 Releases 页上的版本名（形如 `v0.1.0-rc5`）。
 
 装完 `cc-connect --version` 看装的是哪一版；装完提示里的文档链接也指向这一版的文档。
 

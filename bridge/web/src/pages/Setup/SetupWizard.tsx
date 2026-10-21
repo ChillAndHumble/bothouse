@@ -27,7 +27,7 @@ interface RoleDraft {
   replyTouched?: boolean; // picked by hand for this role: the language picker no longer changes it
   // existing bot (reuse_project): its persona file is only written when editPersona is ticked
   existingWorkDir?: string;
-  existingPersona?: SetupPersona;
+  existingPersona?: SetupPersona | null; // null = cannot be read (no work_dir, or the request failed)
   editPersona?: boolean;
 }
 
@@ -144,9 +144,11 @@ export default function SetupWizard() {
       if (!guildID) setGuildID(exGuild || info.guilds[0]?.id || '');
       if (reuse) {
         const ex = existing.find((b) => b.project === reuse);
-        patchRole(r.key, { agent_type: ex?.agent_type || r.agent_type, existingWorkDir: ex?.work_dir, editPersona: false, persona: '' });
+        patchRole(r.key, { agent_type: ex?.agent_type || r.agent_type, existingWorkDir: ex?.work_dir, editPersona: false, persona: '', existingPersona: undefined });
         if (ex?.work_dir) {
-          getSetupPersona(ex.agent_type, ex.work_dir).then((p) => patchRole(r.key, { existingPersona: p })).catch(() => {});
+          getSetupPersona(ex.agent_type, ex.work_dir).then((p) => patchRole(r.key, { existingPersona: p })).catch(() => patchRole(r.key, { existingPersona: null }));
+        } else {
+          patchRole(r.key, { existingPersona: null });
         }
       }
     } catch (e: any) {

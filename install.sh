@@ -36,7 +36,7 @@ main() {
 
   tmp=$(mktemp -d)
   asset=""
-  trap 'rm -f "$tmp/cc-connect" "$tmp/checksums.txt" 2>/dev/null; [ -n "$asset" ] && rm -f "$tmp/$asset"; rmdir "$tmp" 2>/dev/null || true' EXIT
+  trap 'rm -f "$tmp/cc-connect" "$tmp/checksums.txt" "$tmp/curl.err" 2>/dev/null; [ -n "$asset" ] && rm -f "$tmp/$asset"; rmdir "$tmp" 2>/dev/null || true' EXIT
 
   # 1. which release: public API first; a private repo answers 404 there, then the logged-in gh
   tag="${CONEST_VERSION:-}"
@@ -57,12 +57,18 @@ main() {
   say "Installing cc-connect $tag ($os/$arch) into $INSTALL_DIR"
 
   # 2. download
-  # curl without -S: a private repo answers 404 on the public URL, which is expected and not an
-  # error the user has to read; the gh fallback below says what happens instead.
+  # A private repo answers 404 on the public URL: expected, so that one error stays quiet and the
+  # gh fallback below says what happens instead. Any other curl error (network, proxy, TLS) is shown.
+  public404=0
   fetch_curl() {
     have curl || return 1
     base="https://github.com/$REPO/releases/download/$tag"
-    curl -fsL -o "$tmp/$asset" "$base/$asset" 2>/dev/null && curl -fsL -o "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null
+    for f in "$asset" checksums.txt; do
+      if ! curl -fsSL -o "$tmp/$f" "$base/$f" 2>"$tmp/curl.err"; then
+        if grep -q 'error: 404' "$tmp/curl.err"; then public404=1; else cat "$tmp/curl.err" >&2; fi
+        return 1
+      fi
+    done
   }
   fetch_gh() {
     use_gh || return 1
@@ -72,8 +78,15 @@ main() {
     fetch_gh || die "download failed: gh release download $tag -R $REPO -p $asset"
   else
     if ! fetch_curl; then
-      use_gh || die "download failed: $asset of $tag is not on the public URL. Private repo? Install the GitHub CLI (gh), run 'gh auth login', and run this again."
-      say "Not on the public download URL (private repo?); downloading with gh instead."
+      if ! use_gh; then
+        [ "$public404" = 1 ] || die "download failed: $asset of $tag (curl error above). Check the network or proxy and run this again."
+        die "download failed: $asset of $tag is not on the public URL. Private repo? Install the GitHub CLI (gh), run 'gh auth login', and run this again."
+      fi
+      if [ "$public404" = 1 ]; then
+        say "Not on the public download URL (private repo?); downloading with gh instead."
+      else
+        say "Public download failed (error above); trying gh instead."
+      fi
       fetch_gh || die "download failed: gh release download $tag -R $REPO -p $asset"
     fi
   fi
