@@ -143,7 +143,7 @@ func runSetupOnly(cfg *config.Config, configPath string, release func()) {
 		release()
 		exe, err := os.Executable()
 		if err == nil {
-			err = restartProcess(exe)
+			err = restartProcess(core.BinaryFromBackupPath(exe))
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "restart failed: %v\n", err)
@@ -237,17 +237,21 @@ func instanceRunning(configPath string) bool {
 func setupNextSteps(lang, configFlag string, running, needsAction bool) []string {
 	cmd := "cc-connect"
 	if configFlag != "" {
-		cmd += " --config " + configFlag
+		cmd += " --config " + quoteIfSpaced(configFlag)
 	}
-	// quick background try: nohup on macOS/Linux; Windows has no nohup, so PowerShell's
-	// Start-Process with the log going to the file cc-connect itself writes (CC_LOG_FILE, main.go).
+	// quick background try: nohup on macOS/Linux. Windows has no nohup: PowerShell's Start-Process,
+	// with the log going to the file cc-connect itself writes (CC_LOG_FILE, main.go). CC_LOG_FILE is
+	// removed again right after, so later commands in the same window are not redirected too.
 	tryCmd, tryLog := "nohup "+cmd+" > ~/.cc-connect/run.log 2>&1 &", "~/.cc-connect/run.log"
 	if nextStepsGOOS == "windows" {
 		start := "Start-Process cc-connect -WindowStyle Hidden"
 		if configFlag != "" {
-			start = "Start-Process cc-connect -ArgumentList '--config','" + strings.ReplaceAll(configFlag, "'", "''") + "' -WindowStyle Hidden"
+			// Start-Process joins -ArgumentList with spaces and does not quote: a path with spaces
+			// needs its own double quotes inside the single-quoted PowerShell string.
+			start = `Start-Process cc-connect -ArgumentList '--config','"` + strings.ReplaceAll(configFlag, "'", "''") + `"' -WindowStyle Hidden`
 		}
-		tryCmd, tryLog = `$env:CC_LOG_FILE="$HOME\.cc-connect\run.log"; `+start, `%USERPROFILE%\.cc-connect\run.log`
+		tryLog = `$HOME\.cc-connect\run.log`
+		tryCmd = `$env:CC_LOG_FILE="` + tryLog + `"; ` + start + `; Remove-Item Env:CC_LOG_FILE`
 	}
 	zh := strings.HasPrefix(strings.ToLower(lang), "zh")
 	var out []string
@@ -276,9 +280,17 @@ func setupNextSteps(lang, configFlag string, running, needsAction bool) []string
 // nextStepsGOOS is runtime.GOOS; swapped in tests.
 var nextStepsGOOS = runtime.GOOS
 
+// quoteIfSpaced wraps a path with spaces in double quotes (sh, zsh, bash and PowerShell all accept it).
+func quoteIfSpaced(p string) string {
+	if strings.ContainsAny(p, " \t") {
+		return `"` + p + `"`
+	}
+	return p
+}
+
 func daemonCmd(configFlag string) string {
 	if configFlag != "" {
-		return "cc-connect daemon install --config " + configFlag
+		return "cc-connect daemon install --config " + quoteIfSpaced(configFlag)
 	}
 	return "cc-connect daemon install"
 }

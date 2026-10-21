@@ -103,36 +103,57 @@ function Install-CcConnect {
 
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     $target = Join-Path $installDir 'cc-connect.exe'
+    # Earlier backups first (best effort: one still running stays), then move the current exe
+    # aside under a fresh name. A running cc-connect.exe cannot be overwritten or deleted, but it
+    # can be renamed; a fixed backup name would collide with a backup that is still running.
+    Get-ChildItem -LiteralPath $installDir -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -ieq 'cc-connect.exe.old' -or $_.Name -like 'cc-connect.exe.old-*' } |
+      ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $target) {
-      # A running cc-connect.exe cannot be overwritten, but it can be renamed (same as `cc-connect update`).
-      $old = "$target.old"
-      Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
-      Move-Item -LiteralPath $target -Destination $old -Force
+      Move-Item -LiteralPath $target -Destination ("$target.old-" + [DateTime]::UtcNow.Ticks) -Force
     }
     Move-Item -LiteralPath $newExe -Destination $target -Force
     & $target --version | Out-Null
     if ($LASTEXITCODE -ne 0) { Fail "installed, but $target does not run" }
     Write-Host "Installed: $target ($tag)"
 
-    # 4. PATH: add the folder to the user PATH (new windows) and to this window's PATH
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $inUser = @($userPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $installDir.TrimEnd('\')) }).Count -gt 0
-    if (-not $inUser) {
-      $newPath = if ($userPath) { "$installDir;$userPath" } else { $installDir }
-      [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+    # 4. PATH: add the folder to the user PATH (new windows) and to this window's PATH.
+    # Read and write the raw registry value: [Environment]::GetEnvironmentVariable expands
+    # %VARS% and would write them back expanded (and as REG_SZ), breaking entries like %USERPROFILE%\bin.
+    $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+    $userPathRaw = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $samePath = { param($a) $a -and ([Environment]::ExpandEnvironmentVariables($a).TrimEnd('\') -ieq $installDir.TrimEnd('\')) }
+    if (-not @($userPathRaw -split ';' | Where-Object { & $samePath $_ }).Count) {
+      $newPath = if ($userPathRaw) { "$installDir;$userPathRaw" } else { $installDir }
+      $envKey.SetValue('Path', $newPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+      # tell Explorer (and so new windows) that the environment changed: setting any user
+      # variable through .NET broadcasts WM_SETTINGCHANGE
+      [Environment]::SetEnvironmentVariable('CONEST_INSTALL_PING', '1', 'User')
+      [Environment]::SetEnvironmentVariable('CONEST_INSTALL_PING', $null, 'User')
       Write-Host "Added $installDir to your user PATH (new terminal windows pick it up)."
     }
-    $inSession = @($env:Path -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $installDir.TrimEnd('\')) }).Count -gt 0
-    if (-not $inSession) { $env:Path = "$installDir;$env:Path" }
+    $envKey.Close()
+    if (-not @($env:Path -split ';' | Where-Object { & $samePath $_ }).Count) { $env:Path = "$installDir;$env:Path" }
 
+    # What a new window will run for `cc-connect`: the system PATH comes before the user PATH.
+    $machinePath = [string](Get-Item 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').GetValue('Path', '')
+    $userPathNow = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $first = $null
+    foreach ($dir in (($machinePath + ';' + $userPathNow) -split ';')) {
+      if (-not $dir) { continue }
+      $dir = [Environment]::ExpandEnvironmentVariables($dir)
+      foreach ($ext in @('.exe', '.cmd', '.bat', '.ps1', '.com')) {
+        $candidate = Join-Path $dir ('cc-connect' + $ext)
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $first = $candidate; break }
+      }
+      if ($first) { break }
+    }
     $run = 'cc-connect'
-    $first = Get-Command cc-connect -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($first -and ($first.Source -ine $target)) {
+    if ($first -and ($first -ine $target)) {
       Write-Host ""
-      Write-Host "WARNING: typing 'cc-connect' runs another copy first: $($first.Source)"
-      $otherVersion = (& $first.Source --version 2>$null | Select-Object -First 1)
-      Write-Host "  ($otherVersion) - an older or upstream build without the setup wizard."
-      Write-Host "  Remove it (npm uninstall -g cc-connect if it came from npm), or put $installDir first on your PATH."
+      Write-Host "WARNING: in a new window, typing 'cc-connect' runs another copy first: $first"
+      Write-Host "  It is an older or upstream build without the setup wizard."
+      Write-Host "  Remove it (npm uninstall -g cc-connect if it came from npm); a copy on the system PATH wins over $installDir."
       Write-Host "Until then, use the full path: $target"
       $run = "& '$target'"
     }

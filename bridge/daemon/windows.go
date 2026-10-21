@@ -204,11 +204,15 @@ func buildWindowsTaskScript(cfg Config) string {
 			writePowerShellEnv(&sb, key, value)
 		}
 	}
+	// cc-connect restarts itself under the service by exiting with 75 (cmd/cc-connect/restart_windows.go):
+	// start it again at once instead of leaving a parent process behind.
+	writePowerShellEnv(&sb, "CC_SUPERVISED", "1")
 	fmt.Fprintf(&sb, "Set-Location -LiteralPath %s\r\n", powerShellLiteral(cfg.WorkDir))
 	sb.WriteString("while ($true) {\r\n")
 	fmt.Fprintf(&sb, "  & %s\r\n", powerShellLiteral(cfg.BinaryPath))
 	sb.WriteString("  $exitCode = $LASTEXITCODE\r\n")
 	sb.WriteString("  if ($exitCode -eq 0) { exit 0 }\r\n")
+	sb.WriteString("  if ($exitCode -eq 75) { continue }\r\n")
 	sb.WriteString("  Start-Sleep -Seconds 10\r\n")
 	sb.WriteString("}\r\n")
 	return sb.String()

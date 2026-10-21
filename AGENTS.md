@@ -39,7 +39,7 @@
    原样告诉用户（Intent 没开 / 机器人没进服务器 / 没查到所有者要用户给自己的 Discord 用户 ID / CLI 没登录 / token 无效要重置，要用户点链接或回话），用户做完不用重跑，重启即可（token 无效时什么都没写，换新 token 重跑）。
    同一个 token 只能有一个 cc-connect 在线：这个机器人已经在别的电脑或别的进程上跑着时，两边会抢消息、各回一遍，先停掉旧的（向导查不出别的机器上有没有在跑）。
    然后**在后台**启动：`cc-connect daemon install`（装成系统服务、开机自启，Windows 上是登录时启动的计划任务；看日志 `cc-connect daemon logs -f`）。**不要在你的 shell 里前台跑 `cc-connect`**：它不会退出，会占住终端直到被超时杀掉，机器人跟着下线。
-   只想临时试一下用 `nohup cc-connect > ~/.cc-connect/run.log 2>&1 &`（Windows：`$env:CC_LOG_FILE="$HOME\.cc-connect\run.log"; Start-Process cc-connect -WindowStyle Hidden`）。日志出现 `discord: connected` 后请用户在频道里 @ 机器人试一句。
+   只想临时试一下用 `nohup cc-connect > ~/.cc-connect/run.log 2>&1 &`（Windows：`$env:CC_LOG_FILE="$HOME\.cc-connect\run.log"; Start-Process cc-connect -WindowStyle Hidden; Remove-Item Env:CC_LOG_FILE`，日志在 `$HOME\.cc-connect\run.log`）。日志出现 `discord: connected` 后请用户在频道里 @ 机器人试一句。
    不要动用户已在运行的 cc-connect 进程，除非用户同意。
 
 详细说明：[docs/connect-discord-feishu.md](docs/connect-discord-feishu.md) 第 3 节；人用浏览器向导时直接运行 `cc-connect`。

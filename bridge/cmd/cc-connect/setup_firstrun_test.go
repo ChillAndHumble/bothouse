@@ -391,18 +391,25 @@ func TestBrowserCommandKeepsWholeLink(t *testing.T) {
 	}
 }
 
-// Windows has no nohup: the quick-try line is PowerShell there.
+// Windows has no nohup: the quick-try line is PowerShell there. Paths with spaces stay one
+// argument, and CC_LOG_FILE does not stay set in the user's window.
 func TestSetupNextStepsWindows(t *testing.T) {
 	old := nextStepsGOOS
 	nextStepsGOOS = "windows"
 	t.Cleanup(func() { nextStepsGOOS = old })
 	s := strings.Join(setupNextSteps("zh", "", false, false), "\n")
-	if strings.Contains(s, "nohup") || strings.Contains(s, "~/") || !strings.Contains(s, "Start-Process cc-connect -WindowStyle Hidden") ||
-		!strings.Contains(s, `$env:CC_LOG_FILE="$HOME\.cc-connect\run.log"`) || !strings.Contains(s, "cc-connect daemon install") {
+	if strings.Contains(s, "nohup") || strings.Contains(s, "~/") ||
+		!strings.Contains(s, `$env:CC_LOG_FILE="$HOME\.cc-connect\run.log"; Start-Process cc-connect -WindowStyle Hidden; Remove-Item Env:CC_LOG_FILE`) ||
+		!strings.Contains(s, `日志在 $HOME\.cc-connect\run.log`) || !strings.Contains(s, "cc-connect daemon install") {
 		t.Fatalf("windows: %s", s)
 	}
-	s = strings.Join(setupNextSteps("en", `C:\it's\c.toml`, false, false), "\n")
-	if !strings.Contains(s, `-ArgumentList '--config','C:\it''s\c.toml'`) {
-		t.Fatalf("windows --config: %s", s)
+	s = strings.Join(setupNextSteps("en", `C:\Users\Jane Doe\it's\c.toml`, false, false), "\n")
+	for _, want := range []string{
+		`-ArgumentList '--config','"C:\Users\Jane Doe\it''s\c.toml"'`,
+		`cc-connect daemon install --config "C:\Users\Jane Doe\it's\c.toml"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("windows --config with spaces: missing %s in\n%s", want, s)
+		}
 	}
 }
