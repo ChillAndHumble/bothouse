@@ -78,7 +78,7 @@ func cloudWebWSBase(raw string) (string, error) {
 	}
 	// localhost = this machine: written as 127.0.0.1, which the local hub listens on (localhost may
 	// resolve to ::1 first) and which the local hub's address is compared with (resolveCloudWeb)
-	if u.Hostname() == "localhost" {
+	if strings.EqualFold(u.Hostname(), "localhost") {
 		if p := u.Port(); p != "" {
 			u.Host = "127.0.0.1:" + p
 		} else {
@@ -419,15 +419,9 @@ func StartLocalHub(ctx context.Context, dataDir, lang string) (LocalHubStatus, e
 		// 来源：实现者定，24 字节随机数（48 个十六进制字符），比管理口令的 16 字节长一些
 		s = localHubState{WebToken: GenerateToken(24), BotToken: GenerateToken(24), Port: pickHubPort()}
 	} else if !portFree(s.Port) {
-		// Its port is in use but the handshake above failed: most likely this hub, still busy or slow
-		// to answer. Never start a second one on the same hub.sqlite3, and never move to another port
-		// (config.toml's ws_url points at this one): treat it as running and let the apply-time test tell.
-		u := localHubURL(s.Port)
-		return LocalHubStatus{Running: true, Managed: true, TokenKnown: true, URL: u, OpenURL: u + "/#token=" + url.QueryEscape(s.WebToken),
-			LogFile: filepath.Join(localHubDir(dataDir), "hub.log"),
-			Hint: tr3(lang, "端口 "+strconv.Itoa(s.Port)+" 已被占用，按向导之前起的平台还在运行处理（没回握手，可能正忙）。保存时会再测一次连接；如果占端口的是别的程序，关掉它再点「重新检测」。",
-				"ポート "+strconv.Itoa(s.Port)+" は使用中です。以前ウィザードが起動したプラットフォームがまだ動いているものとして扱います（応答がなく、混んでいる可能性があります）。保存時にもう一度接続をテストします。別のプログラムが使っている場合はそれを止めて「再検出」を押してください。",
-				"Port "+strconv.Itoa(s.Port)+" is in use: treated as the platform this wizard started, still running (it did not answer, maybe busy). Saving tests the connection again; if another program holds the port, stop it and click \"Detect again\".")}, nil
+		// Its port is in use. Never start a second hub on the same hub.sqlite3, and never move to
+		// another port (config.toml's ws_url points at this one): find out who holds it.
+		return localHubPortTaken(ctx, dataDir, lang, s)
 	}
 	if err := startHubProcess(dataDir, &s); err != nil {
 		return LocalHubStatus{}, err
@@ -447,6 +441,42 @@ func StartLocalHub(ctx context.Context, dataDir, lang string) (LocalHubStatus, e
 	logFile := filepath.Join(localHubDir(dataDir), "hub.log")
 	return LocalHubStatus{LogFile: logFile}, fmt.Errorf("%s %s", tr3(lang, "自建平台没在 90 秒内起来，看日志：", "プラットフォームが 90 秒以内に起動しませんでした。ログ：",
 		"The platform did not come up within 90 seconds; see the log:"), logFile+tailFile(logFile, 600))
+}
+
+// localHubPortTaken: hub.json's port is in use. Asked with our bot token:
+//   - 101: our hub, it answers now → running;
+//   - 401/403: a hub, but not with our token → someone else's platform here (address only, like
+//     GetLocalHubStatus's unmanaged case);
+//   - any other HTTP answer, or a non-timeout network error → another program holds the port: error + fix;
+//   - a timeout → our hub, too busy to answer → running (the apply-time test checks again).
+func localHubPortTaken(ctx context.Context, dataDir, lang string, s localHubState) (LocalHubStatus, error) {
+	u := localHubURL(s.Port)
+	port := strconv.Itoa(s.Port)
+	base, _ := cloudWebWSBase(u)
+	code, _, err := cloudWebHandshake(ctx, base, s.BotToken)
+	var ne net.Error
+	switch {
+	case err == nil && code == http.StatusSwitchingProtocols:
+		return GetLocalHubStatus(ctx, dataDir, lang), nil
+	case err == nil && (code == http.StatusUnauthorized || code == http.StatusForbidden):
+		st := LocalHubStatus{Running: true, URL: u}
+		st.Hint = localHubHint(lang, st)
+		return st, nil
+	case err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.As(err, &ne) && ne.Timeout()):
+		return LocalHubStatus{Running: true, Managed: true, TokenKnown: true, URL: u, OpenURL: u + "/#token=" + url.QueryEscape(s.WebToken),
+			LogFile: filepath.Join(localHubDir(dataDir), "hub.log"),
+			Hint: tr3(lang, "向导之前起的平台在端口 "+port+" 上，但这次没及时回应（可能正忙），按在运行处理。保存时会再测一次连接。",
+				"以前ウィザードが起動したプラットフォームがポート "+port+" にありますが、今回は応答が間に合いませんでした（混んでいる可能性があります）。動いているものとして扱い、保存時にもう一度接続をテストします。",
+				"The platform this wizard started is on port "+port+" but did not answer in time (maybe busy): treated as running. Saving tests the connection again.")}, nil
+	}
+	detail := "HTTP " + strconv.Itoa(code)
+	if err != nil {
+		detail = err.Error()
+	}
+	return LocalHubStatus{}, errors.New(tr3(lang,
+		"端口 "+port+" 被别的程序占着（"+detail+"），向导之前起的平台用的就是这个端口。关掉占用它的程序（查是谁：macOS / Linux 运行 lsof -i :"+port+"，Windows 运行 netstat -ano | findstr :"+port+"），再点「在本机启动」。",
+		"ポート "+port+" を別のプログラムが使っています（"+detail+"）。以前ウィザードが起動したプラットフォームはこのポートを使います。使っているプログラムを止めてから（確認方法：macOS / Linux は lsof -i :"+port+"、Windows は netstat -ano | findstr :"+port+"）「このマシンで起動」を押してください。",
+		"Port "+port+" is held by another program ("+detail+"); the platform this wizard started uses that port. Stop that program (find it: lsof -i :"+port+" on macOS / Linux, netstat -ano | findstr :"+port+" on Windows), then click \"Start on this machine\"."))
 }
 
 // EnsureLocalHub (cc-connect startup): the hub this wizard started is started again when it is
