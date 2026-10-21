@@ -33,7 +33,7 @@ CoNest（共栖）按层使用不同许可。本页说明每个目录适用什�
 
 ## AGPLv3 第 7 条附加条款
 
-修改版须保留署名 `Built on CoNest` 和原项目链接 https://github.com/zuiho-kai/conest ，有界面的放在关于、法律、页脚或署名位置，并按第 7(c) 条标出改动。全文见 [NOTICE](NOTICE)。网页控制台的页脚（`bridge/web/src/components/Layout/Footer.tsx`）已带这条署名。
+修改版须保留署名 `Built on CoNest` 和原项目链接 https://github.com/Zssan12/conest ，有界面的放在关于、法律、页脚或署名位置，并按第 7(c) 条标出改动。全文见 [NOTICE](NOTICE)。网页控制台的页脚（`bridge/web/src/components/Layout/Footer.tsx`）已带这条署名。
 
 ## 依赖
 

@@ -154,7 +154,7 @@ jobs:
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
-      # install.ps1 installs from the repo this workflow runs in (Zssan12/conest itself, or a CI copy)
+      # install.ps1 installs from the repo this workflow runs in (zuiho-kai/conest itself, or a CI copy)
       CONEST_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

@@ -23,7 +23,7 @@ import (
 // chenhg5/cc-connect — upstream binaries have no setup wizard / gate. There is no gitee mirror,
 // so the "gitee" lookup asks GitHub too.
 const (
-	githubRepo   = "Zssan12/conest"
+	githubRepo   = "zuiho-kai/conest"
 	githubAPI    = "https://api.github.com/repos/" + githubRepo + "/releases/latest"
 	githubAllAPI = "https://api.github.com/repos/" + githubRepo + "/releases"
 	downloadBase = "https://github.com/" + githubRepo + "/releases/download"

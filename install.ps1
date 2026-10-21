@@ -2,13 +2,13 @@
 # from the GitHub Release, puts it in %USERPROFILE%\.local\bin and adds that to your user PATH.
 # No Go or Node needed. Windows PowerShell 5.1 or PowerShell 7, x64 or arm64.
 #
-#   irm https://raw.githubusercontent.com/Zssan12/conest/main/install.ps1 | iex      # public repo
-#   gh api repos/Zssan12/conest/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex   # private repo, gh logged in
+#   irm https://raw.githubusercontent.com/zuiho-kai/conest/main/install.ps1 | iex      # public repo
+#   gh api repos/zuiho-kai/conest/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex   # private repo, gh logged in
 #
 # Environment:
 #   CONEST_VERSION   tag to install (default: the newest release, pre-releases included)
 #   INSTALL_DIR      where to put cc-connect.exe (default: %USERPROFILE%\.local\bin)
-#   CONEST_REPO      owner/name to install from (default: Zssan12/conest; CI uses it for a test copy)
+#   CONEST_REPO      owner/name to install from (default: zuiho-kai/conest; CI uses it for a test copy)
 # Same steps as install.sh (macOS / Linux).
 
 # Everything runs from Install-CcConnect, called on the last line: if an `irm | iex` download is
@@ -20,7 +20,7 @@ function Install-CcConnect {
   # Windows PowerShell 5.1 may still default to TLS 1.0, which GitHub refuses.
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-  $repo = if ($env:CONEST_REPO) { $env:CONEST_REPO } else { 'Zssan12/conest' }
+  $repo = if ($env:CONEST_REPO) { $env:CONEST_REPO } else { 'zuiho-kai/conest' }
   if ($repo -notmatch '^[\w.-]+/[\w.-]+$') { throw "install.ps1: CONEST_REPO must look like owner/name, got '$repo'" }
   $installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.local\bin' }
 
@@ -64,7 +64,7 @@ function Install-CcConnect {
     }
 
     $asset = "cc-connect-$tag-windows-$arch.zip"
-    $from = if ($repo -ne 'Zssan12/conest') { " from $repo" } else { '' }
+    $from = if ($repo -ne 'zuiho-kai/conest') { " from $repo" } else { '' }
     Write-Host "Installing cc-connect $tag (windows/$arch)$from into $installDir"
 
     # 2. download
