@@ -16,7 +16,9 @@ package core
 //   - NAS not mounted: the video is still parsed (watchvid falls back to a local temp dir that
 //     is never moved), archiving fails, and the message says "NAS 没挂，这条没存".
 //
-// Off unless EnableMediaLibrary is called (cmd/cc-connect does it when the scripts exist).
+// Off unless EnableMediaLibrary is called with a directory holding both scripts: cmd/cc-connect
+// passes $CONEST_MEDIA_BIN_DIR. There is no default directory — the scripts are the maintainers'
+// own, so an install without them never looks for them and logs nothing about them.
 
 import (
 	"bytes"
@@ -101,10 +103,14 @@ func withLimit(parent context.Context, d time.Duration) (context.Context, contex
 	return context.WithTimeout(context.WithValue(parent, limitKey{}, d), d)
 }
 
-// EnableMediaLibrary turns the media library on when both scripts exist under home.
-func EnableMediaLibrary(home string) {
-	wv := filepath.Join(home, "im-bridge", "bin", "watchvid")
-	ma := filepath.Join(home, "im-bridge", "bin", "mediaarchive")
+// EnableMediaLibrary turns the media library on when binDir holds both scripts (watchvid and
+// mediaarchive). binDir "" (not configured) leaves it off without a log line.
+func EnableMediaLibrary(binDir string) {
+	if binDir == "" {
+		return
+	}
+	wv := filepath.Join(binDir, "watchvid")
+	ma := filepath.Join(binDir, "mediaarchive")
 	for _, p := range []string{wv, ma} {
 		if _, err := os.Stat(p); err != nil {
 			slog.Info("media library off: script missing", "path", p)

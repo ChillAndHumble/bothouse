@@ -57,10 +57,12 @@ main() {
   say "Installing cc-connect $tag ($os/$arch) into $INSTALL_DIR"
 
   # 2. download
+  # curl without -S: a private repo answers 404 on the public URL, which is expected and not an
+  # error the user has to read; the gh fallback below says what happens instead.
   fetch_curl() {
     have curl || return 1
     base="https://github.com/$REPO/releases/download/$tag"
-    curl -fsSL -o "$tmp/$asset" "$base/$asset" && curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
+    curl -fsL -o "$tmp/$asset" "$base/$asset" 2>/dev/null && curl -fsL -o "$tmp/checksums.txt" "$base/checksums.txt" 2>/dev/null
   }
   fetch_gh() {
     use_gh || return 1
@@ -69,7 +71,11 @@ main() {
   if [ "$via" = gh ]; then
     fetch_gh || die "download failed: gh release download $tag -R $REPO -p $asset"
   else
-    fetch_curl || fetch_gh || die "download failed: $asset of $tag. Private repo? Install gh and run 'gh auth login' first."
+    if ! fetch_curl; then
+      use_gh || die "download failed: $asset of $tag is not on the public URL. Private repo? Install the GitHub CLI (gh), run 'gh auth login', and run this again."
+      say "Not on the public download URL (private repo?); downloading with gh instead."
+      fetch_gh || die "download failed: gh release download $tag -R $REPO -p $asset"
+    fi
   fi
 
   # 3. verify and install
@@ -109,7 +115,7 @@ main() {
   fi
   say ""
   say "Next: run   $run"
-  say "It opens the setup wizard in your browser. Guide: https://github.com/$REPO/blob/main/docs/GETTING_STARTED.md"
+  say "It opens the setup wizard in your browser. Guide (for this version): https://github.com/$REPO/blob/$tag/docs/GETTING_STARTED.md"
 }
 
 main "$@"
