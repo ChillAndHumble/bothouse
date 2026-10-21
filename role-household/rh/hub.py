@@ -903,9 +903,6 @@ def make_app(hub: Hub) -> web.Application:
     async def index(request):
         return web.FileResponse(STATIC / "hub.html", headers={"Cache-Control": "no-store"})
 
-    async def dial(request):
-        return web.FileResponse(STATIC / "dial.html", headers={"Cache-Control": "no-store"})
-
     async def to_https(request):   # 旧 http 地址把 token 带到 https（rh/static/to-https.html）
         return web.FileResponse(STATIC / "to-https.html", headers={"Cache-Control": "no-store"})
 
@@ -1137,7 +1134,6 @@ def make_app(hub: Hub) -> web.Application:
         web.get("/queue-player.js", player_js),
         web.get("/rh-client.js", client_js),
         web.get("/rh-history.js", history_js),
-        web.get("/dial", dial),
         web.get("/to-https", to_https),
         web.put("/api/members", put_members),
         web.get("/api/rooms", get_rooms),

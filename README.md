@@ -8,16 +8,16 @@
 
 项目基于 [cc-connect](https://github.com/zuiho-kai/cc-connect) 的 maomao 分支扩展。源码来源见 [来源说明](SOURCE_ORIGINS.md)。平台层为 AGPL-3.0 与商业授权双许可，适配器层为 Apache-2.0，详见 [许可说明](LICENSING.md)。
 
-**想自己用起来：** 从 [从零用起 CoNest](docs/GETTING_STARTED.md) 开始。没有硬件，走「配 ccm 和 wiki」「接进 Discord 或飞书」两条线就能完整用；有板子再看「接硬件」。
+**想自己用起来：** 从 [从零用起 CoNest](docs/GETTING_STARTED.md) 开始。走「配 ccm 和 wiki」「接进 Discord 或飞书」两条线就能完整用。
 
 装 → 向导 → 确认上线（macOS / Linux / Windows；不用装 Go 和 Node）：
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/zuiho-kai/conest/main/install.sh | sh   # macOS / Linux；仓库私有时见入门文档第 1 步
+curl -fsSL https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.sh | sh   # macOS / Linux；仓库私有时见入门文档第 1 步
 cc-connect      # 第一次运行自动在浏览器打开安装向导；或让 AI 跑 cc-connect setup apply（见 AGENTS.md）
 ~~~
 
-Windows 在 PowerShell 里：`irm https://raw.githubusercontent.com/zuiho-kai/conest/main/install.ps1 | iex`，再运行 `cc-connect`。
+Windows 在 PowerShell 里：`irm https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.ps1 | iex`，再运行 `cc-connect`。
 
 执行任务时的公开进展、Discord 任务卡及简短语音回执见[公开进展说明](docs/PUBLIC_PROGRESS.md)。可由主 bot 的置顶团队状态栏汇总本频道“进行中／待你处理”的任务卡链接，结束后移出入口并保留历史。同一任务可显式跨轮续卡；本地 task list/show 查询、task accept 记录真人明确验收，验收后保留完成状态。按项目启用，默认关闭；源码验证与生产验收分别记录。
 
@@ -35,7 +35,7 @@ Windows 在 PowerShell 里：`irm https://raw.githubusercontent.com/zuiho-kai/co
 4. **能交代实际工作**：给一位伙伴一个目标明确的小任务，电脑实际执行；语音能查询进度，Discord／GitHub 能查看文件、测试或 PR。
 5. **别人也能复现**：交付设备、固件、电脑侧源码、绑定配置、接线与恢复说明，以及真实演示记录。
 
-首版允许按键说话、明确选择伙伴和有轮次上限的讨论。2026-10-18 用户已订购一块带喇叭的 Waveshare ESP32-S3-Touch-AMOLED-1.75；先验证单板，再推进双设备展示，供电与外壳仍需确认。完整产品验收以 [Issue #8](https://github.com/Zssan12/conest/issues/8) 为准。
+首版允许按键说话、明确选择伙伴和有轮次上限的讨论。完整产品验收以 [Issue #8](https://github.com/Zssan12/conest/issues/8) 为准。
 
 ## 从输入、输出和反馈理解系统
 
@@ -98,8 +98,6 @@ Windows 在 PowerShell 里：`irm https://raw.githubusercontent.com/zuiho-kai/co
 协作细则见 [CONTRIBUTING.md](CONTRIBUTING.md)；Agent 接手先读 [AGENTS.md](AGENTS.md) 和 [当前交接](docs/HANDOFF.md)。
 
 ## 源码与开发入口
-
-[圆屏 UI 设计原型](prototypes/device-ui/README.md)：G哥“大头特写 / 全身铺满”及状态动画，可独立预览；包含素材来源、已确认设计约束和供其他 AI 审核重构的接手清单。此目录只模拟界面，未连接真实设备或语音服务。
 
 | 目录／文档 | 内容 |
 | --- | --- |

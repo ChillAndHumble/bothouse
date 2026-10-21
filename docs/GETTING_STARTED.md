@@ -2,9 +2,7 @@
 
 CoNest 本体 = **ccm + wiki**：一群 AI 伙伴在聊天软件里一起说话、干活（ccm，即 cc-connect 的 maomao 分支，在 `bridge/`），
 加上一份它们共用、会自己长的记忆（wiki，[llm-wiki](https://github.com/zuiho-kai/llm-wiki)）。
-硬件（每位伙伴一块小屏板子）是可选的一层。
-
-**没有硬件，走完线 1 和线 2 就能完整用。** 线 3 只在你手上有板子时才需要。
+走完线 1 和线 2 就能完整用。
 
 ## 三步用起来：装 → 向导 → 确认上线
 
@@ -16,9 +14,9 @@ macOS / Linux，在终端里：
 
 ```sh
 # 仓库公开后：
-curl -fsSL https://raw.githubusercontent.com/zuiho-kai/conest/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.sh | sh
 # 仓库还是私有时（要先装 GitHub CLI 并 gh auth login，账号要能看到这个仓库）：
-gh api repos/zuiho-kai/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
+gh api repos/zuiho-kai/bothouse/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
 ```
 
 装完它会告诉你 `~/.local/bin` 在不在 PATH 里，不在就照它给的那行加上。
@@ -26,8 +24,8 @@ gh api repos/zuiho-kai/conest/contents/install.sh -H 'Accept: application/vnd.gi
 默认装最新的发布版（含预发布版）。要装固定版本（比如几个人用同一版、或者退回上一版），在 `sh` 前面加 `CONEST_VERSION=<tag>`，tag 在仓库的 Releases 页能看到：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zuiho-kai/conest/main/install.sh | CONEST_VERSION=<tag> sh
-gh api repos/zuiho-kai/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | CONEST_VERSION=<tag> sh
+curl -fsSL https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.sh | CONEST_VERSION=<tag> sh
+gh api repos/zuiho-kai/bothouse/contents/install.sh -H 'Accept: application/vnd.github.raw' | CONEST_VERSION=<tag> sh
 ```
 
 `<tag>` 换成 Releases 页上的版本名（形如 `v0.1.0-rc5`）。
@@ -38,9 +36,9 @@ Windows，在 PowerShell 里（开始菜单搜 PowerShell，不用管理员）�
 
 ```powershell
 # 仓库公开后：
-irm https://raw.githubusercontent.com/zuiho-kai/conest/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.ps1 | iex
 # 仓库还是私有时（先 winget install GitHub.cli，再 gh auth login，账号要能看到这个仓库）：
-gh api repos/zuiho-kai/conest/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex
+gh api repos/zuiho-kai/bothouse/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex
 ```
 
 它会校验下载的包，并把安装目录加进你的用户 PATH；当前窗口立刻能用，新开的窗口也能用。
@@ -71,7 +69,6 @@ gh api repos/zuiho-kai/conest/contents/install.ps1 -H "Accept: application/vnd.g
  ───────────────────────────────    ─────────────────────────────────    ─────────────
  只想在 Discord/飞书里有一群 AI      一主多 sub 的 AI 群                    上面三步就够
  还想要会记事、自己判断谁回           wiki 记忆、gate                        线 1 第 3–4 步
- 手上有一块小智板子                  对板子说话，Discord 里的 AI 回、板子念    线 3
 ```
 
 ## 各部分怎么连
@@ -84,11 +81,7 @@ gh api repos/zuiho-kai/conest/contents/install.ps1 -H "Accept: application/vnd.g
                  │     │                   └ /context 每轮推相关 wiki 页 ──▶ ~/wiki（llm-wiki）
                  │     ▼                                                 │
                  │   Claude Code / Codex / … 的会话（一个 bot 一个）      │
-                 │                                                       │
-                 │   角色小家主机（role-household/，可选，线 3）           │
-                 └──────▲─────────────────────────────────────────────────┘
-                        │ 局域网 Wi-Fi（OTA + WebSocket）
-                    小智板子（可选，线 3）
+                 └───────────────────────────────────────────────────────┘
 ```
 
 ## 术语
@@ -97,17 +90,15 @@ gh api repos/zuiho-kai/conest/contents/install.ps1 -H "Accept: application/vnd.g
 - **主 bot / sub**：主 bot 默认接话；sub 听得到群里每句话，只有被 @ 或被点名才开口。
 - **gate（快脑）**：每条消息先问它「回 / 插进正在做的这一轮 / 不回」。先走规则，规则定不了再让本地 Qwen 读选项概率。
 - **wiki**：llm-wiki 的分层记忆（`MEMORY.md` → 域 `README.md` → 主题页）。会话结束后自动整理进去，gate 每轮把相关的页推给 bot。
-- **角色小家主机**：`role-household/`，管板子（语音进出、表盘），也负责把你对板子说的话发进 Discord。
-- **jev**：只做选择题、给出选项概率的模型。gate 用它判断群里一句话该哪个角色回；接了板子时，角色小家也用它选频道。
-  向导里三个框（Base URL、Key、模型）填一个给概率的 OpenAI 兼容模型就行；没有时 gate 按规则判、判不了交给兜底角色，选频道按读音匹配。
+- **jev**：只做选择题、给出选项概率的模型。gate 用它判断群里一句话该哪个角色回。
+  向导里三个框（Base URL、Key、模型）填一个给概率的 OpenAI 兼容模型就行；没有时 gate 按规则判、判不了交给兜底角色。
 
-## 三条线
+## 两条线
 
 | 线 | 文档 | 做完会看到什么 |
 |---|---|---|
 | 1. 配 ccm 和 wiki（gate、wiki 都可选） | [ccm-and-wiki.md](ccm-and-wiki.md) | 本机 cc-connect 跑着一主多 sub；（装了 gate）gate 在 9930 端口；bot 回话前收到「可能相关的 wiki 页」；会话结束后 wiki 多了记录 |
-| 2. 接进 Discord 或飞书（就是上面第 2 步的向导：网页点几下，或让 AI 跑一条命令） | [connect-discord-feishu.md](connect-discord-feishu.md) | Discord 里几个 bot 接话、互相交接；飞书里一个 bot 能对话；（有板子时）默认发言频道和自动选频道配好 |
-| 3. 接硬件（可选） | [hardware.md](hardware.md) | 板子屏幕显示角色表盘；叫她的名字，这句进 Discord，她的回答在板子上念出来 |
+| 2. 接进 Discord 或飞书（就是上面第 2 步的向导：网页点几下，或让 AI 跑一条命令） | [connect-discord-feishu.md](connect-discord-feishu.md) | Discord 里几个 bot 接话、互相交接；飞书里一个 bot 能对话 |
 
 ## 升级须知：role-household/roles.toml 不再进 git（2026-10-20）
 

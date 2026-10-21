@@ -43,9 +43,6 @@ class Config:
     wake_unmute: str = "开麦"
     # 本地唤醒模型目录（rh/kws.py，不进 git，下载见 README「本地唤醒模型」）；空 = 不用唤醒模型，只靠转文字。
     wake_kws_model: str = ""
-    # 小智板子（[xiaozhi] 段，rh/xiaozhi.py）：xiaozhi_port = None 表示没配这一段，不起小智协议服务。
-    xiaozhi_port: int | None = None
-    xiaozhi_boards: dict[str, str] = field(default_factory=dict)   # 板子 Device-Id（MAC，小写）-> 角色 id
     # 形态 B（[discord] 段，rh/discord_body.py）：现有平台里 bot 的发言由板子念。
     discord_play: bool = False   # 真板播放开关，默认关：关着只记日志不出声
     # 板子听到叫映射了 bot 的角色时，把这句以 webhook 身份发进 Discord（而不是自建频道），默认关
@@ -123,11 +120,6 @@ class DiscordBot:
     project: str = ""   # cc-connect 里这个 bot 的 project 名（message.sent 钩子里的 project 字段）；空 = 不收钩子
 
 
-# [xiaozhi] 段没写 port 时用的端口。来源：固件编译默认 OTA 地址的端口（http://<Mac 局域网地址>:8791/xiaozhi/ota/，
-# ~/code/role-household-fw/xiaozhi-esp32/main/Kconfig.projbuild CONFIG_OTA_URL），两边同一个端口。
-XIAOZHI_PORT = 8791
-
-
 def load(path: str | Path = "roles.toml") -> Config:
     path = Path(path)
     data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -143,17 +135,6 @@ def load(path: str | Path = "roles.toml") -> Config:
     for r in roles:   # Qwen 音色按 say 音色名查（rh.voice.QwenSynth），同一个 say 音色不能配两套 Qwen 音色
         if r.voice and seen.setdefault(r.voice, (r.qwen_speaker, r.qwen_instruct)) != (r.qwen_speaker, r.qwen_instruct):
             raise ValueError(f"roles.toml: 音色 {r.voice} 被多个角色配了不同的 Qwen 音色")
-    xz = data.get("xiaozhi")
-    boards: dict[str, str] = {}
-    if xz is not None:
-        ids = {r.id for r in roles}
-        for bd in xz.get("boards", []):
-            dev, rid = str(bd.get("device", "")).strip().lower().replace("-", ":"), str(bd.get("role", ""))
-            if not dev or rid not in ids:
-                raise ValueError(f"roles.toml: [[xiaozhi.boards]] 要有 device 和已有的角色 id，现在是 {bd!r}")
-            if dev in boards:
-                raise ValueError(f"roles.toml: 板子 {dev} 绑定了两次")
-            boards[dev] = rid
     dc = data.get("discord", {})
     bots: list[DiscordBot] = []
     for bt in dc.get("bots", []):
@@ -191,8 +172,6 @@ def load(path: str | Path = "roles.toml") -> Config:
         wake_mute=str(w.get("mute", "闭麦")),
         wake_unmute=str(w.get("unmute", "开麦")),
         wake_kws_model=str(Path(w.get("kws_model", "")).expanduser()) if w.get("kws_model") else "",
-        xiaozhi_port=int(xz.get("port", XIAOZHI_PORT)) if xz is not None else None,
-        xiaozhi_boards=boards,
         discord_play=bool(dc.get("play", False)),
         discord_relay=bool(dc.get("relay", False)),
         discord_channel=channel,

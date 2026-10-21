@@ -49,10 +49,6 @@ from . import vpio as vpiomod
 from .device import DeviceSpeaker
 from . import wake as wakemod
 from . import kws as kwsmod
-from . import xiaozhi as xiaozhimod
-from . import dial as dialmod
-from . import discord_body as discordmod
-from . import board_mic as board_micmod
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -146,7 +142,7 @@ class Host:
                  reconnect_min: float = RECONNECT_MIN, reconnect_max: float = RECONNECT_MAX,
                  config_dir: Path = ROOT, speaker: DeviceSpeaker | None = None,
                  words: wakemod.Words | None = None, log=lambda s: print(s, flush=True),
-                 boards: xiaozhimod.XiaozhiServer | None = None,
+                 boards=None,
                  room_meeting: Callable[[int], Meeting] | None = None):
         self.meeting = meeting   # 默认频道的（语音在这里）
         # 别的频道：频道 id -> 建一份新 Meeting（纯文字）。None = 只管默认频道（旧用法），别的频道不订。
@@ -878,43 +874,13 @@ def main() -> None:
     meeting = build(cfg, Path(a.log), tts=tts)
     state = Path(a.state) if a.state else state_path_for(a.hub)
     words = wakemod.Words.from_config(cfg)
-    # 小智板子：roles.toml 有 [xiaozhi] 段且开着语音才起服务（README「小智板子」）。token 可选，读 RH_XIAOZHI_TOKEN。
-    boards = None
-    if tts is not None and cfg.xiaozhi_port is not None:
-        boards = xiaozhimod.XiaozhiServer(cfg.xiaozhi_boards, token=env.get("RH_XIAOZHI_TOKEN", ""), port=cfg.xiaozhi_port)
     # 别的频道（非默认频道）主机不建会话、不回话（room_meeting=None，hello 也不订别的频道），让 cc-connect 经 cloud_web
     # 接进来的 bot（能干活、有记忆）回。来源：2026-10-20 现场，room 2「@橘 …」收到两条回复——hub 消息 229 作者 ju
     # （主机的 claude -p 角色）和 230 作者 maomao（cc-connect 的橘），同一个角色回了两遍。默认频道（大厅，语音和板子）不变。
     # Host 仍支持 room_meeting（tests/test_rooms.py），要主机自己管别的频道时在这里传工厂（build(..., room_id=)）。
     host = Host(meeting, a.hub, token, state, config_dir=Path(a.config).resolve().parent, speaker=tts, words=words,
-                boards=boards, room_meeting=None)
-    if boards is not None:
-        # 名牌里的工作状态：按 [[discord.bots]] 的 project 读 $RH_TEAM_DIR/<project>.json（rh/dial.py read_busy；没设就不读）
-        host.dial = dialmod.Dial(boards, cfg.roles, Path(a.config).resolve().parent, bots=cfg.discord_bots)
-        # 板子固件经 Wi-Fi 升级（rh/xiaozhi.py XiaozhiServer.firmware）：设了 RH_XIAOZHI_FIRMWARE 才管
-        if env.get("RH_XIAOZHI_FIRMWARE"):
-            boards.firmware = Path(env["RH_XIAOZHI_FIRMWARE"]).expanduser()
-            boards.fw_asked_file = ROOT / "logs" / "xiaozhi-fw-asked.txt"   # 已让升过的 (MAC, 固件 sha)，重启后也不再重升
-    # 形态 B：Discord 里 bot 回应主人的话（cc-connect 钩子 / gate 转来）在板子上念。要有板子服务和 [[discord.bots]] 映射；
-    # 真板播放开关 [discord] play 默认关，关着只记日志（rh/discord_body.py）。
-    # [discord] relay 开着：板子听到叫 bot 对应的角色，把这句以 webhook 身份发进 Discord；发到哪个频道、念摘要、新建频道
-    # 都按 roles.toml [discord] 配（rh/discord_body.py build，没配的退回现状）。地址和 token 只从环境变量 / .env 读，不打日志；
-    # 开了 relay 却既没默认频道 webhook 也没 bot token 直接报错退出，不悄悄退回自建频道（同 vpio、唤醒模型）。
-    if boards is not None and cfg.discord_bots:
-        host.discord = discordmod.build(cfg, env, boards, tts.synth, meeting.lock, on_event=host.dial.event)
-        boards.routes.extend(host.discord.routes())
-        # 启动自检（rh/discord_body.py selfcheck）：token、默认频道、webhook 配错就在这里报清楚怎么改并退出，
-        # 不等第一句话才悄悄失败；连不上 Discord 只警告、照常启动。
-        if cfg.discord_relay:
-            bad, warn = asyncio.run(host.discord.selfcheck())
-            for w in warn:
-                print(f"[discord] 自检：{w}", flush=True)
-            if bad:
-                host.discord.close()
-                raise SystemExit("roles.toml / .env 的 Discord 配置不对：\n- " + "\n- ".join(bad))
-            print("[discord] 自检通过" if not warn else "[discord] 自检有项没核成，见上", flush=True)
-        host.discord.warm()   # 开机预热选频道模型（后台），免得第一句等冷启动超时进默认频道
-    listener = board_listener = None
+                room_meeting=None)
+    listener = None
     asr = None if a.no_voice else voicemod.gateway_asr(a.asr_url, print)
     if asr is not None:
         def sources(stop):
@@ -934,18 +900,6 @@ def main() -> None:
                                      urgent=words.stop_word, timed=True,
                                      kws=spotter, on_kws=mac_kws, muted=lambda: not host.mic_on,
                                      save_dir=ROOT / "logs" / f"utter-{stamp}")
-        # 板子收音（rh/board_mic.py）：板子上传的麦克风进同一条链路（叫名字才应、暂停、闭麦、开麦），自己一个唤醒模型实例。
-        # 现在板子上的固件不上传（role-household-fw 分支 rh 禁了上行），这一路就一直空着。
-        if boards is not None:
-            mic = board_micmod.BoardMic()
-            boards.on_mic, boards.on_mic_end = mic.on_packet, mic.on_end
-            board_spotter = kwsmod.Spotter(words, cfg.wake_kws_model) if spotter is not None else None
-            board_voice, board_kws = host.voice_from("board")
-            board_listener = voicemod.Listener(asr, board_voice, lambda stop: [mic.frames(stop)], playing=host.spoken_between,
-                                               urgent=words.stop_word, timed=True, kws=board_spotter, on_kws=board_kws,
-                                               muted=lambda: not host.mic_on, save_dir=ROOT / "logs" / f"utter-board-{stamp}",
-                                               log=lambda s: print(s.replace("[voice]", "[voice/板子]", 1)
-                                                                    .replace("[kws]", "[kws/板子]", 1), flush=True))
         print(f"唤醒模型={'关' if spotter is None else '、'.join(spotter.labels)}  每句音频存 logs/utter-{stamp}/", flush=True)
     voices = "关" if a.no_voice else "、".join(
         f"{r.name}={(r.qwen_speaker if cfg.voice_backend == 'qwen' and r.qwen_speaker else r.voice) or '无'}"
@@ -953,9 +907,7 @@ def main() -> None:
     print(f"角色主机 云端={a.hub}  模型={cfg.model}  播放={voices}  收音={'开' if listener else '关'}"
           f"  本机播放和收音={'系统语音处理（回声消除）' if vpio is not None else '直接（afplay/say + 麦克风）'}"
           f"  发言日志={a.log}  唤醒词={'、'.join(n for _, ns in words.roles for n in ns)}、{'、'.join(words.product)}"
-          f"  安全词={words.pause}  闭麦={words.mute}/{words.unmute}"
-          f"  Discord 回应={'未配' if host.discord is None else ('板子念' if cfg.discord_play else '只记日志')}"
-          f"  板子的话进 Discord={'开' if host.discord is not None and cfg.discord_relay else '关'}", flush=True)
+          f"  安全词={words.pause}  闭麦={words.mute}/{words.unmute}", flush=True)
 
     async def runner():
         loop = asyncio.get_running_loop()
@@ -963,13 +915,13 @@ def main() -> None:
             loop.add_signal_handler(sig, host.stop)
         task = asyncio.create_task(host.run())   # stop() 后 run 自己收尾退出（会等路上的请求回来）
         await asyncio.sleep(0)   # 让 run 先记下事件循环，收音线程才能往里投消息
-        for li in (listener, board_listener):
+        for li in (listener,):
             if li:
                 li.start()
         try:
             await task
         finally:
-            for li in (listener, board_listener):
+            for li in (listener,):
                 if li:
                     li.stop()
 

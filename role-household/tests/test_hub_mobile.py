@@ -183,14 +183,6 @@ class Reconnect(WebBase):
         self.assertEqual((await self.hellos())[-1], None)
 
 
-    async def test_dial_demo_stays_offline(self):
-        """审查 2：表盘演示页（/dial?demo=1）不连云端；登录过（本机存着 token）也不因回到前台、网络恢复被连上。"""
-        await self.open()                                   # 频道页登录一次，token 存进 localStorage
-        await self.page.goto(f"{self.url}/dial?demo=1")
-        await self.page.evaluate("document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('online'))")
-        await self.page.wait_for_timeout(800)
-        self.assertEqual(await self.hellos(), [])
-        self.assertEqual([i for i in self.hub.subs.values() if i["kind"] == "web"], [])
 
     async def test_own_http_reply_does_not_skip_missed(self):
         """审查 1：断线时自己发的一条经 HTTP 成功（id 最大），重连的 since 不能跳过断线期间别人的消息。"""

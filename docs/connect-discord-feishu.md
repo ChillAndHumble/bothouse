@@ -128,7 +128,6 @@ key 只留在 cc-connect 里。所以任何 OpenAI 兼容接口都能挂到这�
 ## 5. jev 和兜底角色
 
 - **jev 用来判断群里一句话该哪个角色回**：gate 每条消息先走规则（@ 了谁、开头叫了谁），规则判不了再让 jev 读几个选项的概率。
-  接了板子的话，对板子说话时也用它选进哪个 Discord 频道（附录 C）。
 - 推荐：硅基流动（如免费 Qwen 小模型）、OpenRouter、DeepSeek、MiniMax、本地小模型（如 Qwen 0.6B）。
   不推荐 Claude、GPT：它们的接口不给概率。jev 也不能复用 Claude Code / Codex 的本地登录，同样是因为拿不到概率。
   WorkBuddy 是助手产品，不是模型服务，所以不在这里，装了会在第 3 步出现。
@@ -140,7 +139,6 @@ key 只留在 cc-connect 里。所以任何 OpenAI 兼容接口都能挂到这�
 - **没有可用的 jev**（没填、测试没过）：gate 改用本机 mlx 的 Qwen（只有 Apple 芯片 Mac）；也没有就只按规则判，
   被 @、被点名的角色照常回，规则判不了的由兜底角色回。**gate 没在运行**时：被 @ 的角色照常回，其他消息由兜底角色回
   （cc-connect 的 `gate_fallback`：兜底角色 `reply`，其他 `context`；被 @ 时一律 `reply`，见 `bridge/core/gate.go`）。
-  接了板子时，选频道退到按频道名和读音匹配。
 
 ## 6. 向导写了什么（给别的程序读）
 
@@ -192,7 +190,7 @@ cc-connect 只是接进去：每个角色作为一个成员连平台的机器人
    一个角色一个应用、一个 token。
 2. Bot 页打开 **Message Content Intent**（不开读不到消息正文）。
 3. OAuth2 → URL Generator：scopes 勾 `bot`、`applications.commands`；权限至少勾查看频道、发消息、读消息历史、加反应。
-   要接板子并让主机自己建频道和 webhook 的那个 bot，再勾「管理 Webhook」「管理频道」。用生成的链接把 bot 拉进你的服务器。
+   用生成的链接把 bot 拉进你的服务器。
 4. token 写进 `~/.cc-connect/config.toml` 对应 project 的 `[projects.platforms.options] token`，不进任何仓库。
 
 ### A2. 拿 ID
@@ -237,45 +235,7 @@ cc-connect feishu setup --project <你的 project 名>
 - gate 拿不到「这句 @ 了谁」（`mentioned` 只有 Discord 填），只能靠消息里叫的名字判断。
 - 没有 `allow_bots`、`team_lead_bot`：bot 之间不会互相接话、交接，也没有 sub 互 @ 超过 3 轮交给主 bot 的保护。
   所以飞书上先只放一个 bot，不要把一主多 sub 原样搬过去。
-- 角色小家的板子只接 Discord（板子的话发进 Discord 频道、念 Discord 里的回复）。
 
 ### 3. 怎么验证
 
 私聊或在群里 @ 这个 bot 说一句，它回话；ccm 日志里有这条消息。
-
-## 附录 C：默认发言频道和自动选频道（角色小家，接板子时才用）
-
-这一节说的是：你对着板子说话，这句话发进 Discord 的哪个频道。全部在 `role-household/roles.toml` 的 `[discord]` 段配，
-模板是 `role-household/roles.example.toml`（每项有注释），逐项说明见 `role-household/docs/DISCORD_BODY.md`。
-`roles.toml` 是你自己的本地文件，不进 git；密钥写进 `role-household/.env`（模板 `.env.example`）。
-
-| 想要的 | 配置项 | 默认 |
-|---|---|---|
-| 默认发言频道 | `channel = "<频道 ID>"` | relay 开着必填 |
-| 自动选频道开关 | `auto_channel = true / false` | 默认不写；不写时，配了模型（`url` 或向导的 `key_file`）或 `guild` 就开，都没配模型时按频道名和读音匹配 |
-| 选频道用什么判断 | `[discord.router] backend = "llm"` 或 `"jev"`，加 `url`、`model` | 不写 url = 按频道名读音匹配 |
-| 用向导填的 jev | `[discord.router] key_file = "~/.cc-connect/jev.json"`（只写这一行，url/model 从文件取） | 向导测出不给概率 → 读音匹配 |
-| 频道别名 | `[discord.router] aliases = {"<频道 ID>" = ["量化"]}` | 只认频道名 |
-| 新建频道 | `create_channels = true` | `false` |
-| 朗读摘要 | `[discord.summary]` | 念全文 |
-
-三种判断：
-
-1. **不配模型：完全匹配，允许口音。** 这句话里出现了频道名或别名就进那个频道，按读音比（同音字、声调、前后鼻音、n/l 不分，
-   同语音唤醒词）。匹配不上、同时像两个频道 → 默认频道。
-2. **`backend = "llm"`**：任何 OpenAI 兼容接口（本机 LM Studio、便宜的 API），`url` 写 base 地址（如 `http://127.0.0.1:1234/v1`），
-   不要带 `/chat/completions`。
-3. **`backend = "jev"`**：jev 的 System One 接口（真 jev 是 TypeSafe 托管：`url = "https://api.typesafe.ai"`、`model = "jev-latest"`）。
-   没有 jev 账号可以跑 `role-household/tools/jev_local.py`：它用本机 Qwen 读选项 logits 冒充同一个接口，**不是 jev 本身**，
-   打分复用 gate 的 `bridge/contrib/gate/scorer.py`。
-
-模型出错、超时、答非选项时退回第 1 种。主机启动时在后台先调一次模型预热，免得开机第一句等模型冷启动超时。
-开了 relay 时，主机启动先自检 bot token、默认频道、webhook 是不是这个频道的，配错直接报错并说改哪一项。
-
-> 上面 `auto_channel`、`jev`、读音匹配、启动自检这几项在角色小家本地版本里，按每天的例行同步进 `role-household/`；
-> 同步之前，conest 里的 `role-household/` 只有 `llm` 一种判断，没配就只进默认频道。
-
-**和 conest 里这份 bridge 的差别**：`role-household/docs/DISCORD_BODY.md` 写的 `allow_bots_file`（主机建的 webhook ID 自动放行）
-和 `message.sent` 钩子里的 `extra.trigger_message_ids`（按消息 ID 对账）在 [zuiho-kai/cc-connect](https://github.com/zuiho-kai/cc-connect)
-maomao 分支上，conest 的 `bridge/` 快照还没有。用 conest 的 bridge 时：主机建的 webhook ID（主机日志「建了 webhook <ID>」）
-要手动加进对应 bot 的 `allow_bots`；回复按频道对账（主机替你问过之后 30 分钟内，她在同一频道的第一条才念）。

@@ -45,8 +45,7 @@ def server(tmp_path):
     registry = DeviceRegistry([DeviceBinding('desk-' + r.project, r.name, r.project,
                                             settings.session_key) for r in roles], roles)
     bridge = Bridge()
-    app = create_device_app(settings, registry, speech=Speech(), bridge=bridge, roles=roles,
-                            screen_dir=ROOT / 'prototypes/device-ui')
+    app = create_device_app(settings, registry, speech=Speech(), bridge=bridge, roles=roles)
     receipts = []
 
     @app.middleware('http')
@@ -74,9 +73,10 @@ def server(tmp_path):
         assert not thread.is_alive()
 
 
+# 圆屏页（screen）的几组用例随板子界面原型一起去掉（公开仓库不含 prototypes/device-ui）。
 @pytest.mark.parametrize('screen, stop_queued', [
-    (False, False), (False, True), (True, False), (True, True), ('mixed', False),
-], ids=['device-handoff', 'device-stop', 'screen-handoff', 'screen-stop', 'three-mixed-pages'])
+    (False, False), (False, True),
+], ids=['device-handoff', 'device-stop'])
 def test_queued_answer_automatically_plays_after_owner_finishes(server, screen, stop_queued):
     base, receipts, bridge = server
     mixed = screen == 'mixed'

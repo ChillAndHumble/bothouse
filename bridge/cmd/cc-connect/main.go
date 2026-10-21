@@ -1581,7 +1581,7 @@ func printUsage() {
   Supports: Claude Code, Codex, Cursor, Gemini CLI, Qoder CLI, OpenCode
   Platforms: Feishu, TuiTui, Telegram, Slack, DingTalk, Discord, LINE, WeChat Work, Weixin, QQ, QQ Bot
 
-  conest:  https://github.com/zuiho-kai/conest (docs/GETTING_STARTED.md)
+  conest:  https://github.com/zuiho-kai/bothouse (docs/GETTING_STARTED.md)
   Upstream: https://github.com/chenhg5/cc-connect
 
 Usage:

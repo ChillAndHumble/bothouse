@@ -28,7 +28,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from rh.hub import Hub
-from tests.test_agent_events import EventBase
 from tests.test_hub import AUTH, TOKEN, HubBase, async_playwright, wait_for
 
 PHONE = {"width": 390, "height": 844}   # 来源：同 tests/test_hub_mobile.py（iPhone 12-15）
@@ -356,31 +355,6 @@ class Triggers(PushBase):
         self.assertLessEqual(len(self.payloads(b)[0]["body"]), 200)
 
 
-class HostNotify(EventBase):
-    async def test_error_and_permission_pushed_done_not(self):
-        """真主机 + 真 hub：cc-connect 报出错、等批准 → 推；做完 → 不推（rh/discord_body.py → Host.agent_event → hub）。"""
-        self.hub.push_insecure_ok = True
-        self.push = FakePushService()
-        await self.push.start()
-        try:
-            b = Browser()
-            async with self.http.post(f"{self.url}/api/push", json=b.sub(f"{self.push.url}/push/h"),
-                                      headers={**AUTH, "Origin": self.url}) as r:
-                self.assertEqual(r.status, 200)
-            await self.start_body(play=False)
-            await self.event("error", error="agent process exited")
-            await wait_for(lambda: len(self.push.got) == 1, what="出错推了")
-            await self.event("permission.requested", content="```\nrm -rf build\n```", extra={"tool_name": "Bash"})
-            await wait_for(lambda: len(self.push.got) == 2, what="等批准推了")
-            await self.event("message.sent", content="做好了")
-            await asyncio.sleep(0.5)
-            self.assertFalse(any("做完" in t for t in self.system_texts()))   # 做完不进大厅（刷屏修复）
-            bodies = [json.loads(b.decrypt(g["body"]))["body"] for g in self.push.got]
-            self.assertEqual(len(bodies), 2, bodies)
-            self.assertIn("出错", bodies[0])
-            self.assertIn("批准", bodies[1])
-        finally:
-            await self.push.stop()
 
 
 @unittest.skipIf(async_playwright is None, "没装 playwright（uv sync 的 dev 组）")

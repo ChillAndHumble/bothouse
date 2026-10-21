@@ -2,20 +2,20 @@
 # CoNest cc-connect installer: downloads the prebuilt binary (with the setup wizard)
 # from the GitHub Release and puts it in ~/.local/bin. No Go or Node needed.
 #
-#   curl -fsSL https://raw.githubusercontent.com/zuiho-kai/conest/main/install.sh | sh      # public repo
-#   gh api repos/zuiho-kai/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh   # private repo, gh logged in
+#   curl -fsSL https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.sh | sh      # public repo
+#   gh api repos/zuiho-kai/bothouse/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh   # private repo, gh logged in
 #
 # Environment:
 #   CONEST_VERSION   tag to install (default: the newest release, pre-releases included)
 #   INSTALL_DIR      where to put cc-connect (default: ~/.local/bin)
 # macOS and Linux (arm64, amd64). On Windows use install.ps1 (PowerShell):
-#   irm https://raw.githubusercontent.com/zuiho-kai/conest/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.ps1 | iex
 set -eu
 
 # Everything runs from main, called on the last line: if a `curl | sh` download is cut
 # short, the shell never reaches the call and runs nothing.
 main() {
-  REPO="zuiho-kai/conest"
+  REPO="zuiho-kai/bothouse"
   INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
   say() { printf '%s\n' "$*"; }
