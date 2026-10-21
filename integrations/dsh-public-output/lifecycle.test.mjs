@@ -122,7 +122,7 @@ test('completed side effect executes once even when both public attempts fail',a
     {id:'t',role:'user',source:{kind:'tool',callId:call.id},content:[{type:'tool-result',toolCallId:call.id,content:[text('Saved')],isError:false}]},
   ];
   const finalStep=await collect(guard({...options,messages:history},()=>{originalCalls++;return stream([text('PRIVATE draft')]);},request=>{
-    finalCalls++;assert.equal(request.tools,undefined);
+    finalCalls++;assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);
     assert.equal(request.messages.find(m=>m.source.kind==='tool').content[0].toolCallId,call.id);
     return stream([call]);
   }));
