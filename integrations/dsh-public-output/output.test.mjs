@@ -33,7 +33,7 @@ for (const blocks of [[reasoning('PRIVATE only')],[text('<thinking>PRIVATE')],[]
   test('terminal output requires validated public reply: '+JSON.stringify(blocks.map(b=>b.type)),async()=>{
     let calls=0;
     const chunks=await collect(guard(options,()=>stream(blocks),request=>{
-      calls++;assert.equal(request.tools,undefined);assert.equal(request.sessionId,'original');return accepted();
+      calls++;assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);assert.equal(request.sessionId,'original');return accepted();
     }));
     assert.equal(publicText(chunks),'已完成，测试通过。');assert.equal(calls,1);assert.equal(finish(chunks).reason.kind,'stop');
     assert.equal(finish(chunks).replayState,undefined);
@@ -43,7 +43,7 @@ for (const blocks of [[reasoning('PRIVATE only')],[text('<thinking>PRIVATE')],[]
 test('bounded validation retry cannot execute a tool',async()=>{
  let calls=0;
  const chunks=await collect(guard(options,()=>stream([reasoning('PRIVATE')]),request=>{
-  assert.equal(request.tools,undefined);calls++;return stream([call]);
+  assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);calls++;return stream([call]);
  }));
  assert.equal(calls,2);assert.equal(publicText(chunks),'');assert.equal(chunks.some(c=>c.type==='tool-call-delta'||c.block?.type==='tool-call'),false);
  assert.equal(finish(chunks).reason.kind,'error');assert.equal(finish(chunks).reason.failure.code,'PUBLIC_ANSWER_UNAVAILABLE');
@@ -66,7 +66,7 @@ test('intentional NO_REPLY needs no generation',async()=>{
 test('finalization context is immutable, omits reasoning, keeps correlated tools',()=>{
  const original=structuredClone(options);original.messages.push(message('assistant',[reasoning('PRIVATE'),text('<thinking>PRIVATE'),call]));
  const before=JSON.stringify(original);const request=finalRequest(original);
- assert.equal(JSON.stringify(original),before);assert.equal(request.tools,undefined);
+ assert.equal(JSON.stringify(original),before);assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);
  assert.equal(JSON.stringify(request.messages).includes('PRIVATE'),false);
  assert.ok(request.messages.some(m=>m.content.some(b=>b.type==='tool-call'&&b.id===call.id)));
  assert.equal(request.messages.some(m=>m.source.replayState),false);

@@ -17,7 +17,7 @@ test('172: finalizer specifies valid escaping before a multiline answer',()=>{
   // the model as encoded characters rather than an invalid multiline string.
   const example=JSON.stringify({reply:'第一行\n第二行含"引号"与反斜线\\。'});
   assert.ok(request.system.includes(example),'missing valid JSON escaping example');
-  assert.equal(request.tools,undefined);
+  assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);
 });
 
 test('172: malformed multiline final answer gets corrective retry without replaying tools or private draft',async()=>{
@@ -36,7 +36,7 @@ test('172: malformed multiline final answer gets corrective retry without replay
   assert.equal(chunks.filter(c=>c.type==='text-delta').map(c=>c.text).join(''),'已完成检查。\n尚未部署。');
   assert.equal(originalCalls,1);assert.equal(requests.length,2);
   for(const request of requests){
-    assert.equal(request.tools,undefined);assert.equal(request.sessionId,options.sessionId);
+    assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);assert.equal(request.sessionId,options.sessionId);
     assert.equal(JSON.stringify(request).includes('PRIVATE'),false);
   }
   assert.equal(requests[0].signal,requests[1].signal,'retry shares the same deadline');

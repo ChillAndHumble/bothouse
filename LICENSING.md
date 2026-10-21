@@ -18,6 +18,7 @@ CoNest（共栖）按层使用不同许可。本页说明每个目录适用什�
 | `bridge/`（除 `bridge/agent/`） | 平台层 | AGPL-3.0 或商业授权 | 上游 cc-connect（chenhg5/cc-connect，经 zuiho-kai/cc-connect 的 maomao 分支）为 MIT，正文见 `bridge/LICENSE-MIT-upstream`；`bridge/assets/sponsors/`、`bridge/assets/banners/`、`bridge/docs/images/sponsors/` 中的标识归各自所有者，不随本仓库授权 |
 | `bridge/agent/` | 适配器层 | Apache-2.0 | 同上，上游部分保留 MIT |
 | `integrations/` | 适配器层 | Apache-2.0 | 无 |
+| `dsh/` | 适配器层 | Apache-2.0 | 上游 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) 为 MIT，不随本目录存放；`patches/` 中的上游文件片段保留 MIT |
 | `companion/` | 平台层 | AGPL-3.0 或商业授权 | 来自 Zssan12/yijiazi，权利人与本仓库所有者相同 |
 | `role-household/` | 平台层 | AGPL-3.0 或商业授权 | 无 |
 | `prototypes/device-ui/`（代码） | 平台层 | AGPL-3.0 或商业授权 | Codex visualize 导出外壳，见该目录 README |

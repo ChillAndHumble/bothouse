@@ -93,7 +93,7 @@ test('finalRequest retains typed tool evidence and replaces loop-only settings',
   const before=structuredClone(original);const request=finalRequest(original);
   assert.deepEqual(original,before);
   assert.equal(JSON.stringify(request).includes('PRIVATE'),false);
-  assert.equal(request.tools,undefined);assert.equal(request.stop,undefined);
+  assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);assert.equal(request.stop,undefined);
   assert.equal(request.sessionId,'same-session');
   assert.deepEqual(request.messages.find(m=>m.source.kind==='tool').content,original.messages.at(-1).content);
   assert.equal(request.messages.find(m=>m.role==='assistant').content[0].id,'once');
@@ -117,7 +117,7 @@ test('installed DSH assembler and actual plugin middleware agree offline', {skip
     on(event,callback){assert.equal(event,'llm/stream');handler=callback;},
     llm:{stream(request){
       finalCalls++;assert.equal(isAgentLoopRequest(request),false);
-      assert.equal(request.tools,undefined);assert.equal(request.sessionId,options.sessionId);
+      assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);assert.equal(request.sessionId,options.sessionId);
       return handler(request,interleavedReply);
     }},
   };
@@ -130,6 +130,18 @@ test('installed DSH assembler and actual plugin middleware agree offline', {skip
   const passthrough=empty();
   assert.equal(handler({...options,purpose:'session-title'},()=>passthrough),passthrough);
   assert.equal(handler(markAgentLoopRequest({...options,provider:'other'}),()=>passthrough),passthrough);
+  ctx.llm.stream=request=>{
+    assert.equal(isAgentLoopRequest(request),false);
+    assert.deepEqual(request.tools.map(t=>t.name),['conest_public_reply']);
+    return handler(request,async function*(){
+      yield {type:'block-end',index:0,block:{type:'tool-call',id:'reply-only',name:'conest_public_reply',arguments:JSON.stringify({reply:'结构化答复'})}};
+      yield {type:'finish',reason:{kind:'tool-calls'}};
+    });
+  };
+  const structured=await collect(handler(markAgentLoopRequest({...options}),empty));
+  assert.equal(text(structured),'结构化答复');
+  assert.equal(terminal(structured).kind,'stop');
+  assert.equal(structured.some(c=>c.type==='tool-call-delta'||c.block?.type==='tool-call'),false);
   const stderr=[];
   t.mock.method(process.stderr,'write',chunk=>{stderr.push(String(chunk));return true;});
   ctx.llm.stream=async function*(){throw Error('PRIVATE provider response');};

@@ -25,6 +25,8 @@ Windows 在 PowerShell 里：`irm https://raw.githubusercontent.com/zuiho-kai/bo
 
 ## 我们要交付什么
 
+在 DeepSeek Harness 网页里使用频道、DSH 成员和 cc-connect 外部 Agent，见 [DSH 频道入口](dsh/collab/README.md)。当前为实验插件，已实现原生页面，真实 DeepSeek 回复与生产部署仍待验证。
+
 指定伙伴代批所有类型工具权限的配置与留痕见[代批说明](docs/DELEGATED_PERMISSIONS.md)。默认关闭，按 bot 用户 ID 授权、按单次请求批准。
 
 面向希望长期与多位 AI 交流、共事的个人用户，第一版要完成一场可重复的双设备演示：
