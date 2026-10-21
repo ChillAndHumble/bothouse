@@ -7,8 +7,23 @@
 Go 全量 47 包、CUJ、目标 vet、Windows 交叉构建、前端构建通过；Camoufox 隔离网页保存两个角色、真实 CLI 增员和重配两次通过。网页与 CLI 仅用测试 hub，不调用真实模型，不接真实频道。原仓库对应补丁另同步到 conest #9。详细证据与未完成项见[核验记录](verification/bothouse-prelaunch-20261021.md)。
 
 仓库保持私有，尚无 Release，新仓库一行安装和真实模型闭环未验；真实 Windows 桌面未验；宣传片等用户看稿后才制作。新增补丁由本龙完成，按协作规则待橘独立验收，不把本轮自查写成最终通过。
+2026-10-21 PR #230 CI #387 修复：runner3 的 Node22.23.3/npm10.9.9 使用全新目录和缓存执行 npx vitest@4.1.11，仍复现 Arborist edgesOut 空引用；不是工作目录权限或旧缓存。新增 dsh/package.json 与完整 package-lock，CI 保留 RUNNER_TEMP 每 job 隔离，复制锁文件后 npm ci 并直接调用 Vitest。安装成功后暴露两个测试只等待10次微任务、早于 Response.json 完成的假失败；改为等待明确的频道状态/事件流，保留全部8项断言。原 runner 同版本、空缓存验证锁定安装与8项测试通过，锁文件哈希不变；本机8项与 actionlint 通过。最新 Actions 全量结果以 PR 为准；同一 Codex 自查，未合并、未部署。
+
+2026-10-21 Issue #229 / PR #230 审查修复：gpt-6-astra 对 `dsh/collab/` 的 8 条发现经源码核实后全部处理——DSH 成员 job 记录输入 id，只认领消费该输入的那一轮（网页里同一 Session 的私聊轮次不再外发）；重启恢复撤回未消费输入、按所属轮次补发、不重发，丢失的输入不再卡住队列；消息与 job 同事务写入；恢复与新 @ 共用队列；卸载先停队列再关库；preset scope 全路径释放；提示词窗口始终包含触发消息；`/collab` 断线补齐按连续游标分页。存储 schema v2（jobs.input_id）可从 v1 原地迁移。21 项 node 单测通过；隔离 DSH_HOME + mock LLM 真机复验：回复经输入 id 绑定、v1 库迁移成功。更正：此前记录的「`gate_fallback = "context"` 让没 @ 的消息静默」不成立，没有 gate 时该项不生效，测试 bot 改为 `group_reply_all = false`。另修 CI：vitest 改装到 RUNNER_TEMP 再运行（npx 在仓库根触发 npm arborist 错误）。未部署。
+
+本轮检查补充：仓库 Go 全量没有通过，安装向导测试受宿主 locale 和 macOS 固定位置 CLI 探测影响；清除 locale 覆盖后只剩 `TestSetupCLIsHint`，详见 [验证记录](../dsh/collab/README.md#验证)。bridge 未改，不把该结果记为全绿；PR #230 保持草稿。
+
+2026-10-21 Issue #229 / PR #230 收尾：原生 `client-ui-discord` 已从骨架落地为侧栏「频道」和三栏消息页，支持配置频道切换、成员在线/工作状态、中英与主题、Enter/Shift+Enter/输入法处理。修复订阅生命周期和请求归属、重连分页及实时事件覆盖、发送确认与跨频道草稿归属。前端11项（数据源8+组件3）、后端15项、DSH完整host/client类型检查、插件打包和client package verifier通过；CI加入8项数据源回归。行为回归先红后绿。用户此前确认页面正常，本轮浏览器登录被本地文件URL安全策略阻止，未重新验收；真实DeepSeek回复、gate下自动补历史仍未验。原后台审查仅找到提示词，没有可核实结果；下方“审查进行中”是历史记录。本轮仅自查，无独立review结论，无子Agent，未合并、未部署。安装与限制见 [collab说明](../dsh/collab/README.md)，最终提交与CI以PR为准。后续优先验证真实DeepSeek回复，再决定是否扩展阶段2；不要重复重建骨架。
+
+2026-10-21 Issue #229 阶段 1：`dsh/collab/` 频道服务插件（DSH Host 插件，绝对路径加载）——SQLite 频道/消息、DSH 原生成员（至多执行一次、重启恢复不重发、接力上限）、cloud_web 服务端（cc-connect 不改代码接入）、`/collab` 最简页。隔离 DSH_HOME 真机联调：真实 cc-connect+Claude Code 回复、DSH 成员经真实 Session+mock LLM 回复并转交、重启后历史保留、cc-connect 真实 ChannelHistory 读取兼容；15 项单测入 CI。未验证真实 DeepSeek 回复与 gate 下自动补历史；未部署。gpt-6-astra 代码审查进行中。
+
+2026-10-21 Issue #229：新增 `dsh/`，在 DeepSeek Harness 里做 Discord 式频道 + 多种 AI（DSH 原生模型成员与经 cloud-web 接入的 cc-connect 外部 Agent）+ 语音/设备外接的设计。只含设计（dsh/README.md）、上游 DSH 固定提交、同步脚本和 `client-ui-discord` 包骨架；同步脚本已对固定提交验证两次幂等并拒绝嵌套仓库目标，尚未执行 DSH 安装与构建，无运行功能。未改 bridge/ 与 companion/，未部署。
+
+2026-10-21 Issue #223：ACP 对端声明 `agentCapabilities._meta["dsh/steer"]` 时，gate 忙时插话改走 `SendMidTurn`（session/prompt 带 `_meta["dsh/steer"]`，对端并入正在跑的那一轮并立即回 `_meta["dsh/steered"]`，输出仍从原 prompt 流出；没有在跑的 prompt 时对端拒绝，cc-connect 回落排队，不会另起一轮）。gate 改为逐条询问 `SupportsMidTurnInput`（ACP 握手后才知道），Codex/Claude Code 行为不变。`promptCapabilities.image=true` 时图片发 ACP image 块（png/jpeg/webp/gif，其余仍存盘写路径）；DSH 的 `tool_call_update` 不带 title，进度卡片结果行改用 tool_call 的名字。插话不再附 model-control 说明（那一轮的 prompt 已带）。DSH 侧 steer 是本机对 dsh-acp 0.2.1-rc.2 的补丁，不在本仓库。真实 Discord 私有测试频道（借鲸鱼娘 bot 第二连接，只收测试 webhook）验过插话、带图插话、发图、卡片；未部署，线上切换另行记录。
 
 2026-10-21：rc5 Linux 真机实测剩余问题（分支 fix/rc5-linux-followups，基线 main 9b880ec6）。重配已有机器人时，页头和确认页按人设文件实际写的回答语言显示（GET /setup/persona 和结果里的 reply_language 读 `<!-- conest:reply-language -->` 下一行），不勾「改现有人设」时写明沿用、怎么改；setup apply / token 校验遇 Discord 429 按 retry_after 重试（最多 3 次、单次不超过 10 秒，超了如实说要等多久）；jev 提示、jev 失败原因、保存页步骤行、token 无效、gate 提示、预设人设名补日文（步骤键名保持英文给脚本用，网页按语言翻）；setup apply 首次运行到写项目时才建 config.toml，token 无效不再留下空模板；媒体库不再默认找 ~/im-bridge/bin，只认 CONEST_MEDIA_BIN_DIR，NAS 根目录只认 CONEST_MEDIA_NAS_ROOT（没设就不用 NAS、不提示 NAS 没挂）；公开副本会带出的私有默认值改成必须给：contrib/gate 的 gate_switch.py / sync_gate.sh（SWITCH_HOST、SWITCH_TS_IP、SWITCH_WIN_HOME）、companion/tools/smoke_device.py（--instance-dir / --releases-dir 或 CONEST_DEVICE_*）、role-household 快照的 dial.py（RH_TEAM_DIR，没设不读忙闲）和 tools/smoke_phone.py（RH_CO_LEAD / RH_CO_SUB）；向导新建的项目写 show_quota_indicator = false、show_workdir_indicator = false，已有项目不动；install.sh 私有仓库不再打出 curl 404、装完的文档链接指向所装 tag，GETTING_STARTED 写了 CONEST_VERSION。未部署。
+
+2026-10-21 Issue #213：肥鱼12:10现网v3日志为补答格式失败后超时，旧修复已部署。v4改为单一结构化答复schema，在插件内验证后转Text，不进入工具执行器；原模型/历史、两次60秒、失败与推理边界保留。新增回归旧版3红、修后真实运行时契约67项通过，真实历史隔离回放已走通，最终证据及部署见PR。单一Codex实现/自查，未宣称供应商故障消失。详见[公开答复出口](../integrations/dsh-public-output/README.md)。
 
 2026-10-21 Issue #208：G哥插话后公开回复延迟。已分别复现 Codex commentary 被缓冲，以及核心在工具边界冻结旧预览却不为新文字恢复；修复明确 phase 的普通公开文字分类、可恢复冻结状态与新段落收尾。严格语音、未知phase和内部推理边界保留；运输失败不因新文字恢复，旧消息不被覆盖。适配器回放、真实 Engine→gate→app-server→预览链路和三次真人输入的 STREAM2 CUJ 已通过；原版四条回归失败。全量/race/CI与部署状态见对应PR，真实频道待自然验收。详见[插话公开回复](CODEX_INSERT_PUBLIC_REPLY.md)。未接管他人PR清理或语音优化。
 

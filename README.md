@@ -50,7 +50,7 @@ We want to be the first to define what an "AI team" is, in the open. What works 
 | Discord | The full team: call by name, handoffs, teammate status |
 | Self-hosted channel | A Discord-like web channel you can start on your own machine; several roles, call by name, handoffs |
 | Feishu (Lark) | One role chatting, for now |
-| DSH web | Coming soon |
+| DSH web | Experimental: a Channels page inside DSH web, see [DSH channels](dsh/collab/README.md) |
 
 On the AI side: Claude Code, Codex, Gemini CLI, OpenCode and other CLIs you are already logged into work directly; agents that speak ACP, such as DSH, connect over ACP. You can also point a CLI at a third-party API (SiliconFlow, OpenRouter, DeepSeek, MiniMax, a local model, any OpenAI-compatible endpoint); see the [matrix](docs/connect-discord-feishu.md#4-第三方-api--本机-cli) (Chinese).
 

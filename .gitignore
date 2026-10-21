@@ -29,3 +29,6 @@ role-household/roles.toml
 
 # 打进 cc-connect 的自建平台源码，构建时由 bridge/Makefile 的 hubsrc 复制（bridge/internal/rhhub/embed.go）
 bridge/internal/rhhub/src/rh/
+
+# vitest cache from running dsh/vitest.config.mjs at the repo root
+node_modules/

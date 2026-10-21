@@ -50,7 +50,7 @@ irm https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.ps1 | iex;
 | Discord | 多角色团队全部功能：点名、派活交接、队友状态 |
 | 自建平台 | 自带一个类 Discord 的网页频道，可以在本机启动；多角色在频道里点名、派活交接 |
 | 飞书 | 先接一个角色对话 |
-| DSH 网页 | 即将支持 |
+| DSH 网页 | 实验：DSH 网页里的「频道」页，见 [DSH 频道入口](dsh/collab/README.md) |
 
 AI 这一侧：本机已登录的 Claude Code、Codex、Gemini CLI、OpenCode 等直接用；DSH 等支持 ACP 的智能体走 ACP 接入。也可以给 CLI 挂第三方 API（硅基流动、OpenRouter、DeepSeek、MiniMax、本机模型、任意 OpenAI 兼容接口），对应关系见[接入文档](docs/connect-discord-feishu.md#4-第三方-api--本机-cli)。
 
