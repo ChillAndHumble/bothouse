@@ -248,7 +248,7 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	mux.HandleFunc(prefix+"/setup/weixin/poll", m.wrap(m.handleSetupWeixinPoll))
 	mux.HandleFunc(prefix+"/setup/weixin/save", m.wrap(m.handleSetupWeixinSave))
 
-	// Setup wizard (conest): local CLIs, API×CLI matrix, Discord/Feishu pickers, jev test, one-shot apply
+	// Setup wizard (conest): local CLIs, API×CLI matrix, Discord/Feishu pickers, 自建平台 (cloud_web) local hub + test, jev test, one-shot apply
 	mux.HandleFunc(prefix+"/setup/state", m.wrap(m.handleSetupState))
 	mux.HandleFunc(prefix+"/setup/clis", m.wrap(m.handleSetupCLIs))
 	mux.HandleFunc(prefix+"/setup/matrix", m.wrap(m.handleSetupMatrix))
@@ -258,6 +258,9 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	mux.HandleFunc(prefix+"/setup/discord/check", m.wrap(m.handleSetupDiscordCheck))
 	mux.HandleFunc(prefix+"/setup/discord/channels", m.wrap(m.handleSetupDiscordChannels))
 	mux.HandleFunc(prefix+"/setup/feishu/chats", m.wrap(m.handleSetupFeishuChats))
+	mux.HandleFunc(prefix+"/setup/cloudweb/local", m.wrap(m.handleSetupCloudWebLocal))
+	mux.HandleFunc(prefix+"/setup/cloudweb/start", m.wrap(m.handleSetupCloudWebStart))
+	mux.HandleFunc(prefix+"/setup/cloudweb/test", m.wrap(m.handleSetupCloudWebTest))
 	mux.HandleFunc(prefix+"/setup/jev/test", m.wrap(m.handleSetupJevTest))
 	mux.HandleFunc(prefix+"/setup/jev/save", m.wrap(m.handleSetupJevSave))
 	mux.HandleFunc(prefix+"/setup/apply", m.wrap(m.handleSetupApply))

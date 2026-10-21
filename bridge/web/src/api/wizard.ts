@@ -20,7 +20,8 @@ export interface ExistingBot { project: string; agent_type: string; work_dir?: s
 export interface JevTest { reachable: boolean; logprobs: boolean; latency_ms: number; error?: string }
 export interface SetupStateResp {
   system_language: string; hardware: boolean; data_dir: string; has_projects: boolean; projects?: string[];
-  setup: { platform?: string; guild_id?: string; channel_id?: string; fallback_role?: string; team?: { project: string; name: string }[] };
+  setup: { platform?: string; guild_id?: string; channel_id?: string; fallback_role?: string; team?: { project: string; name: string }[];
+    cloud_web_url?: string; cloud_web_fallback?: string; cloud_web_team?: { project: string; name: string }[] };
   jev?: { url: string; model: string; has_key: boolean; logprobs: boolean };
   jev_hint: string;
 }
@@ -31,9 +32,11 @@ export interface WizardRole {
   provider?: { vendor: string; base_url?: string; api_key?: string; model?: string };
 }
 export interface WizardRequest {
-  platform: 'discord' | 'feishu' | 'lark'; language?: string;
+  platform: 'discord' | 'feishu' | 'lark' | 'cloud_web'; language?: string;
   discord?: { guild_id: string; channel_id: string };
   feishu?: { app_id: string; app_secret: string; platform_type?: string; owner_open_id?: string; chat_id?: string };
+  /** 自建平台: empty url/token = the hub this wizard started on this machine (filled in server-side) */
+  cloud_web?: { url?: string; token?: string };
   roles: WizardRole[]; fallback_role?: string; fallback_bot_id?: string;
   jev?: { base_url: string; api_key?: string; model: string; remove?: boolean };
   allow_from?: string;
@@ -48,8 +51,20 @@ export interface WizardResult {
   roles: { project: string; name: string; agent_type: string; work_dir: string; persona_file: string; bot_id?: string;
     invite_url?: string; in_guild?: boolean; provider?: string; provider_via?: string; fallback: boolean; reused: boolean; persona_written: boolean;
     reply_language?: string; reply_language_name?: string; reply_language_from?: string }[];
+  cloud_web?: CloudWebTest;
   fallback_role?: string; jev_test?: JevTest; jev_ok: boolean; jev_reason?: string; jev_in_use?: string; jev_hint: string; hardware: boolean; restart_required: boolean; config_backup?: string;
 }
+
+/** The self-hosted platform on this machine (core/setup_cloudweb.go LocalHubStatus). */
+export interface LocalHubStatus {
+  running: boolean; url?: string; managed: boolean; token_known: boolean; open_url?: string;
+  can_start: boolean; missing?: 'uv' | 'source'; hint?: string; log_file?: string;
+}
+/** code: ok | unauthorized | unreachable | not_found | bad_url | error */
+export interface CloudWebTest { ok: boolean; code: string; status?: number; message?: string; fix?: string; page_url?: string }
+export const getLocalHub = (lang: string) => api.get<LocalHubStatus>('/setup/cloudweb/local', { lang });
+export const startLocalHub = (lang: string) => api.post<LocalHubStatus>('/setup/cloudweb/start', { lang });
+export const testCloudWeb = (body: { url: string; token: string; lang: string }) => api.post<CloudWebTest>('/setup/cloudweb/test', body);
 
 export const getSetupState = (lang: string, fallbackName = '') => api.get<SetupStateResp>('/setup/state', { lang, fallback_name: fallbackName });
 export const getCLIs = () => api.get<{ clis: LocalCLI[] }>('/setup/clis');

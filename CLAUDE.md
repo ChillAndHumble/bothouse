@@ -36,3 +36,17 @@
    不要动用户已在运行的 cc-connect 进程，除非用户同意。
 
 详细说明：[docs/connect-discord-feishu.md](docs/connect-discord-feishu.md) 第 3 节；人用浏览器向导时直接运行 `cc-connect`。
+
+## 用户说「接自建平台」「要一个像 Grok 那样打开就聊的」
+
+也是装 → `setup apply` → 确认上线，只是平台换成自建平台（cloud_web，role-household 的 hub）。不用 Discord token。
+
+1. `cc-connect setup hub`：`running: true` 且 `token_known: true` 就跳到第 3 步。没在跑且 `can_start: true` 时跑 `cc-connect setup hub start`
+   （在本机 127.0.0.1 起一个，第一次约半分钟）；`missing: "uv"` 时先让用户装 uv（<https://docs.astral.sh/uv/getting-started/installation/>）。
+   用户要连别人的平台：问地址和机器人 token。
+2. 问每个角色叫什么名字（平台里显示的名字），用哪个本机 CLI（`cc-connect setup clis`，不在乎就不填）。已有的 Discord 机器人也要进平台：用 `reuse_project`，Discord 设置不动。
+3. 请求 `{"platform": "cloud_web", "roles": [{"name": "<名字>"}]}`（连别人的平台再加 `"cloud_web": {"url": "<地址>", "token": "<token>"}`），
+   照上一节第 3、4 步先 `--dry-run` 再正式跑、看 `ok`。`cloud_web.code` 是 `unauthorized` / `not_found` / `unreachable` 时把 `message` 和 `fix` 告诉用户。
+4. 启动后日志出现 `cloud_web: websocket connected` 就是连上了；把 `cc-connect setup hub` 输出里的 `open_url`（本机平台，含登录口令）给用户打开，让用户在频道里发「@名字 你好」。
+
+详细说明：[docs/connect-discord-feishu.md](docs/connect-discord-feishu.md) 第 7 节。

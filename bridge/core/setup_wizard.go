@@ -29,17 +29,18 @@ import (
 // ── request / result ───────────────────────────────────────────
 
 type WizardRequest struct {
-	Platform string `json:"platform"` // "discord" (default) | "feishu" | "lark"
+	Platform string `json:"platform"` // "discord" (default) | "feishu" | "lark" | "cloud_web" (自建平台)
 	Language string `json:"language,omitempty"`
 	Discord  *struct {
 		GuildID   string `json:"guild_id"`
 		ChannelID string `json:"channel_id"` // default chat channel
 	} `json:"discord,omitempty"`
-	Feishu        *WizardFeishu `json:"feishu,omitempty"`
-	Roles         []WizardRole  `json:"roles"`
-	FallbackRole  string        `json:"fallback_role,omitempty"`   // project name; default = first role
-	FallbackBotID string        `json:"fallback_bot_id,omitempty"` // or the Discord bot ID (wins; the web wizard sends this)
-	Jev           *WizardJev    `json:"jev,omitempty"`
+	Feishu        *WizardFeishu   `json:"feishu,omitempty"`
+	CloudWeb      *WizardCloudWeb `json:"cloud_web,omitempty"` // cloud_web: the platform (setup_cloudweb.go)
+	Roles         []WizardRole    `json:"roles"`
+	FallbackRole  string          `json:"fallback_role,omitempty"`   // project name; default = first role
+	FallbackBotID string          `json:"fallback_bot_id,omitempty"` // or the Discord bot ID (wins; the web wizard sends this)
+	Jev           *WizardJev      `json:"jev,omitempty"`
 	// AllowFrom: Discord user IDs (comma-separated) the bots take orders from; "*" = anyone in the server.
 	// Not given = the owner of each bot's Discord application (looked up with the token).
 	// Written to new bots and to existing bots whose allow_from is still empty; a non-empty one is kept.
@@ -113,7 +114,7 @@ type WizardRoleResult struct {
 // WizardWarning is something the user still has to do (or should know) after apply.
 // Blocking ones mean the bot will not work until it is done, so the result is not ok.
 type WizardWarning struct {
-	Code     string `json:"code"` // message_content_intent_off | message_content_intent_unknown | bot_not_in_guild | allow_from_unknown | allow_from_everyone | gate_not_running | discord_token_invalid | agent_not_logged_in | agent_login_unknown | reply_language_default
+	Code     string `json:"code"` // cloud_web_unreachable | message_content_intent_off | message_content_intent_unknown | bot_not_in_guild | allow_from_unknown | allow_from_everyone | gate_not_running | discord_token_invalid | agent_not_logged_in | agent_login_unknown | reply_language_default
 	Project  string `json:"project,omitempty"`
 	Blocking bool   `json:"blocking"`
 	Message  string `json:"message"`
@@ -124,28 +125,29 @@ type WizardWarning struct {
 type WizardResult struct {
 	// OK: nothing failed and nothing blocking is left for the user. A saved config with a
 	// blocking warning (intent off, bot not in the server) is saved=true, ok=false.
-	OK              bool               `json:"ok"`
-	Saved           bool               `json:"saved"`
-	NeedsUserAction bool               `json:"needs_user_action"`
-	Warnings        []WizardWarning    `json:"warnings"`
-	InviteURLs      []string           `json:"invite_urls,omitempty"` // bots not in the server yet: open each link to add it
-	AllowFrom       string             `json:"allow_from,omitempty"`  // who the new bots take orders from
-	GateRunning     *bool              `json:"gate_running,omitempty"`
-	GateHint        string             `json:"gate_hint,omitempty"`
-	NextSteps       []string           `json:"next_steps,omitempty"` // how to start / restart (filled by the caller that knows)
-	DryRun          bool               `json:"dry_run"`
-	Steps           []WizardStep       `json:"steps"`
-	Roles           []WizardRoleResult `json:"roles"`
-	FallbackRole    string             `json:"fallback_role,omitempty"`
-	Jev             *JevTestResult     `json:"jev_test,omitempty"`
-	JevOK           bool               `json:"jev_ok"`               // a jev that returns probabilities is saved (now or earlier)
-	JevReason       string             `json:"jev_reason,omitempty"` // why the jev in this request was not saved
-	JevInUse        string             `json:"jev_in_use,omitempty"` // "model @ url" of the jev in effect after this request ("" = none)
-	JevHint         string             `json:"jev_hint"`
-	Hardware        bool               `json:"hardware"`
-	RestartRequired bool               `json:"restart_required"`
-	ConfigBackup    string             `json:"config_backup,omitempty"` // copy of config.toml taken before the write
-	Error           string             `json:"error,omitempty"`
+	OK              bool                `json:"ok"`
+	Saved           bool                `json:"saved"`
+	NeedsUserAction bool                `json:"needs_user_action"`
+	Warnings        []WizardWarning     `json:"warnings"`
+	InviteURLs      []string            `json:"invite_urls,omitempty"` // bots not in the server yet: open each link to add it
+	AllowFrom       string              `json:"allow_from,omitempty"`  // who the new bots take orders from
+	GateRunning     *bool               `json:"gate_running,omitempty"`
+	GateHint        string              `json:"gate_hint,omitempty"`
+	NextSteps       []string            `json:"next_steps,omitempty"` // how to start / restart (filled by the caller that knows)
+	DryRun          bool                `json:"dry_run"`
+	Steps           []WizardStep        `json:"steps"`
+	Roles           []WizardRoleResult  `json:"roles"`
+	FallbackRole    string              `json:"fallback_role,omitempty"`
+	Jev             *JevTestResult      `json:"jev_test,omitempty"`
+	JevOK           bool                `json:"jev_ok"`               // a jev that returns probabilities is saved (now or earlier)
+	JevReason       string              `json:"jev_reason,omitempty"` // why the jev in this request was not saved
+	JevInUse        string              `json:"jev_in_use,omitempty"` // "model @ url" of the jev in effect after this request ("" = none)
+	JevHint         string              `json:"jev_hint"`
+	Hardware        bool                `json:"hardware"`
+	RestartRequired bool                `json:"restart_required"`
+	ConfigBackup    string              `json:"config_backup,omitempty"` // copy of config.toml taken before the write
+	CloudWeb        *CloudWebTestResult `json:"cloud_web,omitempty"`     // cloud_web: the connection test (page_url = the platform's web page)
+	Error           string              `json:"error,omitempty"`
 }
 
 // ── store (implemented in cmd/cc-connect on top of config/) ─────
@@ -273,7 +275,11 @@ type SetupState struct {
 	FeishuChatID string           `json:"feishu_chat_id,omitempty"`
 	FallbackRole string           `json:"fallback_role,omitempty"`
 	Team         []SetupTeamEntry `json:"team,omitempty"`
-	UpdatedAt    string           `json:"updated_at,omitempty"`
+	// cloud_web runs keep the fields above (the Discord team merge reads them) and use these
+	CloudWebURL      string           `json:"cloud_web_url,omitempty"`
+	CloudWebFallback string           `json:"cloud_web_fallback,omitempty"`
+	CloudWebTeam     []SetupTeamEntry `json:"cloud_web_team,omitempty"`
+	UpdatedAt        string           `json:"updated_at,omitempty"`
 }
 
 type SetupTeamEntry struct {
@@ -592,6 +598,8 @@ type wizardIdentity struct {
 	replyFrom string
 	// agentAsked: agent_type as given in the request ("" = default / the existing project's)
 	agentAsked string
+	// mentionID (cloud_web): the Discord bot ID of a reused Discord bot, so <@id> reaches it on the hub too
+	mentionID string
 }
 
 // plannedRole is a role after names are fixed against the config (inside the lock).
@@ -649,17 +657,39 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 	if req.Platform == "" {
 		req.Platform = "discord"
 	}
-	if req.Platform != "discord" && req.Platform != "feishu" && req.Platform != "lark" {
-		return fail("platform", fmt.Errorf("platform must be discord, feishu or lark"))
+	cloudWeb := isCloudWebPlatform(req.Platform)
+	isFeishu := req.Platform == "feishu" || req.Platform == "lark"
+	if req.Platform != "discord" && !isFeishu && !cloudWeb {
+		return fail("platform", fmt.Errorf("platform must be discord, feishu, lark or cloud_web"))
 	}
 	if len(req.Roles) == 0 {
 		return fail("roles", fmt.Errorf("at least one role is required"))
 	}
-	if req.Platform != "discord" && len(req.Roles) != 1 {
-		return fail("roles", fmt.Errorf("feishu: one bot per wizard run (multi-role is Discord only)"))
+	if isFeishu && len(req.Roles) != 1 {
+		return fail("roles", fmt.Errorf("feishu: one bot per wizard run (multi-role is Discord and cloud_web only)"))
 	}
-	if req.Platform != "discord" && (req.Feishu == nil || req.Feishu.AppID == "" || req.Feishu.AppSecret == "") {
+	if isFeishu && (req.Feishu == nil || req.Feishu.AppID == "" || req.Feishu.AppSecret == "") {
 		return fail("role 1", fmt.Errorf("feishu: app_id and app_secret required (scan the QR code first)"))
+	}
+	// cloud_web: the platform's address and bot token; empty ones come from the hub this wizard started
+	cwBase, cwToken := "", ""
+	if cloudWeb {
+		cw := WizardCloudWeb{}
+		if req.CloudWeb != nil {
+			cw = *req.CloudWeb
+		}
+		u, tok := resolveCloudWeb(env.DataDir, cw.URL, cw.Token)
+		if u == "" || tok == "" {
+			return fail("cloud_web", errors.New(tr3(req.Language,
+				"cloud_web：要填平台地址 url 和机器人 token（本机没有向导启动的自建平台可以自动填）",
+				"cloud_web：プラットフォームのアドレス url とボットの token が必要です（ウィザードが起動したローカルのプラットフォームがないため自動では入りません）",
+				"cloud_web: url and token are required (there is no local platform started by this wizard to fill them in)")))
+		}
+		b, err := cloudWebWSBase(stripQuery(u))
+		if err != nil {
+			return fail("cloud_web", err)
+		}
+		cwBase, cwToken = b, tok
 	}
 	clis := env.CLIs
 	if clis == nil {
@@ -764,6 +794,23 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 			}
 			addStep(res, step+" discord", nil, stepBotDetail(req.Language, info.Username, info.IntentKnown, info.MessageContent))
 			res.Roles = append(res.Roles, rr)
+		} else if cloudWeb {
+			if r.ReuseProject != "" {
+				p, ok := snap.project(r.ReuseProject)
+				if !ok {
+					return fail(step, fmt.Errorf("reuse_project %q is not in config", r.ReuseProject))
+				}
+				if b, ok := byProject[r.ReuseProject]; ok && b.Token != "" {
+					w.mentionID = DiscordBotIDFromToken(b.Token)
+				}
+				if w.Name == "" { // the name it already has on a platform of this kind
+					if o, ok := p.Platforms["cloud_web"]; ok {
+						u, _ := o["ws_url"].(string)
+						w.Name = cloudWebQuery(u, "name")
+					}
+				}
+			}
+			res.Roles = append(res.Roles, WizardRoleResult{})
 		} else {
 			res.Roles = append(res.Roles, WizardRoleResult{})
 		}
@@ -771,6 +818,29 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 			w.Name = w.username
 		}
 		ids = append(ids, w)
+	}
+	if cloudWeb {
+		// the same handshake a bot makes: a wrong address or token writes nothing; a platform that is
+		// down right now is saved with a blocking warning (the bots connect once it is up)
+		t := TestCloudWeb(ctx, cwBase, cwToken, req.Language)
+		res.CloudWeb = &t
+		switch t.Code {
+		case "ok":
+			addStep(res, "cloud_web", nil, t.Message)
+		case "unreachable", "error":
+			addStep(res, "cloud_web", nil, t.Message)
+			res.Warnings = append(res.Warnings, WizardWarning{Code: "cloud_web_unreachable", Blocking: true, Message: t.Message, Fix: t.Fix, URL: t.PageURL})
+		default:
+			r := fail("cloud_web", errors.New(t.Message+" "+t.Fix))
+			return r
+		}
+		seen := map[string]bool{}
+		for i, w := range ids {
+			if w.Name != "" && seen[w.Name] {
+				return fail(fmt.Sprintf("role %d", i+1), fmt.Errorf("name %q is used twice in this request: the platform would show two members with the same name", w.Name))
+			}
+			seen[w.Name] = true
+		}
 	}
 	if replyLang == "" {
 		replyLang, replyFrom = SystemReplyLanguage(), "system"
@@ -804,7 +874,7 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 	// 2. plan against a config snapshot: names, work dirs, team merge. It runs again
 	//    inside the lock against the config as it is then (H3.4).
 	plan := func(s WizardSnapshot) (*wizardPlan, error) {
-		return planWizard(s, ids, req, state, env.DataDir, defaultAgent, clis, guildID, channelID, allowFrom, env.AlwaysWriteCmd)
+		return planWizard(s, ids, req, state, env.DataDir, defaultAgent, clis, guildID, channelID, allowFrom, env.AlwaysWriteCmd, cwBase, cwToken)
 	}
 	pl, err := plan(snap)
 	if err != nil {
@@ -947,8 +1017,13 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 
 	st := SetupState{Platform: req.Platform, Language: req.Language, GuildID: guildID, ChannelID: channelID,
 		FallbackRole: pl.fallback, Team: pl.team, UpdatedAt: time.Now().Format(time.RFC3339)}
-	if req.Platform != "discord" {
+	if isFeishu {
 		st.FeishuChatID = req.Feishu.ChatID
+	}
+	if cloudWeb { // the Discord / Feishu fields stay as they were
+		st = state
+		st.Language, st.UpdatedAt = req.Language, time.Now().Format(time.RFC3339)
+		st.CloudWebURL, st.CloudWebFallback, st.CloudWebTeam = cwBase, pl.fallback, pl.team
 	}
 	if err := writeJSONFile(filepath.Join(env.DataDir, setupStateFile), st, 0o644); err != nil {
 		return fail("state", err)
@@ -998,8 +1073,9 @@ func fillRoleResults(res *WizardResult, pl *wizardPlan) {
 // planWizard fixes project names against the snapshot, fills defaults and builds
 // the config writes, merging the team wiring with what each project already has.
 func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state SetupState, dataDir, defaultAgent string,
-	clis []LocalCLI, guildID, channelID, allowFrom string, alwaysCmd bool) (*wizardPlan, error) {
+	clis []LocalCLI, guildID, channelID, allowFrom string, alwaysCmd bool, cwBase, cwToken string) (*wizardPlan, error) {
 	pl := &wizardPlan{}
+	cloudWeb := isCloudWebPlatform(req.Platform)
 	byProject := map[string]WizardExistingBot{}
 	byBotID := map[string]string{}
 	for _, b := range s.DiscordBots() {
@@ -1024,6 +1100,9 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 		case req.Platform == "discord" && w.botID != "" && byBotID[w.botID] != "":
 			// the same bot is already configured (matched by its bot ID): update that project (H2)
 			r.project, r.reused = byBotID[w.botID], true
+		case cloudWeb && sameCloudWebMember(s, cwBase, w, used) != "":
+			// the same member of the same platform is already configured: update it, don't add name-2
+			r.project, r.reused = sameCloudWebMember(s, cwBase, w, used), true
 		default:
 			// Can't rule out that it is one of the existing bots whose token can't be read
 			// (unset/empty env var): refuse rather than create a duplicate project with a
@@ -1114,6 +1193,18 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 			}
 		}
 	}
+	if cloudWeb && sameCloudWebHub(state.CloudWebURL, cwBase) {
+		if req.FallbackRole == "" {
+			req.FallbackRole = state.CloudWebFallback
+		}
+		for _, t := range state.CloudWebTeam {
+			if p, still := s.project(t.Project); still && !inRun[t.Project] {
+				if o, ok := p.Platforms["cloud_web"]; ok && sameCloudWebHub(fmt.Sprint(o["ws_url"]), cwBase) {
+					pl.team = append(pl.team, t)
+				}
+			}
+		}
+	}
 	for _, r := range pl.roles {
 		pl.team = append(pl.team, SetupTeamEntry{Project: r.project, Name: r.Name, BotID: r.botID, AgentType: r.AgentType})
 	}
@@ -1159,7 +1250,23 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 			p := ResolveWizardProvider(r.Provider.Vendor, r.AgentType, r.Provider.BaseURL, r.Provider.APIKey, r.Provider.Model)
 			pw.Provider = &p
 		}
-		if req.Platform == "discord" {
+		if cloudWeb {
+			pw.PlatformType = "cloud_web"
+			cur := s.projectPlatform(r.project, "cloud_web")
+			pw.Options["transport"] = "websocket"
+			pw.Options["ws_url"] = cloudWebBotURL(cwBase, r.project, r.Name, r.mentionID)
+			pw.Options["token"] = cwToken
+			if a, _ := cur["allow_from"].(string); strings.TrimSpace(a) == "" || strings.TrimSpace(a) == AllowFromUnset {
+				pw.Options["allow_from"] = cloudWebPresets[req.Platform].AllowFrom
+			}
+			// rh/cloudweb.py 文件头：hub 要求 group_reply_all = true（不然没 @ 它的消息在 gate 之前就被丢了）
+			// 和 share_session_in_channel = true（一个频道一个会话）。已有的值不改。
+			for _, k := range []string{"share_session_in_channel", "group_reply_all"} {
+				if _, set := cur[k]; !set {
+					pw.Options[k] = true
+				}
+			}
+		} else if req.Platform == "discord" {
 			// A reused bot's token (maybe "${ENV}") is not rewritten; the same bot found by its ID
 			// gets the typed token only if it changed and is not an env placeholder.
 			cur, _ := byProject[r.project].Options["token"].(string)
@@ -1197,7 +1304,77 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 	if req.Platform == "discord" && len(pl.team) > 1 {
 		pl.writes = mergeTeamWrites(pl.writes, pl.team, byProject, pl.fallback, pl.fallbackBot)
 	}
+	if cloudWeb && len(pl.team) > 1 {
+		pl.writes = cloudWebTeamWrites(pl.writes, pl.team, s, pl.fallback)
+	}
 	return pl, nil
+}
+
+// projectPlatform: the options of project's first platform of type t (nil when none).
+func (s WizardSnapshot) projectPlatform(project, t string) map[string]any {
+	if p, ok := s.project(project); ok {
+		return p.Platforms[t]
+	}
+	return nil
+}
+
+// sameCloudWebMember finds a project that is already this role on the platform at cwBase: its
+// cloud_web ws_url points at the same platform and carries the same display name (or, with no
+// name given, the project the name would become). Projects used earlier in the request are skipped.
+func sameCloudWebMember(s WizardSnapshot, cwBase string, w wizardIdentity, used map[string]bool) string {
+	want := w.Project
+	if want == "" {
+		want = cleanProjectName(w.Name)
+	}
+	for _, p := range s.Projects {
+		o, ok := p.Platforms["cloud_web"]
+		if !ok || used[p.Name] {
+			continue
+		}
+		u, _ := o["ws_url"].(string)
+		if !sameCloudWebHub(u, cwBase) {
+			continue
+		}
+		name := cloudWebQuery(u, "name")
+		if name == "" {
+			name = cloudWebQuery(u, "bot")
+		}
+		if (w.Name != "" && name == w.Name) || (want != "" && p.Name == want) {
+			return p.Name
+		}
+	}
+	return ""
+}
+
+// cloudWebTeamWrites wires several roles on one platform the way a Discord team is wired
+// (mergeTeamWrites): the fallback role answers when no gate can decide ("reply"), the others only
+// listen unless named ("context"); an @-mentioned role always answers (core/gate.go fallbackFor).
+// gate_url / gate_fallback are project-wide, so a project that already has a gate_url from its
+// Discord team or set by hand keeps it.
+func cloudWebTeamWrites(writes []WizardProjectWrite, team []SetupTeamEntry, s WizardSnapshot, fallback string) []WizardProjectWrite {
+	idx := map[string]int{}
+	for i, w := range writes {
+		idx[w.Name] = i
+	}
+	for _, t := range team {
+		ex, _ := s.project(t.Project)
+		_, hasDiscord := ex.Platforms["discord"]
+		if ex.GateURL != "" && (hasDiscord || !isWizardGateURL(ex.GateURL)) {
+			continue
+		}
+		i, ok := idx[t.Project]
+		if !ok {
+			writes = append(writes, WizardProjectWrite{Name: t.Project, Options: map[string]any{}})
+			i = len(writes) - 1
+			idx[t.Project] = i
+		}
+		gate, fb := defaultGateURL+"?bot="+t.Project, "context"
+		if t.Project == fallback {
+			gate, fb = defaultGateURL, "reply"
+		}
+		writes[i].GateURL, writes[i].GateFallback = &gate, &fb
+	}
+	return writes
 }
 
 // vendorsWithoutDefaultModel: their model must be given (no single sensible default).

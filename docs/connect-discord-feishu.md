@@ -23,7 +23,8 @@ cc-connect          # 第一次运行（还没配机器人）：建好配置，�
 
 除了下面这几项，其余全部用默认值，向导里不出现。
 
-1. **平台**：Discord 或飞书。一主多 sub、gate、角色之间交接都在 Discord 上做全；飞书这一轮只接一个机器人（缺什么见附录 B）。
+1. **平台**：Discord、飞书或自建平台。一主多 sub、gate、角色之间交接都在 Discord 上做全；飞书这一轮只接一个机器人（缺什么见附录 B）；
+   自建平台是自己的聊天网页，打开就能和角色聊，见下面第 7 节。
 2. **机器人**
    - Discord：先列出本机配置里已有的机器人，点一下直接用（沿用它原来的 project 名、work_dir 和人设，人设只有你勾了「改」才会写）；没有就按提示去[开发者后台](https://discord.com/developers/applications)
      建应用 → Bot → Reset Token，打开 **Message Content Intent**，把 token 填进来。向导校验 token（没开 intent 会提醒），
@@ -151,7 +152,35 @@ key 只留在 cc-connect 里。所以任何 OpenAI 兼容接口都能挂到这�
 | `roles/<project>/CLAUDE.md` 等 | 人设 + 回答语言（`<!-- conest:reply-language -->` 之后那行） | 对应的 CLI |
 | `jev.json`（权限 600） | `{"backend": "llm", "url", "model", "api_key", "logprobs", "tested_at"}` | gate（`contrib/gate/scorer_remote.py`）；角色小家 `[discord.router] key_file` |
 | `gate-team.json` | `{"lead": 兜底角色, "subs": 其他角色}`，key 是 project 名 = `gate_url` 的 `?bot=` | gate |
-| `conest-setup.json` | 平台、服务器 ID、默认频道 ID / 飞书默认群、兜底角色、团队（不含密钥） | 向导下次打开时；角色小家要默认频道时照抄 `channel_id` |
+| `conest-setup.json` | 平台、服务器 ID、默认频道 ID / 飞书默认群、兜底角色、团队（不含密钥）；自建平台另记 `cloud_web_url`、`cloud_web_fallback`、`cloud_web_team`，不动 Discord 的那几项 | 向导下次打开时；角色小家要默认频道时照抄 `channel_id` |
+| `hub/hub.json`（权限 600）、`hub/hub.sqlite3`、`hub/hub.log`、`hub/src/` | 向导「在本机启动」的自建平台：端口、网页登录 token、机器人 token；消息库；日志；解出来的程序 | cc-connect（启动时平台没在跑就拉起来） |
+
+## 7. 自建平台
+
+自建平台是 role-household 的 hub（`role-household/rh/hub.py`）：一个自己的聊天网页，像 Grok 那样打开就聊，`@名字` 叫哪个角色就哪个回。
+cc-connect 只是接进去：每个角色作为一个成员连平台的机器人入口（cloud_web 平台，`?bot=<project>`）。
+
+```
+ 选「自建平台」─▶ 本机有平台在跑？ ── 向导起的 ──▶ 地址和 token 自动填好
+                     │               └ 别人起的 ──▶ 地址填好，填它的 token，自动测连接
+                     └ 没有 ──▶「在本机启动」（要 uv）    或「连别人的平台」：填地址 + token，自动测连接
+               ─▶ 角色名（每个角色一个，可「再加一个角色」，已有的 Discord 机器人也能点一下接进来）
+               ─▶ 本机 CLI ─▶ 人设 ─▶（多个角色时）兜底角色、jev ─▶ 保存 ─▶ 重启生效 ─▶「打开自建平台」
+```
+
+- **在本机启动**：cc-connect 安装包里带着平台程序；起它要本机有 [uv](https://docs.astral.sh/uv/getting-started/installation/)（没有时按钮不能点，页面说怎么装）。
+  第一次会联网下载 Python 和两个依赖（aiohttp、cryptography），约半分钟；之后几秒。平台只听 127.0.0.1，端口默认 8790（被占时换一个空的），
+  数据在 `<数据目录>/hub/`。重启 cc-connect、重启电脑后，cc-connect 启动时发现它没在跑会再拉起来。
+- **测试连接**：和机器人一样连一次平台的 WebSocket，不注册，平台上不会多出成员。地址错（连不上 / 不是机器人入口）和 token 错（401）分别说怎么改。
+  token 错、地址错时什么都不写；平台暂时连不上时照样保存，并在结果里阻塞提醒 `cloud_web_unreachable`。
+- **写进配置**：每个角色的 `[[projects.platforms]]` 加一段 `type = "cloud_web"`：`transport = "websocket"`、`ws_url = "ws(s)://<平台>/cloud-web/ws?bot=<project>&name=<名字>"`、
+  `token`、`allow_from = "user"`（平台里的人是 `user`）、`share_session_in_channel = true`、`group_reply_all = true`（hub 要求这两项，见 `rh/cloudweb.py` 文件头）。
+  已有的 Discord 机器人接进来时 Discord 那段原样不动，还会带上 `mention_id=<Discord bot ID>`，人设里写的 `<@id>` 在平台上也能 @ 到它。
+  同一个平台上同名的角色再跑一次是更新原来那个，不会多出 `名字-2`。多个角色时像 Discord 组队一样写 `gate_url` / `gate_fallback`（已有 gate 设置的项目不动）。
+- **给 AI**：`cc-connect setup hub` 看本机平台、`cc-connect setup hub start` 起一个，然后
+  `cc-connect setup apply --json` 发 `{"platform": "cloud_web", "roles": [{"name": "<名字>"}]}`（本机向导起的平台地址和 token 自动填；连别人的加
+  `"cloud_web": {"url": "<地址>", "token": "<token>"}`）。字段见 `cc-connect setup apply -h`。
+- 以后要接的 DSH 网页走同一个协议，只是多一个预设（`bridge/core/setup_cloudweb.go` 的 `cloudWebPresets`，`allow_from` 不同）。
 
 ## 附录 A：手动接 Discord
 
