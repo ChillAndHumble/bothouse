@@ -63,8 +63,12 @@ func (m *schtasksManager) Install(cfg Config) error {
 		return fmt.Errorf("chmod task script: %w", err)
 	}
 
-	if err := stopWindowsTask(); err != nil {
+	handedOff, err := stopOrHandOff("install", windowsDeleteTaskPS()+windowsCreateTaskPS(scriptPath)+windowsStartTaskPS())
+	if err != nil {
 		slog.Warn("schtasks: stop existing task failed", "error", err)
+	}
+	if handedOff {
+		return nil
 	}
 	if err := deleteWindowsTask(); err != nil {
 		if windowsTaskMatchesAction(scriptPath) {
@@ -87,8 +91,13 @@ func (m *schtasksManager) Install(cfg Config) error {
 }
 
 func (*schtasksManager) Uninstall() error {
-	if err := stopWindowsTask(); err != nil {
+	handedOff, err := stopOrHandOff("uninstall", windowsDeleteTaskPS()+
+		fmt.Sprintf("Remove-Item -LiteralPath %s -Force -ErrorAction SilentlyContinue\n", powerShellLiteral(windowsTaskScriptPath())))
+	if err != nil {
 		slog.Warn("schtasks: stop task failed", "error", err)
+	}
+	if handedOff {
+		return nil
 	}
 	if err := deleteWindowsTask(); err != nil {
 		return err
@@ -111,7 +120,14 @@ func (*schtasksManager) Stop() error {
 }
 
 func (*schtasksManager) Restart() error {
-	return stopOrRestartWindowsTask(true)
+	handedOff, err := stopOrHandOff("restart", windowsStartTaskPS())
+	if err != nil {
+		slog.Warn("schtasks: stop before restart failed", "error", err)
+	}
+	if handedOff {
+		return nil
+	}
+	return startWindowsTask()
 }
 
 func (*schtasksManager) Status() (*Status, error) {
@@ -147,12 +163,7 @@ func windowsTaskActionArgs(scriptPath string) string {
 }
 
 func createWindowsTask(scriptPath string) error {
-	out, err := runPowerShell(fmt.Sprintf(`
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument %s
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName %s -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-`, powerShellLiteral(windowsTaskActionArgs(scriptPath)), powerShellLiteral(windowsTaskName)))
+	out, err := runPowerShell(windowsCreateTaskPS(scriptPath))
 	if err != nil {
 		return fmt.Errorf("register scheduled task: %s (%w)", out, err)
 	}
@@ -228,7 +239,10 @@ func powerShellLiteral(value string) string {
 }
 
 // stopWindowsTask stops the service: the task and everything its wrapper script started.
-func stopWindowsTask() error { return stopOrRestartWindowsTask(false) }
+func stopWindowsTask() error {
+	_, err := stopOrHandOff("stop", "")
+	return err
+}
 
 // windowsProcessTreePS collects the wrapper's process tree into $tree and this PowerShell's
 // ancestors into $anc. The wrapper is found by its command line (-File "<task script>", see
@@ -254,10 +268,10 @@ for ($d = 0; $d -lt 64 -and $null -ne $cur; $d++) {
 }
 `
 
-// windowsStopScript ends the task and the wrapper's whole process tree, then (start) starts the
-// task again. Stop-ScheduledTask alone only ends the wrapper powershell.exe: the cc-connect it
-// runs, and that one's agent CLIs, kept running as orphans and the bot stayed online.
-func windowsStopScript(start bool) string {
+// windowsStopPS ends the task and the wrapper's whole process tree. Stop-ScheduledTask alone only
+// ends the wrapper powershell.exe: the cc-connect it runs, and that one's agent CLIs, kept running
+// as orphans and the bot stayed online. Errors throw (no exit), so it can be followed by more steps.
+func windowsStopPS() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "$needle = '-File \"' + %s + '\"'\n", powerShellLiteral(windowsTaskScriptPath()))
 	sb.WriteString(windowsProcessTreePS)
@@ -271,44 +285,80 @@ for ($i = 0; $i -lt 20; $i++) {
 	if ($null -eq $task -or $task.State -ne 'Running') { $stopped = $true; break }
 	Start-Sleep -Milliseconds 500
 }
-if (-not $stopped) { Write-Error 'scheduled task did not stop within timeout'; exit 1 }
+if (-not $stopped) { throw 'scheduled task did not stop within timeout' }
 `, powerShellLiteral(windowsTaskName))
-	if start {
-		fmt.Fprintf(&sb, "if ($null -ne (Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue)) { Start-ScheduledTask -TaskName %[1]s }\n", powerShellLiteral(windowsTaskName))
-	}
-	sb.WriteString("exit 0\n")
 	return sb.String()
 }
 
-// stopOrRestartWindowsTask runs windowsStopScript, except when the caller is itself inside the
-// service's process tree — e.g. an agent the bot started runs `cc-connect daemon restart`, as
-// setup apply's next_steps suggest. Ending the tree would then kill the caller (and this
-// PowerShell) before the task is started again, leaving the bot down. In that case the same
-// script runs in a new process created through WMI (Win32_Process.Create), whose parent is the
-// WMI service, outside the tree; this call returns once it has been started.
-func stopOrRestartWindowsTask(start bool) error {
-	inner := windowsStopScript(start)
-	enc := base64.StdEncoding.EncodeToString(utf16LE(strictPowerShell(inner)))
+func windowsStartTaskPS() string {
+	return fmt.Sprintf(`
+$task = Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue
+if ($null -eq $task) { throw 'scheduled task not found' }
+if ($task.State -ne 'Running') { Start-ScheduledTask -TaskName %[1]s }
+`, powerShellLiteral(windowsTaskName))
+}
+
+func windowsDeleteTaskPS() string {
+	return fmt.Sprintf(`
+if ($null -ne (Get-ScheduledTask -TaskName %[1]s -ErrorAction SilentlyContinue)) { Unregister-ScheduledTask -TaskName %[1]s -Confirm:$false }
+`, powerShellLiteral(windowsTaskName))
+}
+
+func windowsCreateTaskPS(scriptPath string) string {
+	return fmt.Sprintf(`
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument %s
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName %s -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+`, powerShellLiteral(windowsTaskActionArgs(scriptPath)), powerShellLiteral(windowsTaskName))
+}
+
+// windowsHandOffLog is where a detached stop / restart / install / uninstall writes how it went.
+func windowsHandOffLog() string { return filepath.Join(DefaultDataDir(), "logs", "daemon-handoff.log") }
+
+// stopOrHandOff stops the service, unless the caller is itself inside the service's process tree:
+// an agent the bot started runs `cc-connect daemon restart` / `stop` / `install --force` /
+// `uninstall` (setup apply's next_steps suggest restart). Ending the tree would then kill the
+// caller (and this PowerShell) halfway, and the steps after the stop would never run or would
+// race with it — the service ends up gone or stopped while the command reported success. So in
+// that case the stop and everything after it (after: PowerShell for the rest of the operation)
+// run in a new process created through WMI (Win32_Process.Create), whose parent is the WMI
+// service, outside the tree; the result goes to windowsHandOffLog. handedOff = true means the
+// caller must not do the rest itself. Otherwise only the stop runs here and the caller goes on.
+func stopOrHandOff(op, after string) (handedOff bool, err error) {
+	logPath := windowsHandOffLog()
+	var d strings.Builder
+	fmt.Fprintf(&d, "$log = %s\n", powerShellLiteral(logPath))
+	fmt.Fprintf(&d, "function Write-HandOff($m) { New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null; Add-Content -LiteralPath $log -Encoding utf8 -Value ((Get-Date -Format o) + ' daemon %s: ' + $m) }\n", op)
+	d.WriteString("Write-HandOff 'started outside the service (the command was run from inside it)'\n")
+	d.WriteString("try {\n")
+	d.WriteString(windowsStopPS())
+	d.WriteString(after)
+	d.WriteString("\nWrite-HandOff 'done'\n} catch { Write-HandOff ('failed: ' + $_); exit 1 }\nexit 0\n")
+	enc := base64.StdEncoding.EncodeToString(utf16LE(strictPowerShell(d.String())))
+
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "$needle = '-File \"' + %s + '\"'\n", powerShellLiteral(windowsTaskScriptPath()))
 	sb.WriteString(windowsProcessTreePS)
 	fmt.Fprintf(&sb, `
 if (@($tree | Where-Object { $anc -contains $_ }).Count -gt 0) {
 	$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand %s' }
-	if ($r.ReturnValue -ne 0) { Write-Error ('could not start the detached stop: Win32_Process.Create returned ' + $r.ReturnValue); exit 1 }
+	if ($r.ReturnValue -ne 0) { Write-Error ('could not start the detached process: Win32_Process.Create returned ' + $r.ReturnValue); exit 1 }
 	Write-Output 'detached'
 	exit 0
 }
 `, enc)
-	sb.WriteString(inner)
+	sb.WriteString(windowsStopPS())
+	sb.WriteString("exit 0\n")
 	out, err := runPowerShell(sb.String())
 	if err != nil {
-		return fmt.Errorf("stop scheduled task: %s (%w)", out, err)
+		return false, fmt.Errorf("stop scheduled task: %s (%w)", out, err)
 	}
 	if strings.TrimSpace(out) == "detached" {
-		slog.Info("schtasks: called from inside the service; stop/restart continues in a detached process")
+		fmt.Fprintf(os.Stderr, "Run from inside the service: daemon %s continues in a separate process (this command and the bot's current run end). Result: %s\n", op, logPath)
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func utf16LE(s string) []byte {
@@ -321,11 +371,7 @@ func utf16LE(s string) []byte {
 }
 
 func startWindowsTask() error {
-	out, err := runPowerShell(fmt.Sprintf(`
-$task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
-if ($null -eq $task) { Write-Error 'scheduled task not found'; exit 1 }
-if ($task.State -ne 'Running') { Start-ScheduledTask -TaskName %s }
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+	out, err := runPowerShell(windowsStartTaskPS())
 	if err != nil {
 		return fmt.Errorf("start scheduled task: %s (%w)", out, err)
 	}
@@ -333,11 +379,7 @@ if ($task.State -ne 'Running') { Start-ScheduledTask -TaskName %s }
 }
 
 func deleteWindowsTask() error {
-	out, err := runPowerShell(fmt.Sprintf(`
-$task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
-if ($null -eq $task) { exit 0 }
-Unregister-ScheduledTask -TaskName %s -Confirm:$false
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+	out, err := runPowerShell(windowsDeleteTaskPS())
 	if err != nil {
 		return fmt.Errorf("delete scheduled task: %s (%w)", out, err)
 	}
