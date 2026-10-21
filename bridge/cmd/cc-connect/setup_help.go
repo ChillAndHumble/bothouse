@@ -43,7 +43,8 @@ Request JSON (only the fields marked REQUIRED must be given; everything else has
                      changes only the reply-language line of its persona file
     provider         {"vendor", "api_key", "base_url", "model"}: a third-party API instead of the CLI's own
                      login (vendors and native/converted: "setup matrix")
-  fallback_role      project that answers when no one is addressed (default: first role)
+  fallback_role      project that answers when no one is addressed (default: first role); cloud_web: the
+                     role's display name works too
   fallback_bot_id    the same, by Discord bot ID
   allow_from         Discord user IDs (comma-separated) the bots take orders from; "*" = anyone in the server.
                      Default: the owner of each bot's Discord application (looked up with the token).

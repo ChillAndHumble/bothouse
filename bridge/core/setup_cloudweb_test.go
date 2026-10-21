@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
+	"time"
 )
 
 // fakeHub answers the bot WebSocket handshake like rh/cloudweb.py handle: 401 for a wrong token,
@@ -316,4 +318,133 @@ func TestSetupCloudWebHTTP(t *testing.T) {
 		t.Fatalf("local: %v %v", resp, err)
 	}
 	resp.Body.Close()
+}
+
+// M1: a Discord run between two cloud_web runs keeps the cloud_web team, so the third run still
+// wires the new role as a sub (gate_url ?bot=, context) next to the earlier lead.
+func TestApplyWizardCloudWebTeamSurvivesDiscordRun(t *testing.T) {
+	noHardware(t)
+	noLocalHub(t)
+	hub := fakeHub(t, "bot-secret")
+	t1 := fakeToken("111")
+	fakeDiscord(t, map[string]string{t1: "Juzi"})
+	store := newMemStore()
+	dir := t.TempDir()
+	env := WizardEnv{Store: store, DataDir: dir, CLIs: testCLIs}
+	if res := ApplyWizard(context.Background(), env, cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "a"}, WizardRole{Name: "b"})); !res.Saved {
+		t.Fatalf("cloud_web 1: %+v", res)
+	}
+	if res := ApplyWizard(context.Background(), env, WizardRequest{Language: "zh", Discord: &struct {
+		GuildID   string `json:"guild_id"`
+		ChannelID string `json:"channel_id"`
+	}{GuildID: "900"}, Roles: []WizardRole{{Token: t1}}}); !res.Saved {
+		t.Fatalf("discord: %+v", res)
+	}
+	if st := LoadSetupState(dir); st.Platform != "discord" || len(st.CloudWebTeam) != 2 || st.CloudWebFallback != "a" {
+		t.Fatalf("state after discord run lost the cloud_web team: %+v", st)
+	}
+	res := ApplyWizard(context.Background(), env, cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "c"}))
+	if !res.Saved || res.FallbackRole != "a" {
+		t.Fatalf("cloud_web 2: %+v", res)
+	}
+	c := store.projects["c"]
+	if c == nil || c.GateURL == nil || *c.GateURL != defaultGateURL+"?bot=c" || *c.GateFallback != "context" {
+		t.Fatalf("c not wired as a sub: %+v", c)
+	}
+	if st := LoadSetupState(dir); len(st.CloudWebTeam) != 3 || len(st.Team) != 1 {
+		t.Fatalf("state = %+v", st)
+	}
+}
+
+// L1/L2: hub.json exists and its port is taken but nothing answers the handshake: no second hub
+// on the same hub.sqlite3, no move to another port (config.toml's ws_url points at this one).
+func TestStartLocalHubPortTakenNoSecondInstance(t *testing.T) {
+	noLocalHub(t)
+	oldFS, oldLook := hubSourceFS, lookPath
+	hubSourceFS = fstest.MapFS{"rh/hub.py": &fstest.MapFile{Data: []byte("# hub")}}
+	lookPath = func(bin string) (string, bool, error) { return "/nonexistent/uv", true, nil }
+	t.Cleanup(func() { hubSourceFS, lookPath = oldFS, oldLook })
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() { // accepts and never answers: a hub too busy to answer
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+		}
+	}()
+	port := l.Addr().(*net.TCPAddr).Port
+	dir := t.TempDir()
+	if err := writeJSONFile(filepath.Join(dir, "hub", "hub.json"), localHubState{Port: port, WebToken: "w", BotToken: "b"}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := cloudWebTestTimeout
+	cloudWebTestTimeout = 300 * time.Millisecond // 来源：测试里不用等满 5 秒
+	t.Cleanup(func() { cloudWebTestTimeout = old })
+	st, err := StartLocalHub(context.Background(), dir, "zh")
+	if err != nil || !st.Running || st.URL != localHubURL(port) {
+		t.Fatalf("status = %+v, %v", st, err)
+	}
+	if s, _ := loadLocalHubState(dir); s.Port != port {
+		t.Fatalf("port moved to %d", s.Port)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "hub", "hub.log")); err == nil {
+		t.Fatal("a second hub was started")
+	}
+}
+
+// L3: a redirect is reported (bots do not follow it), not taken for "connected".
+func TestTestCloudWebRedirect(t *testing.T) {
+	hub := fakeHub(t, "bot-secret")
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, hub.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer redir.Close()
+	r := TestCloudWeb(context.Background(), redir.URL, "bot-secret", "zh")
+	if r.OK || r.Code != "redirect" || r.Status != http.StatusFound || !strings.Contains(r.Message, hub.URL) || r.Fix == "" {
+		t.Fatalf("redirect: %+v", r)
+	}
+}
+
+// L4: the web wizard names the fallback by display name; a re-run that reuses an existing member
+// of that name still picks it (the page guessed "a-2").
+func TestApplyWizardCloudWebFallbackByName(t *testing.T) {
+	noHardware(t)
+	noLocalHub(t)
+	hub := fakeHub(t, "bot-secret")
+	store := newMemStore()
+	dir := t.TempDir()
+	env := WizardEnv{Store: store, DataDir: dir, CLIs: testCLIs}
+	if res := ApplyWizard(context.Background(), env, cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "Alpha"})); !res.Saved {
+		t.Fatalf("first: %+v", res)
+	}
+	req := cloudWebReq(hub.URL, "bot-secret", WizardRole{Name: "b"}, WizardRole{Name: "Alpha"})
+	req.FallbackRole = "Alpha" // display name (project: alpha)
+	res := ApplyWizard(context.Background(), env, req)
+	if !res.Saved || res.FallbackRole != "alpha" || !res.Roles[1].Fallback || !res.Roles[1].Reused {
+		t.Fatalf("fallback by name: %+v", res)
+	}
+	req.FallbackRole = "alpha-2" // the page's guessed project name: not a team member → first role, with a note
+	if res := ApplyWizard(context.Background(), env, req); res.FallbackRole != "b" {
+		t.Fatalf("unknown fallback: %+v", res.FallbackRole)
+	}
+}
+
+// L5: localhost is this machine: same hub as 127.0.0.1, so the local token is filled in.
+func TestCloudWebLocalhostIsLocal(t *testing.T) {
+	if got, _ := cloudWebWSBase("http://localhost:8790"); got != "ws://127.0.0.1:8790/cloud-web/ws" {
+		t.Fatalf("localhost base = %q", got)
+	}
+	dir := t.TempDir()
+	if err := writeJSONFile(filepath.Join(dir, "hub", "hub.json"), localHubState{Port: 8790, WebToken: "w", BotToken: "b"}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, tok := resolveCloudWeb(dir, "http://localhost:8790/", ""); tok != "b" {
+		t.Fatalf("localhost did not get the local token: %q", tok)
+	}
 }

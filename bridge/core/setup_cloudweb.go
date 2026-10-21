@@ -76,6 +76,15 @@ func cloudWebWSBase(raw string) (string, error) {
 	if err != nil || u.Host == "" {
 		return "", fmt.Errorf("not an address: %q", raw)
 	}
+	// localhost = this machine: written as 127.0.0.1, which the local hub listens on (localhost may
+	// resolve to ::1 first) and which the local hub's address is compared with (resolveCloudWeb)
+	if u.Hostname() == "localhost" {
+		if p := u.Port(); p != "" {
+			u.Host = "127.0.0.1:" + p
+		} else {
+			u.Host = "127.0.0.1"
+		}
+	}
 	path := strings.TrimRight(u.Path, "/")
 	switch u.Scheme {
 	case "http", "https":
@@ -153,7 +162,7 @@ func cloudWebQuery(wsURL, key string) string {
 
 // ── test connection ───────────────────────────────────────────
 
-// CloudWebTestResult: code is ok | unauthorized | unreachable | not_found | bad_url | error.
+// CloudWebTestResult: code is ok | unauthorized | unreachable | not_found | redirect | bad_url | error.
 type CloudWebTestResult struct {
 	OK      bool   `json:"ok"`
 	Code    string `json:"code"`
@@ -174,7 +183,7 @@ func TestCloudWeb(ctx context.Context, rawURL, token, lang string) CloudWebTestR
 		return cloudWebTestText(lang, CloudWebTestResult{Code: "bad_url"}, err.Error())
 	}
 	res := CloudWebTestResult{PageURL: cloudWebPageURL(base)}
-	status, err := cloudWebHandshake(ctx, base, token)
+	status, location, err := cloudWebHandshake(ctx, base, token)
 	res.Status = status
 	switch {
 	case err != nil:
@@ -186,6 +195,9 @@ func TestCloudWeb(ctx context.Context, rawURL, token, lang string) CloudWebTestR
 		res.Code = "unauthorized"
 	case status == http.StatusNotFound:
 		res.Code = "not_found"
+	case status >= 300 && status < 400:
+		res.Code = "redirect"
+		return cloudWebTestText(lang, res, location)
 	default:
 		res.Code = "error"
 	}
@@ -194,10 +206,11 @@ func TestCloudWeb(ctx context.Context, rawURL, token, lang string) CloudWebTestR
 
 // cloudWebHandshake returns the HTTP status of a WebSocket upgrade to wsBase (stdlib only: core
 // does not import a WebSocket library). A 101 body is the raw connection; it is closed at once.
-func cloudWebHandshake(ctx context.Context, wsBase, token string) (int, error) {
+// A redirect is not followed (a bot does not follow one either): the status and Location come back.
+func cloudWebHandshake(ctx context.Context, wsBase, token string) (int, string, error) {
 	u, err := url.Parse(wsBase)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if u.Scheme == "wss" {
 		u.Scheme = "https"
@@ -208,7 +221,7 @@ func cloudWebHandshake(ctx context.Context, wsBase, token string) (int, error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	key := make([]byte, 16)
 	_, _ = rand.Read(key)
@@ -219,13 +232,15 @@ func cloudWebHandshake(ctx context.Context, wsBase, token string) (int, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirectClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	resp.Body.Close()
-	return resp.StatusCode, nil
+	return resp.StatusCode, resp.Header.Get("Location"), nil
 }
+
+var noRedirectClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
 func cloudWebTestText(lang string, r CloudWebTestResult, detail string) CloudWebTestResult {
 	switch r.Code {
@@ -246,6 +261,11 @@ func cloudWebTestText(lang string, r CloudWebTestResult, detail string) CloudWeb
 		r.Fix = tr3(lang, "看地址和端口有没有写错、平台有没有在运行；在别的电脑上的平台要用那台电脑的地址，不能写 127.0.0.1。",
 			"アドレスとポートが正しいか、プラットフォームが動いているかを確認してください。別のコンピューターのプラットフォームなら 127.0.0.1 ではなくそのコンピューターのアドレスを使います。",
 			"Check the address and port, and that the platform is running. A platform on another computer needs that computer's address, not 127.0.0.1.")
+	case "redirect":
+		r.Message = tr3(lang, "这个地址把请求转到了别处（"+detail+"），机器人不会跟着跳。", "このアドレスは別の場所へ転送しています（"+detail+"）。ボットは転送先についていきません。",
+			"This address redirects elsewhere ("+detail+"); bots do not follow redirects.")
+		r.Fix = tr3(lang, "直接填跳转后的地址（常见：http 换成 https，或者少了/多了路径）。", "転送先のアドレスを直接入れてください（よくある例：http を https に、パスの過不足）。",
+			"Enter the final address instead (often http → https, or a path too many / too few).")
 	case "bad_url":
 		r.Message = tr3(lang, "地址格式不对："+detail, "アドレスの形式が違います："+detail, "Not a valid address: "+detail)
 		r.Fix = tr3(lang, "写成 http://主机:端口 或 https://域名。", "http://ホスト:ポート または https://ドメイン の形で入れてください。", "Use http://host:port or https://domain.")
@@ -313,7 +333,7 @@ func GetLocalHubStatus(ctx context.Context, dataDir, lang string) LocalHubStatus
 		st.Managed, st.TokenKnown, st.URL = true, true, localHubURL(s.Port)
 		st.LogFile = filepath.Join(localHubDir(dataDir), "hub.log")
 		if base, err := cloudWebWSBase(st.URL); err == nil {
-			if code, err := cloudWebHandshake(ctx, base, s.BotToken); err == nil && code == http.StatusSwitchingProtocols {
+			if code, _, err := cloudWebHandshake(ctx, base, s.BotToken); err == nil && code == http.StatusSwitchingProtocols {
 				st.Running = true
 				st.OpenURL = st.URL + "/#token=" + url.QueryEscape(s.WebToken)
 			}
@@ -323,7 +343,7 @@ func GetLocalHubStatus(ctx context.Context, dataDir, lang string) LocalHubStatus
 		u := localHubURL(localHubPort)
 		if base, err := cloudWebWSBase(u); err == nil && (!st.Managed || st.URL != u) {
 			// no token: a CWIP server answers 401 (rh/cloudweb.py handle)
-			if code, err := cloudWebHandshake(ctx, base, ""); err == nil && (code == http.StatusUnauthorized || code == http.StatusSwitchingProtocols) {
+			if code, _, err := cloudWebHandshake(ctx, base, ""); err == nil && (code == http.StatusUnauthorized || code == http.StatusSwitchingProtocols) {
 				st = LocalHubStatus{Running: true, URL: u}
 			}
 		}
@@ -397,10 +417,17 @@ func StartLocalHub(ctx context.Context, dataDir, lang string) (LocalHubStatus, e
 	s, had := loadLocalHubState(dataDir)
 	if !had {
 		// 来源：实现者定，24 字节随机数（48 个十六进制字符），比管理口令的 16 字节长一些
-		s = localHubState{WebToken: GenerateToken(24), BotToken: GenerateToken(24)}
-	}
-	if s.Port == 0 || !portFree(s.Port) {
-		s.Port = pickHubPort()
+		s = localHubState{WebToken: GenerateToken(24), BotToken: GenerateToken(24), Port: pickHubPort()}
+	} else if !portFree(s.Port) {
+		// Its port is in use but the handshake above failed: most likely this hub, still busy or slow
+		// to answer. Never start a second one on the same hub.sqlite3, and never move to another port
+		// (config.toml's ws_url points at this one): treat it as running and let the apply-time test tell.
+		u := localHubURL(s.Port)
+		return LocalHubStatus{Running: true, Managed: true, TokenKnown: true, URL: u, OpenURL: u + "/#token=" + url.QueryEscape(s.WebToken),
+			LogFile: filepath.Join(localHubDir(dataDir), "hub.log"),
+			Hint: tr3(lang, "端口 "+strconv.Itoa(s.Port)+" 已被占用，按向导之前起的平台还在运行处理（没回握手，可能正忙）。保存时会再测一次连接；如果占端口的是别的程序，关掉它再点「重新检测」。",
+				"ポート "+strconv.Itoa(s.Port)+" は使用中です。以前ウィザードが起動したプラットフォームがまだ動いているものとして扱います（応答がなく、混んでいる可能性があります）。保存時にもう一度接続をテストします。別のプログラムが使っている場合はそれを止めて「再検出」を押してください。",
+				"Port "+strconv.Itoa(s.Port)+" is in use: treated as the platform this wizard started, still running (it did not answer, maybe busy). Saving tests the connection again; if another program holds the port, stop it and click \"Detect again\".")}, nil
 	}
 	if err := startHubProcess(dataDir, &s); err != nil {
 		return LocalHubStatus{}, err
@@ -408,7 +435,7 @@ func StartLocalHub(ctx context.Context, dataDir, lang string) (LocalHubStatus, e
 	base, _ := cloudWebWSBase(localHubURL(s.Port))
 	deadline := time.Now().Add(localHubStartWait)
 	for time.Now().Before(deadline) {
-		if code, err := cloudWebHandshake(ctx, base, s.BotToken); err == nil && code == http.StatusSwitchingProtocols {
+		if code, _, err := cloudWebHandshake(ctx, base, s.BotToken); err == nil && code == http.StatusSwitchingProtocols {
 			return GetLocalHubStatus(ctx, dataDir, lang), nil
 		}
 		select {
@@ -430,7 +457,7 @@ func EnsureLocalHub(ctx context.Context, dataDir string) {
 		return
 	}
 	base, _ := cloudWebWSBase(localHubURL(s.Port))
-	if code, err := cloudWebHandshake(ctx, base, s.BotToken); err == nil && code == http.StatusSwitchingProtocols {
+	if code, _, err := cloudWebHandshake(ctx, base, s.BotToken); err == nil && code == http.StatusSwitchingProtocols {
 		return
 	}
 	if ok, missing := localHubCanStart(); !ok {

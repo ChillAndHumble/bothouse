@@ -1020,6 +1020,8 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 	if isFeishu {
 		st.FeishuChatID = req.Feishu.ChatID
 	}
+	// a Discord / Feishu run keeps the cloud_web team (planWizard merges it on the next cloud_web run)
+	st.CloudWebURL, st.CloudWebFallback, st.CloudWebTeam = state.CloudWebURL, state.CloudWebFallback, state.CloudWebTeam
 	if cloudWeb { // the Discord / Feishu fields stay as they were
 		st = state
 		st.Language, st.UpdatedAt = req.Language, time.Now().Format(time.RFC3339)
@@ -1211,6 +1213,15 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 
 	// fallback role (unit = bot): one of the team's bots, else the first bot of this run (L3)
 	pl.fallback = req.FallbackRole
+	if cloudWeb && req.FallbackRole != "" {
+		// the web wizard names the fallback by display name: its guess of a project name can differ
+		// from the one planned here (an existing member of the same name is reused, sameCloudWebMember)
+		for _, r := range pl.roles {
+			if r.Name == req.FallbackRole {
+				pl.fallback = r.project
+			}
+		}
+	}
 	if req.FallbackBotID != "" {
 		for _, t := range pl.team {
 			if t.BotID == req.FallbackBotID {

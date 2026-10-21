@@ -300,7 +300,10 @@ export default function SetupWizard() {
         ...(r.useProvider ? { provider: { vendor: r.provider.vendor, base_url: r.provider.base_url || undefined,
           api_key: mask(r.provider.api_key, '<API_KEY>'), model: r.provider.model || undefined } } : {}),
       })),
-      fallback_role: platform !== 'feishu' ? fallback : undefined,
+      // 自建平台: by display name (unique there) — a re-run reuses an existing member of the same name,
+      // so the project name guessed here (projectNames) can differ from the one the server plans
+      fallback_role: platform === 'cloud_web' ? nameOf(roles.find((r) => projectOf(r) === fallback) || roles[0])
+        : platform !== 'feishu' ? fallback : undefined,
       fallback_bot_id: platform === 'discord' ? roles.find((r) => projectOf(r) === fallback)?.info?.bot_id : undefined,
     };
     if (platform === 'discord') {
