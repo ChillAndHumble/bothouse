@@ -498,7 +498,8 @@ func startHubProcess(dataDir string, s *localHubState) error {
 		"--db", filepath.Join(dir, "hub.sqlite3"))
 	cmd := exec.Command(uv, args...)
 	cmd.Dir = src
-	cmd.Env = append(os.Environ(), "RH_HUB_TOKEN="+s.WebToken, "RH_BOT_TOKEN="+s.BotToken)
+	// PYTHONIOENCODING：stdout 接到日志文件时 Windows 的 Python 默认按 cp1252 写，hub 打印中文启动行就崩（PR #5 Windows 实测）
+	cmd.Env = append(os.Environ(), "RH_HUB_TOKEN="+s.WebToken, "RH_BOT_TOKEN="+s.BotToken, "PYTHONIOENCODING=utf-8")
 	cmd.Stdout, cmd.Stderr = logf, logf
 	detachProcess(cmd)
 	if err := cmd.Start(); err != nil {
