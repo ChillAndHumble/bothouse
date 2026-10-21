@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/chenhg5/cc-connect/core"
@@ -12,11 +13,11 @@ func TestBuildDiscordProgressDescription_OneLineBar(t *testing.T) {
 		Items: []core.ProgressCardEntry{{Kind: core.ProgressEntryToolUse, Tool: "Bash", Text: "go test"}},
 	}
 	got := buildDiscordProgressDescription(payload)
-	if got != "第 12 步 · 3分20秒\n🔧 运行命令 · go test" {
-		t.Fatalf("running card = %q", got)
+	if strings.Contains(got, "\n") || !strings.HasPrefix(got, "第 12 步 · 3分20秒 · 🔧 Bash") {
+		t.Fatalf("running bar = %q", got)
 	}
 	payload.State = core.ProgressCardStateCompleted
-	if got := buildDiscordProgressDescription(payload); got != "第 12 步 · 3分20秒\n🔧 运行命令 · go test" {
-		t.Fatalf("completed card = %q", got)
+	if got := buildDiscordProgressDescription(payload); got != "第 12 步 · 3分20秒" {
+		t.Fatalf("completed bar = %q", got)
 	}
 }
