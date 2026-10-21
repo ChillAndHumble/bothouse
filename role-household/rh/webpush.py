@@ -68,8 +68,10 @@ class Vapid:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         tmp.unlink(missing_ok=True)   # 上次留下的 .tmp 可能是别的权限：删掉重建（O_EXCL），再 fchmod 一次（代码审查第 3 条）
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        os.fchmod(fd, 0o600)
+        # O_BINARY：Windows 上不加会按文本模式写（\n 变 \r\n）；别的系统没有这个标志，取 0
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        if hasattr(os, "fchmod"):   # Windows 没有 fchmod（也没有这套权限位）：cc-connect 向导在 Windows 上起 hub 时会在这里崩
+            os.fchmod(fd, 0o600)
         with os.fdopen(fd, "wb") as f:
             f.write(pem)
         os.replace(tmp, path)   # 两个进程同时开时不会读到写了一半的文件
