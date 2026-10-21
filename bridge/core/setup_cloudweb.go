@@ -661,3 +661,54 @@ func resolveCloudWeb(dataDir, rawURL, token string) (string, string) {
 	}
 	return rawURL, token
 }
+
+// ── team line in the persona ──────────────────────────────────
+
+// teamMarker starts the one-line team section the wizard keeps in the persona of each member of a
+// team on the self-hosted platform, the same way as the reply-language line (WithReplyLanguage):
+// the lead has to know whom it can hand work to, and by what name, to @ them in the channel.
+const teamMarker = "<!-- conest:team -->"
+
+// WithTeam replaces the line after the team marker, or appends marker + line when there is none.
+func WithTeam(persona, line string) string {
+	eol := "\n"
+	if strings.Contains(persona, "\r\n") {
+		eol = "\r\n"
+	}
+	if i := strings.Index(persona, teamMarker); i >= 0 {
+		rest := strings.TrimPrefix(strings.TrimPrefix(persona[i+len(teamMarker):], "\r"), "\n")
+		after := ""
+		if j := strings.Index(rest, "\n"); j >= 0 {
+			after = rest[j+1:]
+		}
+		return persona[:i] + teamMarker + eol + line + eol + after
+	}
+	persona = strings.TrimRight(persona, "\r\n")
+	if persona != "" {
+		persona += eol + eol
+	}
+	return persona + teamMarker + eol + line + eol
+}
+
+// cloudWebTeamLine: who is on the team and how hand-offs work, for member self.
+func cloudWebTeamLine(lang string, team []SetupTeamEntry, fallback, self string) string {
+	leadName := ""
+	var subs []string
+	for _, t := range team {
+		if t.Project == fallback {
+			leadName = t.Name
+		} else {
+			subs = append(subs, t.Name)
+		}
+	}
+	if self == fallback {
+		return tr3(lang,
+			"你是团队的队长，队员有："+strings.Join(subs, "、")+"（都在同一个频道里）。要把活派给谁，就在频道里写「@名字」加上要做的事；她做完的最终回复会自动 @ 回你，你再汇总给提问的人。",
+			"あなたはチームのリーダーです。メンバー："+strings.Join(subs, "、")+"（同じチャンネルにいます）。仕事を任せるときはチャンネルで「@名前」と書いて内容を伝えてください。終わった最終回答は自動であなたに @ が付いて返ってくるので、まとめて質問者に伝えてください。",
+			"You lead the team; members: "+strings.Join(subs, ", ")+" (all in the same channel). To hand work to one, write \"@name\" and the task in the channel; her final answer comes back to you with an @ automatically, then you sum up for whoever asked.")
+	}
+	return tr3(lang,
+		"你在一个团队里，队长是「"+leadName+"」（都在同一个频道里）。队长 @ 你派的活，做完后你的最终回复会自动 @ 回队长；要找队友就在频道里写「@名字」。",
+		"あなたはチームの一員で、リーダーは「"+leadName+"」です（同じチャンネルにいます）。リーダーが @ で任せた仕事の最終回答には自動でリーダーへの @ が付きます。仲間を呼ぶときはチャンネルで「@名前」と書いてください。",
+		"You are on a team led by \""+leadName+"\" (all in the same channel). When the lead @-s you with work, your final answer goes back to the lead with an @ automatically; to call a teammate, write \"@name\" in the channel.")
+}
