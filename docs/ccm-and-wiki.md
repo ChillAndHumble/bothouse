@@ -28,7 +28,7 @@ maomao 多出来的功能说明见 [bridge/MAOMAO.md](../bridge/MAOMAO.md)。
 **可以不装。** 没有 gate 时，被 @ 的角色照常回，其余消息都由兜底角色回；向导配出来的配置不装 gate 也能用。
 装 gate 是为了让 AI 自己判断一句话该谁回：第一次运行要装 Python 依赖、下载约 3GB 的本地模型，要几十分钟（国内网络更久）。
 
-下面的命令都在 conest 仓库根目录运行（没 clone 过的先 `git clone https://github.com/Zssan12/conest.git && cd conest`）。
+下面的命令都在 conest 仓库根目录运行（没 clone 过的先 `git clone https://github.com/zuiho-kai/conest.git && cd conest`）。
 
 ```sh
 GATE_WIKI=~/wiki uv run bridge/contrib/gate/gate.py

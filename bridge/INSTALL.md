@@ -10,18 +10,18 @@
 
 ```sh
 # 仓库公开后
-curl -fsSL https://raw.githubusercontent.com/Zssan12/conest/main/install.sh | sh
-# 仓库私有时（先装 GitHub CLI 并 gh auth login，账号要能看到 Zssan12/conest）
-gh api repos/Zssan12/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
+curl -fsSL https://raw.githubusercontent.com/zuiho-kai/conest/main/install.sh | sh
+# 仓库私有时（先装 GitHub CLI 并 gh auth login，账号要能看到 zuiho-kai/conest）
+gh api repos/zuiho-kai/conest/contents/install.sh -H 'Accept: application/vnd.github.raw' | sh
 ```
 
 Windows（PowerShell）：
 
 ```powershell
 # 仓库公开后
-irm https://raw.githubusercontent.com/Zssan12/conest/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/zuiho-kai/conest/main/install.ps1 | iex
 # 仓库私有时（先 winget install GitHub.cli，再 gh auth login）
-gh api repos/Zssan12/conest/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex
+gh api repos/zuiho-kai/conest/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String | iex
 ```
 
 装到 `~/.local/bin/cc-connect`（Windows：`%USERPROFILE%\.local\bin\cc-connect.exe`，并加进用户 PATH），不用 Go 和 Node。`CONEST_VERSION=<tag>` 装指定版本，`INSTALL_DIR=<目录>` 换位置（PowerShell 里写 `$env:CONEST_VERSION='<tag>'`）。

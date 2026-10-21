@@ -23,9 +23,9 @@ import (
 
 // conest: same as cmd/cc-connect/update.go — conest's own releases; no gitee mirror, so both point at GitHub.
 const (
-	githubReleasesAPI = "https://api.github.com/repos/Zssan12/conest/releases"
+	githubReleasesAPI = "https://api.github.com/repos/zuiho-kai/conest/releases"
 	giteeReleasesAPI  = githubReleasesAPI
-	githubDownload    = "https://github.com/Zssan12/conest/releases/download"
+	githubDownload    = "https://github.com/zuiho-kai/conest/releases/download"
 	giteeDownload     = githubDownload
 )
 
