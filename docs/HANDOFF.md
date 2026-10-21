@@ -1,5 +1,12 @@
 # 共栖当前交接
 
+## 2026-10-21 22:14 JST：龙娘接续 bothouse 软件仓库准备
+
+本分支关联 bothouse #1，同步 conest #8/#9 的自建平台组队修复，并补旧队长点名 ID 改动后的已有队员交回回归。MIT、中英首页、X/B 站脚本草稿转入软件仓库；未带回旧首页存档和不存在的视频，目标／状态／架构按软件定位整理。旧代码里的 3 轮／20 次接力限制早已移除，对外文案已纠正。
+
+Go 全量 47 包、CUJ、目标 vet、Windows 交叉构建、前端构建通过；Camoufox 隔离网页保存两个角色、真实 CLI 增员和重配两次通过。网页与 CLI 仅用测试 hub，不调用真实模型，不接真实频道。原仓库对应补丁另同步到 conest #9。详细证据与未完成项见[核验记录](verification/bothouse-prelaunch-20261021.md)。
+
+仓库保持私有，尚无 Release，新仓库一行安装和真实模型闭环未验；真实 Windows 桌面未验；宣传片等用户看稿后才制作。新增补丁由本龙完成，按协作规则待橘独立验收，不把本轮自查写成最终通过。
 2026-10-21 PR #230 CI #387 修复：runner3 的 Node22.23.3/npm10.9.9 使用全新目录和缓存执行 npx vitest@4.1.11，仍复现 Arborist edgesOut 空引用；不是工作目录权限或旧缓存。新增 dsh/package.json 与完整 package-lock，CI 保留 RUNNER_TEMP 每 job 隔离，复制锁文件后 npm ci 并直接调用 Vitest。安装成功后暴露两个测试只等待10次微任务、早于 Response.json 完成的假失败；改为等待明确的频道状态/事件流，保留全部8项断言。原 runner 同版本、空缓存验证锁定安装与8项测试通过，锁文件哈希不变；本机8项与 actionlint 通过。最新 Actions 全量结果以 PR 为准；同一 Codex 自查，未合并、未部署。
 
 2026-10-21 Issue #229 / PR #230 审查修复：gpt-6-astra 对 `dsh/collab/` 的 8 条发现经源码核实后全部处理——DSH 成员 job 记录输入 id，只认领消费该输入的那一轮（网页里同一 Session 的私聊轮次不再外发）；重启恢复撤回未消费输入、按所属轮次补发、不重发，丢失的输入不再卡住队列；消息与 job 同事务写入；恢复与新 @ 共用队列；卸载先停队列再关库；preset scope 全路径释放；提示词窗口始终包含触发消息；`/collab` 断线补齐按连续游标分页。存储 schema v2（jobs.input_id）可从 v1 原地迁移。21 项 node 单测通过；隔离 DSH_HOME + mock LLM 真机复验：回复经输入 id 绑定、v1 库迁移成功。更正：此前记录的「`gate_fallback = "context"` 让没 @ 的消息静默」不成立，没有 gate 时该项不生效，测试 bot 改为 `group_reply_all = false`。另修 CI：vitest 改装到 RUNNER_TEMP 再运行（npx 在仓库根触发 npm arborist 错误）。未部署。

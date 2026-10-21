@@ -999,6 +999,7 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 			path := PersonaFilePath(p.AgentType, p.WorkDir)
 			b, err := os.ReadFile(path)
 			if err != nil || !(strings.Contains(string(b), replyLanguageMarker) || strings.Contains(string(b), teamMarker)) {
+				addStep(res, "team", nil, stepTeamLineSkipped(req.Language, t.Name, path))
 				continue
 			}
 			lang := req.Language
@@ -1008,6 +1009,7 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 			if err := AtomicWriteFile(path, []byte(WithTeam(string(b), cloudWebTeamLine(lang, pl.team, pl.fallback, t.Project))), 0o644); err != nil {
 				return fail("team", err)
 			}
+			addStep(res, "team", nil, stepTeamLineWritten(req.Language, t.Name, path))
 		}
 		addStep(res, "team", nil, stepTeam(req.Language, len(pl.team), pl.fallbackName))
 	}
@@ -1447,9 +1449,19 @@ func cloudWebTeamWrites(writes []WizardProjectWrite, team []SetupTeamEntry, s Wi
 	lead := ""
 	teamIDs := map[string]bool{}
 	for i := range team {
+		// Older wizard-owned links still point at the recorded ID when a member's address
+		// has been edited. Recognise both IDs so those links follow the current lead.
+		if isDigits(team[i].BotID) {
+			teamIDs[team[i].BotID] = true
+		}
+		// the address in config.toml is what the bot really connects with: its mention_id wins over the
+		// wizard's record (conest-setup.json), which may be older or hand-edited around
 		cur := s.projectPlatform(team[i].Project, "cloud_web")
-		if team[i].BotID == "" { // an earlier member saved before mention IDs were written
-			team[i].BotID = cloudWebMentionID(cur, "", cwBase, team[i].Project)
+		u, _ := cur["ws_url"].(string)
+		if m := cloudWebQuery(u, "mention_id"); m != "" && isDigits(m) {
+			team[i].BotID = m
+		} else if team[i].BotID == "" || !isDigits(team[i].BotID) { // saved before mention IDs were written
+			team[i].BotID = cloudWebMentionID(nil, "", cwBase, team[i].Project)
 		}
 		teamIDs[team[i].BotID] = true
 		if team[i].Project == fallback {
@@ -1461,7 +1473,7 @@ func cloudWebTeamWrites(writes []WizardProjectWrite, team []SetupTeamEntry, s Wi
 		w := write(t.Project)
 		if u, _ := cur["ws_url"].(string); u != "" && cloudWebQuery(u, "mention_id") == "" && w.Options["ws_url"] == nil {
 			w.PlatformType = "cloud_web"
-			w.Options["ws_url"] = cloudWebBotURL(stripQuery(u), cloudWebQuery(u, "bot"), cloudWebQuery(u, "name"), t.BotID)
+			w.Options["ws_url"] = withQueryParam(u, "mention_id", t.BotID)
 		}
 		if lb, _ := cur["team_lead_bot"].(string); lb == "" || teamIDs[lb] {
 			switch {

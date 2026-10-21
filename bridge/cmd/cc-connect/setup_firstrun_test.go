@@ -39,6 +39,8 @@ func captureStdout(t *testing.T, f func()) string {
 // First run: the browser gets the link, and the terminal always shows it too (a browser that
 // "opened" may be on another screen). Over SSH: no browser, plus the ssh -L forward.
 func TestAnnounceSetupWizardAlwaysPrintsLink(t *testing.T) {
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
 	t.Setenv("LANG", "zh_CN.UTF-8")
 	t.Setenv("SSH_CONNECTION", "")
 	t.Setenv("SSH_TTY", "")

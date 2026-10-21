@@ -667,6 +667,9 @@ export default function SetupWizard() {
                     {r.existingWorkDir ? T.editExistingPersona : T.noWorkDir}
                   </label>
                 )}
+                {r.reuse_project && !r.editPersona && platform === 'cloud_web' && roles.length > 1 && (
+                  <p className="text-xs text-gray-500" data-testid={`cw-team-line-note-${idx}`}>{T.cwTeamLineNote}</p>
+                )}
                 {(!r.reuse_project || r.editPersona) ? (
                   <>
                     <div className="flex flex-wrap gap-1.5">

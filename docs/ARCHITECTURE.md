@@ -1,84 +1,49 @@
-# 当前架构
+# bothouse 软件架构
 
-工具代批：Discord 适配器负责真实审批账号与显式指令解析；core 通过 PermissionDelegationPlatform 校验名单，并以随机编号绑定单一挂起请求。名单来自操作者配置，任务正文不能修改。原适配器 RespondPermission 继续执行后端权限策略。见[代批说明](DELEGATED_PERMISSIONS.md)。
+bothouse 把聊天平台与本机智能体连接起来，在会话层增加团队协作、进展反馈与可选的共享记忆。平台入口、模型后端和记忆目录分别配置。
 
-团队状态栏通过共享 team 心跳中的最小任务投影（标题、状态、会话归属、平台返回的卡片链接）汇总入口；公开进展日志仍是任务事实来源。投影只索引活跃任务和等待用户的事项，结果/失败/取消移出索引，历史不删除。主 bot 按原频道过滤、只编辑自己的置顶状态栏；平台负责真实消息链接和置顶 API，core 不拼平台 URL。详见[公开进展说明](PUBLIC_PROGRESS.md)。
+## 消息如何流动
 
-## 边界和数据归属
+```mermaid
+flowchart LR
+  P[Discord / 飞书 / 自建网页频道] --> A[platform 适配器]
+  A --> E[Engine 与频道会话]
+  E --> C[agent 适配器]
+  C --> L[本机 CLI 或 ACP 智能体]
+  L --> C
+  C --> E
+  E --> A
+  A --> P
+  E <--> G[可选 gate]
+  G <--> W[共享 wiki]
+```
 
-| 模块 | 职责与接口 | 为什么独立 |
-| --- | --- | --- |
-| bridge/core | Engine、会话、队列、本地 API、技能注入 | 跨平台编排，不依赖具体 agent 或 platform 包 |
-| bridge/agent | 原生 CLI 启动、事件解析、模型/权限与会话适配 | 各后端协议独立演进，向 core 暴露能力 |
-| bridge/platform | Discord 等平台的接收与发送 | 平台差异留在适配器 |
-| companion/voice | 浏览器录音、本机识别、严格会话续聊、语音合成和共享记录 | 音频生命周期与 Discord 投递分开；通过本地 Unix socket 调桥接 |
-| companion/autonomy | 时刻表、动作状态、消息采集、Markdown/HTML 和每日手记 | 活动计划与归档独立于模型会话；通过桥接 API 和 Discord API 读取/投递 |
-| skills | 当前真人授权下的协作行为约定 | 让 bot 理解语义并调用现有原生工具；不是工具权限沙箱 |
+接入 DSH 智能体的 ACP 协议与接入 DSH 网页聊天入口是两个方向；后者目前尚未完成。
 
-源码由 Git 保存；模型会话由相应 CLI 与桥接会话映射管理；共享语音记录、活动状态及消息 SQLite 库在外部运行目录。凭据只属于本地私密配置，不属于 Git。
+## 模块与数据归属
 
-## 真实消息流
+| 模块 | 职责 |
+| --- | --- |
+| `bridge/core/` | Engine、频道会话、队列、管理 API、向导、技能及上下文注入 |
+| `bridge/agent/` | 各 CLI / ACP 后端的启动、事件、权限与会话恢复 |
+| `bridge/platform/` | 各聊天平台的身份、收发消息与卡片 |
+| `bridge/contrib/gate/` | 可选的消息判定与 wiki 检索服务 |
+| `role-household/rh/hub.py` | 随程序分发的自建网页频道，通过 cloud_web WebSocket 接入角色 |
+| `companion/` | 保留的电脑语音、活动采集与归档扩展，独立配置 |
+| `integrations/`、`skills/` | 智能体集成与工作约定 |
 
-Discord 消息 → platform/discord → core/engine.go → agent 适配器 → 原生 CLI → 事件过滤与输出 → Discord。
+core 通过接口使用后端能力；agent 与 platform 适配器不互相导入。模型会话归各后端所有，共享 wiki 保存有来源的记录，凭据与运行数据留在仓库之外。
 
-配置了团队的项目在实际投递时注入自己的伙伴名称；队友缓冲保留作者作为引用，避免把队友第一人称接成自己的身份或成果。身份不改变真实模型/供应商，严格语音与普通文字共用该输入边界。权限响应在核心先原子认领 pending，再调用后端和回复平台，防止慢回执窗口内重复消费授权。证据与限制见[身份与授权修复](BRIDGE_IDENTITY_AND_PERMISSION_172.md)。
+## 团队与记忆
 
-可选的公开进展独立于上述 Thinking/工具事件：Engine 向真人任务轮次注入临时报告命令 → agent 调用 progress CLI → 本地 /progress 校验项目、会话、run、序号 → PublicProgress 先落盘，再通过 TaskCardPublisher 投递。Discord 适配器负责卡片/讨论串及丢失回执后的标记核对；core 不依赖具体平台。投递期间不持有报告锁，网络延迟不会阻塞新报告或语音结果。语音可使用同一份公开 result/waiting 摘要，原始正文仍只回到本地输入接口。接口和恢复边界见[公开进展说明](PUBLIC_PROGRESS.md)；result_ready 不等于项目验收完成。
+- 平台把作者、点名和是否来自机器人带进 Engine。未触发回复的队友消息可作为上下文，作者身份保留。
+- 队长与队员的路由通过 gate 与 fallback 配置决定。`team_lead_bot` 把被队长派发任务的最终回复交回队长；这不自动迁移另一个角色已经运行的任务。
+- 自建平台多角色向导给每位成员写稳定的 `mention_id`，给队员写交回对象，并在人设的标记行说明自建平台上的队伍。手写且没有向导标记的人设保留。
+- 共享记忆需要另行安装和配置 wiki / gate。检索出的主题页按需提供给角色；原会话的恢复仍由后端负责，两者不能互相替代。
+- 工具审批、公开进展和任务卡按项目启用；一次任务有结果与真人已验收是不同状态。
 
-PublicProgress 的生命周期锁串行化 begin、首条续接、报告、结束和验收；每卡锁保护记录和投递检查点。续接先校验当前 run/会话/序号，再落盘，成功才转移 run 对卡片的所有权；报告和验收落盘失败恢复原状态。投递网络调用不持有生命周期锁或每卡锁。验收是终态，后续结束不能覆盖；会话候选仅在仍指向该卡时清除。GET /task 提供项目内公开记录，POST /task/accept 接受可信本地调用者记录的真人验收，actor 只是归属字段，不是身份认证。
+协议与使用方法见 [团队协作](../bridge/MAOMAO.md)、[自建平台协议](../bridge/docs/cloud-web.md)、[wiki 配置](ccm-and-wiki.md)、[公开进展](PUBLIC_PROGRESS.md)、[工具代批](DELEGATED_PERMISSIONS.md)。
 
-失败回合可通过EventError.Content携带已有回答，Error只携带诊断；核心将两者分开展示，仍保留失败终态、错误钩子和队列恢复。回答不进入成功历史，本地/input不将其作为可播放的成功text。Antigravity只用自身CLI的认证当前轨迹分类安全原因，详见[失败回合说明](ANTIGRAVITY_TURN_FAILURE.md)。
+## 构建与发布
 
-语音录音 → voice/static → voice/app.py 的 /api/transcribe → speech.py 本机识别 → /api/turn → voice/bridge.py 本地 API → 所选伙伴原会话 → 回答正文 → 本机 TTS/浏览器播放。单伙伴入口默认 G哥；voice.multi 需要显式名单，同一频道、一次一轮。
-
-roles.py 定义允许接入的项目与音色，VoiceService按project保存上一轮播放反馈并在提交/回执处核对绑定。TTS共用worker，音色作为每次合成参数传递。ACP适配器新增严格续接接口，冷恢复失败不new、加载回放不输出、错会话更新和非end_turn不成功；RPC读取边界关闭本轮事件窗口。具体协议与验证见[MULTI_VOICE.md](MULTI_VOICE.md)。core仍只依赖能力接口，不按厂商名路由。
-
-显式 roles[].relay_project 可以选择独立语音会话，复用 /relay/send 的 mode=voice、持久化回执与现有TTS。空字段保留严格接续；不是422自动回退。独立上下文按来源/目标/完整频道键/设备隔离，恢复失败不new，见[独立语音转发](VOICE_PRIVATE_RELAY.md)。
-
-语音轮次写入 voice/memory.py 管理的共享记录。同一伙伴接续原会话；其他伙伴按需查阅。语音使用隔离的输出通道，正文不再次作为 Discord 消息发送。没有会话恢复证据时应报告失败，而不是悄悄开一个新角色替代。
-
-voice/discussion.py在单轮VoiceService之上管理有界讨论：开始时冻结全部伙伴绑定，两轮及总结，每段播放完成/明确跳过才派发下一轮；共同的提交锁和讨论占位排斥单人输入。停止不取消已送达CLI任务，需等待原回执再释放占位。前文以带作者的资料传给下一位，事件带discussion_id与阶段；完整合同见[语音讨论](VOICE_DISCUSSION.md)。
-
-`tts_worker.py`通过带请求ID与序号的消息输出完整WAV块；`NeuralTTS.synthesize_stream`校验后同步回调，`VoiceService`在事件循环中发布块元数据和读取端点。两页面共用`static/queue-player.js`，边合成边顺序播放；合成成功与播放结束是两个独立条件，均满足后才能推进讨论。停止会使旧播放回调失效，已送达CLI的任务仍需收尾；协议、计时和验证见[分块语音](VOICE_STREAMING.md)。
-
-设备模拟通过 `voice.device_server` 独立启动，`DeviceRegistry` 管理静态设备映射，`device_app.DeviceRoom` 管理每设备轮次槽、全局播放槽及每页归属。它复用VoiceService单条投递/合成/共享记忆链路，通用单轮/讨论API不挂载到设备服务，避免绕过占位。原会话固定、设备/轮次/页面校验和迟到音频拒绝发生在服务端；客户端复用录音和分块播放器。具体边界及失联恢复见[电脑设备](DESKTOP_DEVICES.md)。这不是硬件认证或跨进程音频锁。
-
-`voice/floor.py` 是 Issue #33 的发言权调度，按设备接入上述房间，decide 先于投递，拒绝不产生 Bridge 输入。它只根据显式传入的点名、真人群体模式、设备绑定、伙伴状态（可调用、上一轮仍在收尾、不可用）和预算，决定唯一回答者以及至多一次补充。判重只看这句话本身。`is_current` 只拦住播放和插入当前对话；停止或被取代的已授权正文仍归档并标记。播放仍应同时只出一路；各设备轮次互不取代，回答按接纳顺序获得播放权；识别与生成/合成管线容量仍独立限制并发。客户端区分 ready（合成完成）与 playback_allowed（获准播放），排队时继续轮询，不把回答提前标成已结束。`HumanUtterance` 只能来自按住说话或确认发送。合同见[发言权](FLOOR_CONTROL.md)。
-
-## 消息处理的关闭边界
-
-Engine通过bridge/core/engine_workers.go登记消息处理工作；开始关闭后拒收新工作，取消上下文并关闭会话/适配器，最后等待已登记的消息、队列、压缩、事件读取和Send结束。因此这些工作不会在Stop返回后继续写盘。OpenCode自己负责取消并等待模型缓存的后台刷新；测试必须先Stop，再回收临时目录。
-
-此等待依赖适配器响应取消或Close，不是强制中断任意第三方代码，也没有覆盖所有非消息后台任务。边界及回归证据见[Go测试基线诊断](GO_TEST_BASELINE.md)。
-
-## 额度查询
-
-core 通过 UsageReporter、ModelUsageReporter 与 UsageCapability 查询后端能力，不识别具体服务商名称。Cursor 的原生/ACP 适配器共用 bridge/internal/accountquota；Antigravity stream-json 会话只查询自己拥有的 CLI 本地 RPC。回复优先读取当前会话，核心回退缓存按 Agent 实例与回复模型隔离。认证、模型额度池和网络差异留在适配层，详见 [额度说明](QUOTA_REPORTING.md)。
-
-## 活动和日志
-
-autonomy/__main__.py 读取外部配置和历史状态，判断活动时段，通过本地桥接创建任务；采集已配置频道的消息，交给 journal.py 和 reading.py 生成归档与阅读页。日报保留原话归档，再尝试生成今日手记；额度不足不能写成成功。
-
-当前主持人与普通 Discord 主 bot 是两个配置。leader 命令在既有锁内同步活动配置和 cron 归属，保留已有时刻与暂停状态；旧动作仍按原执行者核对。换模型/主持人不应清空历史重试。
-
-## 模型与协作
-
-模型切换说明在 bridge/core/skills/model-switch/SKILL.md，使用当前项目/会话环境先 list 再 set/effort/auto。只接受后端实际提供的准确标识；排队成功与下一轮已生效是两种状态。
-
-子 Agent 使用原生 CLI 的真实能力。当前默认不派生，仅本次真人明确授权后最多两名、一层，父 Agent 收回并验收。约束见 skills/project-subagents/SKILL.md。多个 bot 共用目录不提供文件锁、任务认领或自动合并；人为分工与独立 worktree 仍然必要。
-
-## 整合决策
-
-本次把桥接与产品扩展放进同一仓库，因为一个功能经常同时修改 Go 和 Python，需要一个 PR 描述完整行为。保留 bridge 内部路径、Go module、CLI 名称及原 Git 历史，降低重命名风险并保留上游来源。
-
-独立目录只接收源码，不替换运行服务。先完成配置可移植性与验收，再单独计划备份、切换和回滚。跨机器配置、多个硬件设备或多用户隔离确有需求时再调整边界。
-
-## 原生压缩边界
-
-core 通过可选 NativeContextCompressor 能力管理会话锁、排队模型、取消与用户反馈；Codex 适配器负责短生命周期 App Server 和严格终态判断。压缩操作不占用普通提示词通道，不创建替代会话。已有 ContextCompressor 文本命令接口继续用于其他后端。
-
-ACP 的公开输出边界位于适配器通知入口：仅已知消息事件可生成正文，流式剔除显式私密区块后再交给前台/空闲消费者；裸summary隐藏，公开details内的summary与Markdown代码示例保留。不按模型或平台名分支。协议边界与无法识别无标记内部正文的限制见 [ACP_PRIVATE_OUTPUT.md](ACP_PRIVATE_OUTPUT.md)。
-
-正常 end_turn 若整轮只有被隐藏的显式私密区块，ACP 通过通用 ErrNoPublicAnswer 事件报告回复失败。整轮事实在 RPC 读取边界取快照；core 保留错误语义、原会话和待处理消息，不存成功答复、不自动重放工具。模型未提供的答案不能由过滤器补造。
-
-指定 DSH ACP 部署可通过 integrations/dsh-public-output 在 native LLM→session 边界建立结构化公开答复出口：执行步骤无正文、工具不重跑、无工具补答经验证后才进入 ACP text。通用 ACP 适配器负责空完成失败和宣告的 session/resume 冷恢复。费用/延迟、失败及语义限制见插件说明。
+`make hubsrc` 把自建平台源码复制到 Go 嵌入目录，前端构建后随 cc-connect 二进制分发。安装脚本只下载当前仓库 Release 里的预编译包。发布从审核合入 main 的提交构建；提交、安装包和运行部署分别记录，见 [HANDOFF.md](HANDOFF.md)。
