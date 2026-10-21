@@ -228,13 +228,24 @@ func powerShellLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
+// stopWindowsTask stops the task and everything its wrapper script started. Stop-ScheduledTask
+// only ends the wrapper powershell.exe; the cc-connect it runs (and that one's agent CLIs) kept
+// running as orphans, so `daemon stop` / `uninstall` left the bot online. The wrapper's process
+// tree is collected first (by its command line, which names the task script) and ended after.
 func stopWindowsTask() error {
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { exit 0 }
+$script = %s
+$all = @(Get-CimInstance Win32_Process)
+$tree = @($all | Where-Object { $_.Name -ieq 'powershell.exe' -and $_.CommandLine -and $_.CommandLine.Contains($script) } | ForEach-Object { $_.ProcessId })
+for ($i = 0; $i -lt $tree.Count; $i++) {
+	$tree += @($all | Where-Object { $_.ParentProcessId -eq $tree[$i] -and $tree -notcontains $_.ProcessId } | ForEach-Object { $_.ProcessId })
+}
 if ($task.State -eq 'Running') {
 	Stop-ScheduledTask -TaskName %s
 }
+foreach ($id in $tree) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
 for ($i = 0; $i -lt 20; $i++) {
 	$task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 	if ($null -eq $task -or $task.State -ne 'Running') { exit 0 }
@@ -242,7 +253,7 @@ for ($i = 0; $i -lt 20; $i++) {
 }
 Write-Error 'scheduled task did not stop within timeout'
 exit 1
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskScriptPath()), powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
 	if err != nil {
 		return fmt.Errorf("stop scheduled task: %s (%w)", out, err)
 	}
