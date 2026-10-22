@@ -1,5 +1,7 @@
 # 共栖当前交接
 
+2026-10-22 bothouse v0.1.2 改名与安装包：CLI 帮助、版本、启动消息、网页、安装脚本及当前安装文档统一使用 bothouse；module 与内部包名保留。配置默认 ~/.bothouse，仅当它不存在而旧目录存在时沿用旧目录，不迁移文件。发布产物为双架构 dmg/exe/Linux 裸文件和 SHA256SUMS，自更新先新名后历史名，v0.1.1 资产保持原状。沙箱 Go 全量、CUJ、定向回归、vet、前端构建与 actionlint 通过；目录回归已验证旧逻辑失败、新逻辑通过。额外 promise-guard 回放的两个时间/任务环境相关失败在改前改后相同，未扩大修复。用户明确要求推 main 并打 v0.1.2；发布与安装包验收的最终证据记录在 /tmp/rename/result.md。没有操作生产机器人配置、进程或频道；单一 Agent 实现和自查。
+
 ## 2026-10-22：Bothouse 可双击下载（Issue #50）
 
 Release 流程改为 Windows 双架构裸 exe、macOS runner 用 hdiutil 生成双架构 Bothouse.app/dmg、Linux 双架构裸二进制及 SHA256SUMS；旧 cc-connect 压缩包与 checksums.txt 继续发布，供旧更新器使用。安装脚本认新文件，CLI 与网页自更新共用新文件优先、旧名回退和按实际下载名称校验；校验失败不回退。新 dmg 未签名，安装文档提示拖入 Applications、首次右键→打开。

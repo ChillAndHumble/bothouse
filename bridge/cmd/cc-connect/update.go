@@ -151,7 +151,7 @@ func getUpdateHintIfAvailable() string {
 	}
 
 	if isNewer(cachedVer, version) {
-		return fmt.Sprintf("\n📦 Update available: %s → %s  (run: cc-connect update)\n", version, cachedVer)
+		return fmt.Sprintf("\n📦 Update available: %s → %s  (run: bothouse update)\n", version, cachedVer)
 	}
 	return ""
 }
@@ -165,7 +165,7 @@ func runUpdate() {
 		}
 	}
 
-	fmt.Printf("cc-connect %s\n", version)
+	fmt.Printf("bothouse %s\n", version)
 	if pre {
 		fmt.Println("Checking for updates (including pre-releases)...")
 	} else {
@@ -212,7 +212,7 @@ func runUpdate() {
 	syncNpmPackageVersion(execPath, strings.TrimPrefix(latest, "v"))
 
 	fmt.Printf("Updated to %s\n", latest)
-	fmt.Println("Restart cc-connect to use the new version.")
+	fmt.Println("Restart bothouse to use the new version.")
 }
 
 // fetchRelease returns the latest release. If pre=true, includes pre-releases.
@@ -364,8 +364,8 @@ func extractFromTarGz(archivePath string) (string, error) {
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		if strings.HasPrefix(hdr.Name, "cc-connect") {
-			tmp, err := os.CreateTemp("", "cc-connect-update-*")
+		if strings.HasPrefix(hdr.Name, "bothouse") || strings.HasPrefix(hdr.Name, "cc-connect") {
+			tmp, err := os.CreateTemp("", "bothouse-update-*")
 			if err != nil {
 				return "", err
 			}
@@ -389,14 +389,14 @@ func extractFromZip(archivePath string) (string, error) {
 	defer r.Close()
 
 	for _, f := range r.File {
-		if !strings.HasPrefix(f.Name, "cc-connect") {
+		if !strings.HasPrefix(f.Name, "bothouse") && !strings.HasPrefix(f.Name, "cc-connect") {
 			continue
 		}
 		rc, err := f.Open()
 		if err != nil {
 			return "", err
 		}
-		tmp, err := os.CreateTemp("", "cc-connect-update-*")
+		tmp, err := os.CreateTemp("", "bothouse-update-*")
 		if err != nil {
 			rc.Close()
 			return "", err
@@ -435,7 +435,7 @@ func downloadToTemp(url string) (string, error) {
 		return "", fmt.Errorf("download returned HTTP %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp("", "cc-connect-update-*")
+	tmp, err := os.CreateTemp("", "bothouse-update-*")
 	if err != nil {
 		return "", err
 	}
@@ -516,9 +516,9 @@ func checkUpdate() {
 		return
 	}
 	if isNewer(release.TagName, version) {
-		hint := "cc-connect update"
+		hint := "bothouse update"
 		if release.Prerelease {
-			hint = "cc-connect update --pre"
+			hint = "bothouse update --pre"
 		}
 		fmt.Fprintf(os.Stderr, "Update available: %s → %s (run: %s)\n", version, release.TagName, hint)
 	}
@@ -644,7 +644,7 @@ func syncNpmPackageVersion(execPath, newVer string) {
 	}
 
 	name, _ := pkg["name"].(string)
-	if name != "cc-connect" {
+	if name != "cc-connect" && name != "bothouse" {
 		return
 	}
 
@@ -666,7 +666,7 @@ func syncNpmPackageVersion(execPath, newVer string) {
 	if err := os.WriteFile(pkgJSON, out, 0o644); err != nil {
 		slog.Warn("update: failed to sync npm package.json version", "error", err)
 		fmt.Println("⚠️  Note: npm package version not synced. If the next run re-downloads an old version,")
-		fmt.Println("   please run: npm update -g cc-connect")
+		fmt.Println("   please run: npm update -g bothouse")
 	} else {
 		slog.Debug("update: synced npm package.json version", "old", oldVer, "new", newVer)
 	}

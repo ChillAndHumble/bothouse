@@ -106,7 +106,7 @@ func fetchReleasesFrom(apiURL string) ([]ReleaseInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "cc-connect-updater")
+	req.Header.Set("User-Agent", "bothouse-updater")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
@@ -241,7 +241,7 @@ func downloadFile(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "cc-connect-updater")
+	req.Header.Set("User-Agent", "bothouse-updater")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -274,11 +274,11 @@ func extractBinaryFromTarGz(data []byte) ([]byte, error) {
 			return nil, err
 		}
 		name := filepath.Base(hdr.Name)
-		if strings.HasPrefix(name, "cc-connect") && hdr.Typeflag == tar.TypeReg {
+		if (strings.HasPrefix(name, "bothouse") || strings.HasPrefix(name, "cc-connect")) && hdr.Typeflag == tar.TypeReg {
 			return io.ReadAll(tr)
 		}
 	}
-	return nil, fmt.Errorf("cc-connect binary not found in archive")
+	return nil, fmt.Errorf("bothouse binary not found in archive")
 }
 
 func extractBinaryFromZip(data []byte) ([]byte, error) {
@@ -288,7 +288,7 @@ func extractBinaryFromZip(data []byte) ([]byte, error) {
 	}
 	for _, f := range r.File {
 		name := filepath.Base(f.Name)
-		if strings.HasPrefix(name, "cc-connect") && !f.FileInfo().IsDir() {
+		if (strings.HasPrefix(name, "bothouse") || strings.HasPrefix(name, "cc-connect")) && !f.FileInfo().IsDir() {
 			rc, err := f.Open()
 			if err != nil {
 				return nil, err
@@ -297,7 +297,7 @@ func extractBinaryFromZip(data []byte) ([]byte, error) {
 			return io.ReadAll(rc)
 		}
 	}
-	return nil, fmt.Errorf("cc-connect binary not found in zip archive")
+	return nil, fmt.Errorf("bothouse binary not found in zip archive")
 }
 
 func replaceBinary(newBinary []byte) error {
@@ -311,7 +311,7 @@ func replaceBinary(newBinary []byte) error {
 	}
 
 	dir := filepath.Dir(execPath)
-	tmpFile, err := os.CreateTemp(dir, "cc-connect-update-*")
+	tmpFile, err := os.CreateTemp(dir, "bothouse-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

@@ -103,7 +103,7 @@ func TestExtractReleaseBinaryNativeAndLegacy(t *testing.T) {
 	tw.Close()
 	gz.Close()
 	zw := zip.NewWriter(&zipped)
-	entry, err := zw.Create("cc-connect.exe")
+	entry, err := zw.Create("bothouse.exe")
 	if err != nil {
 		t.Fatal(err)
 	}

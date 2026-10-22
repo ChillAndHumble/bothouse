@@ -1,5 +1,7 @@
 # 能力与验证状态
 
+2026-10-22：产品入口统一改名 bothouse，配置支持新目录优先/旧目录回退；平台原生发布流程与 SHA256SUMS 已实现。沙箱 Go 全量、CUJ、前端及静态检查通过。v0.1.2 的发布、真机验收与未验项以本轮交付记录 /tmp/rename/result.md 为准；未部署生产 bot。
+
 2026-10-22 Issue #50：新增可直接下载的 Windows exe、macOS Bothouse.app/dmg、Linux 裸二进制及 SHA256SUMS，保留旧包更新兼容；v0.1.1 用 681dc94 源码补传。macOS arm64 已经 open 启动并验证浏览器 /setup 与 API；两个 dmg 的更新提取已验。Go 沙箱全量 48 包、CUJ、回归及 vet 通过。Windows PE/交叉构建已验，真实 Windows 执行与桌面双击、本机签名／公证未验；最终发布和 main 记录见 `/tmp/rename/result.md`。历史准备记录如下。
 
 本页只记录 bothouse 软件仓库的能力边界。源码存在不等于已发布安装包，旧实例可用不等于新用户从零安装已经验收。
