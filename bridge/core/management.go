@@ -251,6 +251,8 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	mux.HandleFunc(prefix+"/setup/weixin/save", m.wrap(m.handleSetupWeixinSave))
 
 	// Setup wizard (conest): local CLIs, API×CLI matrix, Discord/Feishu pickers, 自建平台 (cloud_web) local hub + test, jev test, one-shot apply
+	mux.HandleFunc(prefix+"/setup/dsh/status", m.wrap(m.handleSetupDSHStatus))
+	mux.HandleFunc(prefix+"/setup/dsh/install", m.wrap(m.handleSetupDSHInstall))
 	mux.HandleFunc(prefix+"/setup/state", m.wrap(m.handleSetupState))
 	mux.HandleFunc(prefix+"/setup/clis", m.wrap(m.handleSetupCLIs))
 	mux.HandleFunc(prefix+"/setup/matrix", m.wrap(m.handleSetupMatrix))

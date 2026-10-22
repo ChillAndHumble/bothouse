@@ -1,5 +1,7 @@
 # bothouse
 
+DSH 首次配置：向导第 1 步选 **DSH**，接着只需「检测 dsh → 安装插件 → 运行返回命令打开 DSH 网页」。机器人、CLI、人设和模型随后在 DSH 页面配置；向导选中文时写入 DSH 默认中文。当前需要含 `dsh/install.sh` 的源码目录，或设置 `BOTHOUSE_DSH_DIR`。命令行等价操作：`bothouse setup dsh install --lang zh`。
+
 [English](README.md) | 中文
 
 **你的 AI 不该每天失忆。** 把 Claude、Codex、Gemini、DeepSeek、MiniMax 们变成一支住在群里的团队：有名字、有分工、记得昨天、每晚复盘，越用越懂你。

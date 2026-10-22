@@ -11,6 +11,7 @@ import {
   type CloudWebTest, type DiscordBotInfo, type LocalHubStatus, type DiscordChannel, type ExistingBot, type LocalCLI, type MatrixCell, type PersonaPreset,
   type SetupPersona, type SetupStateResp, type WizardRequest, type WizardResult, type WizardVendor, type WizardWiki,
 } from '@/api/wizard';
+import DSHSetup from './DSHSetup';
 import { isZhLang, keptLangLabel, langLabel, replyLangOptions, stepLabel, wizardTexts } from './texts';
 
 interface RoleDraft {
@@ -58,9 +59,7 @@ export default function SetupWizard() {
 
   const [step, setStep] = useState(0);
   const [picked, setPlatform] = useState<'discord' | 'feishu' | 'cloud_web' | 'dsh'>('discord');
-  // DSH (plugin into DeepSeek's DSH: roles live in a channel of the DSH web page) follows the
-  // cloud_web steps for now (no bot token). TODO: real DSH backend; the request still says cloud_web.
-  const platform = picked === 'dsh' ? 'cloud_web' : picked;
+  const platform = picked;
   // 自建平台 (cloud_web): the hub on this machine, or someone else's (address + token, tested)
   const [hub, setHub] = useState<LocalHubStatus | null>(null);
   const [hubBusy, setHubBusy] = useState<'' | 'detect' | 'start'>('');
@@ -292,6 +291,7 @@ export default function SetupWizard() {
 
   // ── request ──
   const buildRequest = (maskSecrets = false): WizardRequest => {
+    if (platform === 'dsh') throw new Error('DSH uses the plugin installer');
     const mask = (s: string, ph: string) => (maskSecrets && s ? ph : s);
     const req: WizardRequest = {
       platform: platform === 'feishu' ? ((feishu?.platform_type as 'feishu' | 'lark') || 'feishu') : platform,
@@ -389,13 +389,15 @@ export default function SetupWizard() {
     c.login === 'logged_in' ? <Badge variant="success">{T.loggedIn}</Badge>
       : c.login === 'not_logged_in' ? <Badge variant="warning">{T.notLoggedIn}</Badge> : <Badge>{T.unknownLogin}</Badge>;
 
+  if (picked === 'dsh' && step > 0) return <DSHSetup lang={lang} onBack={() => setStep(0)} />;
+
   return (
     <div className="animate-fade-in space-y-4 max-w-3xl" data-testid="setup-wizard">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">{T.title}</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{T.subtitle}</p>
-          {roles.some((r) => !keptLang(r)) && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{picked === 'dsh' ? (zh ? '检测 dsh → 安装插件 → 打开 DSH 网页。角色、CLI 和人设在 DSH 页面上配置。' : 'Detect dsh → install plugins → open DSH web. Configure roles, CLIs and personas in DSH.') : T.subtitle}</p>
+          {picked !== 'dsh' && roles.some((r) => !keptLang(r)) && (
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-1" data-testid="reply-lang-line">{T.replyLangLine}<b>{langLabel(lang)}</b><span className="text-xs text-gray-500">{T.replyLangHow}</span></p>
           )}
           {keptRoles.length > 0 && (
@@ -409,7 +411,7 @@ export default function SetupWizard() {
 
       {/* stepper */}
       <div className="flex flex-wrap gap-1.5">
-        {visibleSteps.map((s, i) => (
+        {(picked === 'dsh' ? [0] : visibleSteps).map((s, i) => (
           <span key={s} className={`px-2.5 py-1 rounded-full text-xs ${s === step ? 'bg-accent text-white dark:text-black' : i < pos ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-white/[0.06] text-gray-500'}`}>
             {i + 1}. {T.steps[s]}
           </span>
