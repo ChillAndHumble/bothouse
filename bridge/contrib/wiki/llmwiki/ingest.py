@@ -71,6 +71,11 @@ DEFAULTS = {
     # the nightly reflection (dream) on or off: the role turns it off when its user asks in chat (export.py --switch;
     # user 2026-10-22 「插件默认全开，别人可关」「用户直接跟机器人说，就可以关了」)
     "dream": True,
+    # dsh engine: the command that starts dsh (the wizard writes [node, dsh's bin.js] so a service PATH without node
+    # works), an extra overlay (`dsh --patch`, the role's wizard-picked API; "" = none) and a KEY=VALUE file whose
+    # variables the run gets (that overlay's key; "" = none); dsh_home = the role's DSH_HOME (bots.json "dsh_home",
+    # written by rolewiki.go; "" = leave DSH_HOME as inherited)
+    "dsh_cmd": ["dsh"], "dsh_patch": "", "dsh_env_file": "", "dsh_home": "",
 }
 
 
@@ -139,7 +144,9 @@ IDLE_MIN = 30
 MAX_CHARS = 240_000  # per claude -p call; whole sessions are batched up to this, only oversized ones are split
 MAX_FAILS = 6  # real failures (quota rejections don't count); runs are hourly, so ~6 h of failing
 # Engine per pass: claude | agy (Antigravity CLI, Google login) | gemini (dead relay, kept) | codex (ChatGPT subscription).
-# Engines: haiku | sonnet | opus | claude (= WIKI_CLAUDE_MODEL) | codex (luna, ChatGPT subscription) | agy | gemini.
+# Engines: haiku | sonnet | opus | claude (= WIKI_CLAUDE_MODEL) | codex (luna, ChatGPT subscription) | agy | gemini |
+# dsh (DeepSeek Harness, `dsh --profile headless`, the user's own DSH login/models; a machine with only DSH still runs
+# its wiki and nightly reflection: user 2026-10-22 「夜间反思也要，这个是rsi」).
 # Every engine gets the same SOP_* prompts and run() checks acceptance itself.
 # Day: Haiku ingests closed/idle sessions fast (~2 min a batch, a few cents of quota), no checking pass; Sonnet
 # redoes a batch Haiku failed; a batch the Claude quota refused waits for the night (not a failure).
@@ -191,7 +198,7 @@ TIER = os.environ.get("WIKI_CODEX_TIER", "")  # codex only: "fast" = Fast mode (
 MIRROR_TO = os.environ.get("WIKI_MIRROR_TO", "mac" if sys.platform.startswith("linux") else "")
 HOSTS = Path(os.path.expanduser(CFG["hosts"] or "/nonexistent-wiki-hosts"))  # on the Mac: <hostname>/{projects/,ingest.sqlite,ingest.log}
 MIRRORED = WIKI / ".mirror.json"  # on the mirroring machine: {transcript path: size already sent}
-SOP_ENGINES = set(os.environ.get("WIKI_SOP_ENGINES", "codex,agy,gemini,claude,haiku,sonnet,opus").split(","))
+SOP_ENGINES = set(os.environ.get("WIKI_SOP_ENGINES", "codex,agy,gemini,claude,haiku,sonnet,opus,dsh").split(","))
 
 SECRET = re.compile(
     r"(-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
@@ -1193,6 +1200,34 @@ def codex(instruction, stdin="", label="?", context=None, effort=None, model=Non
             tid)
 
 
+def dsh_env():
+    env = {**os.environ, "WIKI_INGEST": "1"}  # run.py lets every hook pass for this run (the role's hooks would refuse .ingest-work)
+    if CFG["dsh_home"]:
+        env["DSH_HOME"] = os.path.expanduser(CFG["dsh_home"])
+    f = os.path.expanduser(CFG["dsh_env_file"]) if CFG["dsh_env_file"] else ""
+    if f and os.path.exists(f):
+        for line in open(f, encoding="utf-8"):
+            k, sep, v = line.strip().partition("=")
+            if sep and k and not k.startswith("#"):
+                env[k] = v
+    return env
+
+
+def dsh(instruction, stdin="", label="?", context=None):
+    """DeepSeek Harness, headless (`dsh --profile headless -`: the task from stdin, the final message on stdout). It
+    runs under DSH's own sandbox, which lets it write only its working directory (the wiki) and the temp dirs; the
+    transcript leads the task like codex()."""
+    task = (CONTEXT.format(text=context) + "\n\n" if context else "") + instruction.replace(
+        "at the end of your system prompt", "at the start of your input") + ("\n\n" + stdin if stdin else "")
+    cmd = [*CFG["dsh_cmd"], "--profile", "headless", *(["--patch", os.path.expanduser(CFG["dsh_patch"])] if CFG["dsh_patch"] else []), "-"]
+    r = engine_run(cmd, input=task, cwd=WIKI, capture_output=True, text=True, timeout=3600, env=dsh_env())
+    with open(USAGE, "a") as f:
+        f.write("\t".join(map(str, [time.strftime("%F %T"), label, "dsh", 1, 0, 0, 0, 0, 0, 0])) + "\n")
+    out = r.stdout.strip()
+    log(f"{label} dsh rc={r.returncode} out={len(out)} chars")
+    return r.returncode == 0 and bool(out), out or f"rc={r.returncode} {r.stderr[-300:]}", 0
+
+
 def claude(instruction, stdin="", label="?", context=None, model=None):
     """`context` (the transcript) goes at the end of the system prompt: that is cached and sits before the
     git status and the user message, so the INGEST and VERIFY passes share it. --strict-mcp-config keeps
@@ -1305,7 +1340,7 @@ def gave_up(out):
 
 def runner(name):
     """The single-call function for a non-codex engine name."""
-    return {"gemini": gemini, "agy": agy}.get(name) or (lambda *a, **k: claude(*a, **k, model=None if name == "claude" else name))
+    return {"gemini": gemini, "agy": agy, "dsh": dsh}.get(name) or (lambda *a, **k: claude(*a, **k, model=None if name == "claude" else name))
 
 
 def model_pass(label, instruction, stdin="", context=None, engine=None, sids=(), max_delete=None, kind="ingest", check=None,
@@ -1545,7 +1580,7 @@ def batches_of(items):
 
 
 def is_claude(engine):
-    return engine.split(":")[0] not in ("codex", "gemini", "agy")
+    return engine.split(":")[0] not in ("codex", "gemini", "agy", "dsh")
 
 
 def page_sha(page):

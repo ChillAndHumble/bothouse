@@ -107,7 +107,7 @@ def main_wiki(w, lead):
            # each role's sessions go into that role's own wiki (bots.json); this one reads none (an empty dir)
            "transcripts": str(w / ".no-sessions"), "rule_files": []}
     cfg.update({k: v for k, v in (json.loads(os.environ.get("WIKI_ENGINES") or "{}") or {}).items()
-                if k.endswith("_engine") or k in ("after_codex", "codex_models")})
+                if k.endswith("_engine") or k in ("after_codex", "codex_models", "dsh_cmd", "dsh_patch", "dsh_env_file")})
     (w / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
     commit(w, "llm-wiki：主 wiki 和共享程序（向导建）")
     print(w, "created")
@@ -163,8 +163,10 @@ def main(bot):
         "after_codex": [],  # no Claude fallback: a failed batch waits for the next night
         "rule_files": [PERSONA[bot]],
     }
+    if _bots[bot].get("dsh_home"):
+        cfg["dsh_home"] = _bots[bot]["dsh_home"]  # the dsh engine runs under the role's DSH home (ingest.py dsh_env)
     engines = (json.loads(os.environ.get("WIKI_ENGINES") or "{}") or {})
-    cfg.update({k: v for k, v in engines.items() if k.endswith("_engine") or k in ("after_codex", "codex_models")})
+    cfg.update({k: v for k, v in engines.items() if k.endswith("_engine") or k in ("after_codex", "codex_models", "dsh_cmd", "dsh_patch", "dsh_env_file")})
     (w / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")  # git-ignored
     r = subprocess.run([sys.executable, "-I", "bin/lint.py"], cwd=w, capture_output=True, text=True)
     print(bot, r.stdout.strip())

@@ -106,6 +106,28 @@ class RoleWiki(unittest.TestCase):
         self.assertTrue((w / "config.json").exists())
 
 
+    def test_dsh_engine(self):
+        """ingest.py's dsh engine: the configured command, --profile headless, the overlay, the env file, stdin."""
+        self.run_py("setup_wiki.py", "--main", str(self.home / "wiki"), "主管")
+        self.role("whale", "dsh")
+        fake = self.tmp / "fake-dsh"
+        fake.write_text("#!/bin/sh\necho \"argv=$*\"; echo \"key=$DSH_WIZARD_API_KEY\"; wc -c | tr -d ' '\n")
+        fake.chmod(0o755)
+        envf = self.tmp / "whale.env"
+        envf.write_text("DSH_WIZARD_API_KEY=sk-test\n")
+        self.env["WIKI_ENGINES"] = json.dumps({"ingest_engine": "dsh", "night_engine": "dsh", "dsh_cmd": [str(fake)],
+                                               "dsh_patch": "/p.yml", "dsh_env_file": str(envf)})
+        self.run_py("setup_wiki.py", "whale")
+        w = self.home / "roles" / "whale" / "wiki"
+        code = ("import runpy,sys,json; sys.argv=['ingest.py']; g=runpy.run_path(sys.argv[0] if False else %r, run_name='x');"
+                "ok,out,_=g['dsh']('do it','TRANSCRIPT',label='t'); print(json.dumps([ok,out]))") % str(self.home / "wiki" / "bin" / "ingest.py")
+        r = subprocess.run([sys.executable, "-I", "-c", code], env=dict(self.env, WIKI_DIR=str(w)), capture_output=True, text=True, cwd=w)
+        ok, out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertTrue(ok, r.stderr)
+        self.assertIn("argv=--profile headless --patch /p.yml -", out)
+        self.assertIn("key=sk-test", out)
+
+
 class SubWikiPy(unittest.TestCase):
     """sub-wiki.py (Mac, Linux and Windows alike): with a fake export.py --list of two bots, nightly runs each one's
     bin/ingest.py; hook-run finds the exported session by id; hook returns at once and runs hook-run detached;
