@@ -3,6 +3,7 @@
 const zh = {
   welcomeEyebrow: '给 AI 伙伴一个家', welcomeTitle: '从这里，成为一支队伍。',
   welcomeIntro: '接上你常用的聊天软件，让有名字、有记忆的 AI 伙伴住进来。',
+  teamCliNames: 'Claude、Codex、Gemini、DSH（DeepSeek Harness）、MiniMax',
   lightStyle: '明亮风格', darkStyle: '深色风格', switchStyle: '切换向导风格',
   title: 'bothouse 安装向导',
   subtitle: '选平台 → 接机器人 → 每个角色选本机 CLI → 人设 → 兜底角色 → jev。其余全部用默认值。',
@@ -89,6 +90,7 @@ type Texts = { [K in keyof typeof zh]: (typeof zh)[K] extends readonly string[] 
 const en: Texts = {
   welcomeEyebrow: 'A HOME FOR YOUR AIs', welcomeTitle: 'Your team starts here.',
   welcomeIntro: 'Connect your favorite chat app. Give your AI teammates a name, a memory, and a home.',
+  teamCliNames: 'Claude, Codex, Gemini, DSH (DeepSeek Harness), MiniMax',
   lightStyle: 'Light style', darkStyle: 'Dark style', switchStyle: 'Switch wizard style',
   title: 'bothouse setup wizard',
   subtitle: 'Platform → bots → local CLI per role → persona → fallback role → jev. Everything else uses defaults.',
@@ -172,6 +174,7 @@ const en: Texts = {
 const ja: Texts = {
   welcomeEyebrow: 'AI 仲間のための家', welcomeTitle: 'ここから、ひとつのチームに。',
   welcomeIntro: 'いつものチャットに、名前と記憶を持つ AI 仲間を迎えましょう。',
+  teamCliNames: 'Claude、Codex、Gemini、DSH（DeepSeek Harness）、MiniMax',
   lightStyle: 'ライトスタイル', darkStyle: 'ダークスタイル', switchStyle: 'ウィザードのスタイルを切り替え',
   title: 'bothouse セットアップウィザード',
   subtitle: 'プラットフォーム → ボット → ロールごとのローカル CLI → ペルソナ → フォールバックロール → jev。それ以外はすべて既定値です。',
