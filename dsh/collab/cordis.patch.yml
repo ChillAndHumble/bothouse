@@ -6,3 +6,6 @@
       config:
         dataDir: !!js process.env.CONEST_COLLAB_DATA || (process.env.HOME + '/.conest-collab')
         workspacePath: !!js process.env.CONEST_COLLAB_WORKSPACE || process.cwd()
+- insert:
+    - id: conest-channels-ui
+      name: '@deepseek-ai/dsh-experimental-client-ui-discord'
