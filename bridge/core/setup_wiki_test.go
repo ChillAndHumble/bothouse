@@ -145,9 +145,9 @@ func TestAddWikiCronJobsRewritesShJob(t *testing.T) {
 
 func TestSubWikiCommandShell(t *testing.T) {
 	got := subWikiCommand(`C:\Program Files\Python\python.exe`, `C:\it's\sub-wiki.py`, "hook")
-	want := `'C:\Program Files\Python\python.exe' -I 'C:\it'\''s\sub-wiki.py' hook`
+	want := `'C:\Program Files\Python\python.exe' -X utf8 -I 'C:\it'\''s\sub-wiki.py' hook`
 	if runtime.GOOS == "windows" {
-		want = `& 'C:\Program Files\Python\python.exe' -I 'C:\it''s\sub-wiki.py' hook`
+		want = `& 'C:\Program Files\Python\python.exe' -X utf8 -I 'C:\it''s\sub-wiki.py' hook`
 	}
 	if got != want {
 		t.Fatalf("got %s want %s", got, want)

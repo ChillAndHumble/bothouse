@@ -19,7 +19,7 @@ class RoleWiki(unittest.TestCase):
         self.env.pop("DSH_HOME", None)
 
     def run_py(self, script, *args):
-        return subprocess.run([sys.executable, "-I", str(HERE / script), *args], env=self.env, capture_output=True,
+        return subprocess.run([sys.executable, "-X", "utf8", "-I", str(HERE / script), *args], env=self.env, capture_output=True,
                               text=True, check=True).stdout
 
     def role(self, name, kind):
@@ -90,7 +90,7 @@ class RoleWiki(unittest.TestCase):
         self.assertTrue((w / ".gitignore").exists() and (w / "experiences" / "README.md").exists())
         self.assertIn("exists", self.run_py("setup_wiki.py", "whale"))
         # the shared tool accepts the role wiki's config.json (no unknown keys)
-        r = subprocess.run([sys.executable, "-I", "-c", "import runpy,sys; sys.argv=['ingest.py','--help']; "
+        r = subprocess.run([sys.executable, "-X", "utf8", "-I", "-c", "import runpy,sys; sys.argv=['ingest.py','--help']; "
                             f"runpy.run_path({str(w / 'bin' / 'ingest.py')!r}, run_name='__main__')"],
                            env=self.env, capture_output=True, text=True)
         self.assertNotIn("unknown key", r.stdout + r.stderr)
@@ -134,7 +134,7 @@ class SubWikiPy(unittest.TestCase):
         return got
 
     def run_py(self, *args):
-        subprocess.run([sys.executable, "-I", str(self.dir / "sub-wiki.py"), *args], env=self.env, check=True, timeout=30)
+        subprocess.run([sys.executable, "-X", "utf8", "-I", str(self.dir / "sub-wiki.py"), *args], env=self.env, check=True, timeout=30)
         return self.got()
 
     def test_nightly_runs_each_bot(self):
@@ -149,14 +149,14 @@ class SubWikiPy(unittest.TestCase):
 
     def test_hook_detaches(self):
         env = dict(self.env, CC_HOOK_PROJECT="proj-whale", CC_HOOK_AGENT_SESSION_ID="nope")
-        subprocess.run([sys.executable, "-I", str(self.dir / "sub-wiki.py"), "hook"], env=env, check=True, timeout=10)
+        subprocess.run([sys.executable, "-X", "utf8", "-I", str(self.dir / "sub-wiki.py"), "hook"], env=env, check=True, timeout=10)
         for _ in range(100):
             if self.calls.exists() and self.calls.read_text().endswith("\n"):
                 break
             time.sleep(0.1)
         self.assertEqual(self.got(), ["whale --pending"])
         env["CC_HOOK_PROJECT"] = "other"  # a project outside bots.json: nothing runs
-        subprocess.run([sys.executable, "-I", str(self.dir / "sub-wiki.py"), "hook"], env=env, check=True, timeout=10)
+        subprocess.run([sys.executable, "-X", "utf8", "-I", str(self.dir / "sub-wiki.py"), "hook"], env=env, check=True, timeout=10)
         time.sleep(1)
         self.assertFalse(self.calls.exists())
 
@@ -188,7 +188,7 @@ class FileLock(unittest.TestCase):
                 "f = open(sys.argv[2], 'w'); t = time.time(); filelock.lock(f); print(time.time() - t)")
         with open(self.path, "w") as a:
             self.lock(a)
-            p = subprocess.Popen([sys.executable, "-I", "-c", code, str(HERE / "llmwiki"), str(self.path)],
+            p = subprocess.Popen([sys.executable, "-X", "utf8", "-I", "-c", code, str(HERE / "llmwiki"), str(self.path)],
                                  stdout=subprocess.PIPE, text=True)
             time.sleep(1)
         waited = float(p.communicate(timeout=30)[0])

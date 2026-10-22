@@ -28,7 +28,7 @@ def say(msg):
 
 def bots():
     """bots.json（$WIKI_BOTS，默认本目录）→ [(bot, project, wiki 目录)]"""
-    out = subprocess.run([PY, "-I", str(HERE / "export.py"), "--list"], capture_output=True, text=True).stdout
+    out = subprocess.run([PY, "-X", "utf8", "-I", str(HERE / "export.py"), "--list"], capture_output=True, text=True).stdout
     rows = []
     for line in out.splitlines():
         parts = line.split(None, 2)
@@ -42,14 +42,14 @@ def run_one(rows, b, *args):
     d = next((w for k, _p, w in rows if k == b), "")
     say(f"{b} ingest {' '.join(args)}")
     with open(Path(d) / ".ingest.log", "a") as err:
-        rc = subprocess.run([PY, "-I", str(Path(d) / "bin" / "ingest.py"), *args], stderr=err).returncode
+        rc = subprocess.run([PY, "-X", "utf8", "-I", str(Path(d) / "bin" / "ingest.py"), *args], stderr=err).returncode
     if rc:
         say(f"{b} ingest {' '.join(args)} exited {rc}")
 
 
 def export(*args):
     with open(LOG, "a") as f:
-        return subprocess.run([PY, "-I", str(HERE / "export.py"), *args], stdout=f, stderr=f).returncode
+        return subprocess.run([PY, "-X", "utf8", "-I", str(HERE / "export.py"), *args], stdout=f, stderr=f).returncode
 
 
 # 钩子的最小环境：cc-connect 的环境带着 secrets.env 的全部变量，和主角色 ingest.py --hook 一样只留这些
@@ -103,7 +103,7 @@ def main(argv):
         b = next((k for k, p, _d in bots() if proj and p == proj), "")
         if not b:
             return 0  # 主角色有 Claude Code 自己的 SessionEnd hook；bots.json 外的项目不管
-        detach([PY, "-I", str(SELF), "hook-run", b, os.environ.get("CC_HOOK_AGENT_SESSION_ID", "")], hook_env())
+        detach([PY, "-X", "utf8", "-I", str(SELF), "hook-run", b, os.environ.get("CC_HOOK_AGENT_SESSION_ID", "")], hook_env())
         return 0
     if mode == "hook-run":
         b, sid = argv[2], (argv[3] if len(argv) > 3 else "")

@@ -48,7 +48,7 @@ jobs:
         with:
           go-version-file: bridge/go.mod
           cache-dependency-path: bridge/go.sum
-      - run: python -I contrib/wiki/test_rolewiki.py
+      - run: python -X utf8 -I contrib/wiki/test_rolewiki.py
       - run: go test -tags no_web -count=1 ./core -run "Wiki|Cron|SubWiki"
 
   bridge:

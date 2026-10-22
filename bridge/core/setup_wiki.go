@@ -306,12 +306,12 @@ func shellRun(prog string, args ...string) string {
 
 // subWikiCommand: `<python> <sub-wiki.py> <mode>`, the same on Mac, Linux and Windows.
 func subWikiCommand(py, sub, mode string) string {
-	return shellRun(py, "-I", cmdQuote(sub), mode)
+	return shellRun(py, "-X", "utf8", "-I", cmdQuote(sub), mode)
 }
 
 func wikiExec(dir, sub, arg string) string {
 	py := wikiPython()
-	cmd := shellRun(py, "-I", cmdQuote(filepath.Join(dir, "bin", "ingest.py")), "--"+arg)
+	cmd := shellRun(py, "-X", "utf8", "-I", cmdQuote(filepath.Join(dir, "bin", "ingest.py")), "--"+arg)
 	if home, _ := os.UserHomeDir(); dir != filepath.Join(home, "wiki") {
 		if runtime.GOOS == "windows" {
 			cmd = "$env:WIKI_DIR=" + cmdQuote(dir) + "; " + cmd

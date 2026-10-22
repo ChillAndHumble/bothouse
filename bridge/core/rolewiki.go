@@ -248,7 +248,7 @@ func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines m
 	if mw, ok := FindWiki(); !ok {
 		eng := enginesJSON(engines)
 		if _, err := roleWikiRun(ctx, []string{"LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"), "WIKI_ENGINES=" + eng},
-			py, "-I", filepath.Join(s.dir, "setup_wiki.py"), "--main", mw, lead); err != nil {
+			py, "-X", "utf8", "-I", filepath.Join(s.dir, "setup_wiki.py"), "--main", mw, lead); err != nil {
 			return nil, "", err
 		}
 		detail = "main wiki " + mw
@@ -297,7 +297,7 @@ func (s *roleWikiSetup) addRole(ctx context.Context, r plannedRole, lead string,
 	eng := enginesJSON(engines)
 	if _, err := roleWikiRun(ctx, []string{"WIKI_BOTS=" + bots, "LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"),
 		"WIKI_LEAD=" + lead, "WIKI_ENGINES=" + eng},
-		s.python, "-I", filepath.Join(s.dir, "setup_wiki.py"), r.project); err != nil {
+		s.python, "-X", "utf8", "-I", filepath.Join(s.dir, "setup_wiki.py"), r.project); err != nil {
 		return "", err
 	}
 	return wiki, nil
