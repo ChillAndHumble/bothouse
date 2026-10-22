@@ -1,10 +1,11 @@
 #!/bin/bash
-# Usage: package-dmg.sh BINARY OUTPUT TAG ARCH (run on macOS).
+# Usage: package-dmg.sh UNIVERSAL_BINARY OUTPUT TAG (run on macOS).
 set -euo pipefail
 binary=$1
 output=$2
 tag=$3
-arch=$4
+lipo "$binary" -verify_arch arm64
+lipo "$binary" -verify_arch x86_64
 stage=$(mktemp -d)
 app="$stage/Bothouse.app"
 mkdir -p "$app/Contents/MacOS"
@@ -27,4 +28,4 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 ln -s /Applications "$stage/Applications"
-hdiutil create -volname "Bothouse $tag $arch" -srcfolder "$stage" -format UDZO -ov "$output"
+hdiutil create -volname Bothouse -srcfolder "$stage" -format UDZO -ov "$output"

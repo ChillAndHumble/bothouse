@@ -55,8 +55,11 @@ main() {
     [ -n "$tag" ] || die "no release found for $REPO. The repo may be private: install the GitHub CLI (gh), run 'gh auth login' with an account that can see the repo, and run this again."
   fi
 
-  asset="bothouse-$os-$arch"
-  [ "$os" != darwin ] || asset="$asset.dmg"
+  case "$os/$arch" in
+    darwin/*) asset=bothouse-mac.dmg ;;
+    linux/amd64) asset=bothouse-linux-x64 ;;
+    linux/arm64) asset=bothouse-linux-arm64 ;;
+  esac
   say "Installing bothouse $tag ($os/$arch) into $INSTALL_DIR"
   say "Downloading $asset"
 

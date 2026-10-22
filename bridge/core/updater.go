@@ -144,23 +144,34 @@ func SelfUpdate(tag string, preferGitee bool) error {
 	return replaceBinary(binary)
 }
 
-// ReleaseAssetNames prefers directly usable bothouse files, then the legacy updater package.
+// ReleaseAssetNames prefers the platform download, then historical native files and archives.
 func ReleaseAssetNames(tag, goos, goarch string) []string {
-	name := fmt.Sprintf("bothouse-%s-%s", goos, goarch)
+	oldNative := fmt.Sprintf("bothouse-%s-%s", goos, goarch)
+	name := oldNative
 	ext := ".tar.gz"
 	switch goos {
 	case "windows":
-		name += ".exe"
+		name = "bothouse-windows.exe"
+		oldNative += ".exe"
 		ext = ".zip"
 	case "darwin":
-		name += ".dmg"
+		name = "bothouse-mac.dmg"
+		oldNative += ".dmg"
+	case "linux":
+		if goarch == "amd64" {
+			name = "bothouse-linux-x64"
+		}
 	}
 	legacy := fmt.Sprintf("cc-connect-%s-%s-%s", tag, goos, goarch)
 	historical := legacy
 	if goos == "windows" {
 		historical += ".exe"
 	}
-	return []string{name, legacy + ext, historical}
+	names := []string{name}
+	if oldNative != name {
+		names = append(names, oldNative)
+	}
+	return append(names, legacy+ext, historical)
 }
 
 // DownloadReleaseAsset verifies the exact downloaded name. A checksum failure is fatal:

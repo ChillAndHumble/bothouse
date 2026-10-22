@@ -14,79 +14,100 @@ import (
 	"testing"
 )
 
-func TestBothouseUpdateNativeAndLegacyFallback(t *testing.T) {
-	for _, goos := range []string{"linux", "windows", "darwin"} {
-		for _, scenario := range []string{"native", "legacy", "tampered", "missing-sums", "unlisted"} {
-			t.Run(goos+"/"+scenario, func(t *testing.T) {
-				native := "bothouse-" + goos + "-arm64"
-				legacy := "cc-connect-v0.1.1-" + goos + "-arm64.tar.gz"
-				if goos == "windows" {
-					native += ".exe"
-					legacy = "cc-connect-v0.1.1-windows-arm64.zip"
-				}
-				if goos == "darwin" {
-					native += ".dmg"
-				}
-				names := []string{native, legacy}
-				var requests []string
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					name := strings.TrimPrefix(r.URL.Path, "/v0.1.1/")
-					requests = append(requests, name)
-					switch name {
-					case names[0]:
-						if scenario == "legacy" {
-							http.NotFound(w, r)
-							return
-						}
-						fmt.Fprint(w, "native executable")
-					case names[1]:
-						fmt.Fprint(w, "legacy archive")
-					case "SHA256SUMS":
-						if scenario == "missing-sums" {
-							http.NotFound(w, r)
-							return
-						}
-						data := "native executable"
-						if scenario == "tampered" {
-							data = "unmodified executable"
-						}
-						sumName := names[0]
-						if scenario == "unlisted" {
-							sumName = "other-file"
-						}
-						fmt.Fprintf(w, "%x  %s\n", sha256.Sum256([]byte(data)), sumName)
-					case "checksums.txt":
-						fmt.Fprintf(w, "%x  %s\n", sha256.Sum256([]byte("legacy archive")), names[1])
-					default:
-						http.NotFound(w, r)
-					}
-				}))
-				defer server.Close()
-				data, name, err := DownloadReleaseAsset([]string{server.URL}, "v0.1.1", goos, "arm64")
-				switch scenario {
-				case "native":
-					if err != nil || name != names[0] || string(data) != "native executable" {
-						t.Fatalf("%q %q %v", data, name, err)
-					}
-					if !reflect.DeepEqual(requests, []string{names[0], "SHA256SUMS"}) {
-						t.Fatalf("unexpected requests: %v", requests)
-					}
-				case "legacy":
-					if err != nil || name != names[1] || string(data) != "legacy archive" {
-						t.Fatalf("%q %q %v", data, name, err)
-					}
-					if !reflect.DeepEqual(requests, []string{names[0], names[1], "checksums.txt"}) {
-						t.Fatalf("unexpected requests: %v", requests)
-					}
-				default:
-					if err == nil {
-						t.Fatal("unverified executable accepted")
-					}
-					if !reflect.DeepEqual(requests, []string{names[0], "SHA256SUMS"}) {
-						t.Fatalf("checksum failure triggered fallback: %v", requests)
-					}
+func TestReleaseAssetNamesSingleDownload(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		for goos, want := range map[string]string{
+			"darwin": "bothouse-mac.dmg", "windows": "bothouse-windows.exe",
+			"linux": map[string]string{"amd64": "bothouse-linux-x64", "arm64": "bothouse-linux-arm64"}[arch],
+		} {
+			t.Run(goos+"/"+arch, func(t *testing.T) {
+				if got := ReleaseAssetNames("v0.1.2", goos, arch)[0]; got != want {
+					t.Fatalf("preferred download = %s, want %s", got, want)
 				}
 			})
+		}
+	}
+}
+
+func TestBothouseUpdateNativeAndLegacyFallback(t *testing.T) {
+	for _, goos := range []string{"linux", "windows", "darwin"} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			for _, scenario := range []string{"native", "old-native", "legacy", "tampered", "missing-sums", "unlisted"} {
+				t.Run(goos+"/"+arch+"/"+scenario, func(t *testing.T) {
+					native := map[string]string{"darwin": "bothouse-mac.dmg", "windows": "bothouse-windows.exe", "linux": "bothouse-linux-" + arch}[goos]
+					if goos == "linux" && arch == "amd64" {
+						native = "bothouse-linux-x64"
+					}
+					oldNative := "bothouse-" + goos + "-" + arch
+					legacy := "cc-connect-v0.1.1-" + goos + "-" + arch + ".tar.gz"
+					if goos == "windows" {
+						oldNative += ".exe"
+						legacy = "cc-connect-v0.1.1-windows-" + arch + ".zip"
+					}
+					if goos == "darwin" {
+						oldNative += ".dmg"
+					}
+					selected := native
+					attempted := []string{native}
+					if scenario == "old-native" || scenario == "legacy" {
+						if oldNative != native {
+							attempted = append(attempted, oldNative)
+						}
+						selected = oldNative
+					}
+					if scenario == "legacy" {
+						selected = legacy
+						attempted = append(attempted, legacy)
+					}
+					sumsName := "SHA256SUMS"
+					payload := "native executable"
+					if selected == legacy {
+						sumsName = "checksums.txt"
+						payload = "legacy archive"
+					}
+					var requests []string
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						name := strings.TrimPrefix(r.URL.Path, "/v0.1.1/")
+						requests = append(requests, name)
+						switch name {
+						case selected:
+							fmt.Fprint(w, payload)
+						case sumsName:
+							if scenario == "missing-sums" {
+								http.NotFound(w, r)
+								return
+							}
+							data := payload
+							if scenario == "tampered" {
+								data = "unmodified executable"
+							}
+							sumName := selected
+							if scenario == "unlisted" {
+								sumName = "other-file"
+							}
+							fmt.Fprintf(w, "%x  %s\n", sha256.Sum256([]byte(data)), sumName)
+						default:
+							http.NotFound(w, r)
+						}
+					}))
+					defer server.Close()
+					data, name, err := DownloadReleaseAsset([]string{server.URL}, "v0.1.1", goos, arch)
+					switch scenario {
+					case "native", "old-native", "legacy":
+						if err != nil || name != selected || string(data) != payload {
+							t.Fatalf("%q %q %v", data, name, err)
+						}
+					default:
+						if err == nil {
+							t.Fatal("unverified executable accepted")
+						}
+					}
+					wantRequests := append(attempted, sumsName)
+					if !reflect.DeepEqual(requests, wantRequests) {
+						t.Fatalf("requests = %v, want %v", requests, wantRequests)
+					}
+				})
+			}
 		}
 	}
 }
@@ -113,7 +134,7 @@ func TestExtractReleaseBinaryNativeAndLegacy(t *testing.T) {
 		name string
 		data []byte
 	}{
-		{"bothouse-linux-arm64", payload}, {"bothouse-windows-arm64.exe", payload},
+		{"bothouse-linux-x64", payload}, {"bothouse-linux-arm64", payload}, {"bothouse-windows.exe", payload},
 		{"cc-connect-v0.1.1-darwin-arm64.tar.gz", tgz.Bytes()}, {"cc-connect-v0.1.1-windows-arm64.zip", zipped.Bytes()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

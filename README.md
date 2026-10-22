@@ -27,7 +27,7 @@ irm https://raw.githubusercontent.com/zuiho-kai/bothouse/main/install.ps1 | iex;
 
 The command is `bothouse`. No Go or Node required.
 
-Release downloads: `bothouse-darwin-<arch>.dmg` (contains Bothouse.app; drag it to Applications, then double-click), `bothouse-windows-<arch>.exe` (double-click), and `bothouse-linux-<arch>` (`chmod +x`, then run). Choose `arm64` or `amd64`. On macOS the app is unsigned: right-click → Open the first time. First launch opens the browser setup wizard. Verify downloads with `SHA256SUMS`.
+Release downloads: `bothouse-mac.dmg` (universal Bothouse.app for Apple Silicon and Intel; drag it to Applications, then double-click), `bothouse-windows.exe` (x64, also runs on ARM64 Windows; double-click), and `bothouse-linux-x64` / `bothouse-linux-arm64` (`chmod +x`, then run). On macOS the app is unsigned: right-click → Open the first time. First launch opens the browser setup wizard. Verify downloads with `SHA256SUMS`.
 
 **You'll need:** a Discord server (or a Feishu workspace) and at least one AI CLI you're already logged into (Claude Code, Codex or Gemini CLI). The wizard walks you through creating the bot.
 
