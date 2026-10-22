@@ -631,6 +631,7 @@ test('roster: a local CLI member is created without a model check and survives r
   const cc = await roster.create({ name: 'CC', cli: 'claude', persona: '本地' });
   assert.deepEqual(cc, { id: 'cc', name: 'CC', cli: 'claude', persona: '本地', source: 'ui' });
   assert.equal(hub.store.member('cc').cli, 'claude');
+  assert.equal(hub.memberView().find(m => m.id === 'cc').cli, 'claude');
   await assert.rejects(roster.create({ name: 'Bad', cli: 'vim' }), /cli must be one of/);
   const edited = await roster.update('cc', { name: 'CC', cli: 'codex' });
   assert.equal(edited.cli, 'codex');

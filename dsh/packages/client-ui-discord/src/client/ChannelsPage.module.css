@@ -159,6 +159,7 @@
   background: var(--dsw-alias-state-business-primary);
   font-size: 10px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .text {

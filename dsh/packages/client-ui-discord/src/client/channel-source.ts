@@ -35,6 +35,8 @@ export interface ChannelMember {
   readonly online: boolean
   /** DSH members only: configured model, or null for the host default. */
   readonly model?: MemberModel | null
+  /** Local CLI members only: which CLI the member runs as. */
+  readonly cli?: 'claude' | 'codex' | 'gemini'
   /** DSH members only. */
   readonly persona?: string
   /** DSH members only: created in the UI (editable) rather than the config file. */
