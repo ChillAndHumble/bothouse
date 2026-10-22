@@ -137,6 +137,29 @@ func roleWikiEngines(agentType string, picks *WizardWiki, clis []LocalCLI) map[s
 	return m
 }
 
+// roleWikiConfig is what setup_wiki.py writes into the role wiki's config.json (WIKI_ENGINES): the engines, and for
+// the dsh engine how to start the user's dsh (dshLaunch) with the role's wizard-picked API, if any.
+func roleWikiConfig(dataDir string, r plannedRole, picks *WizardWiki, clis []LocalCLI) map[string]any {
+	e := roleWikiEngines(r.AgentType, picks, clis)
+	if e == nil {
+		return nil
+	}
+	out := map[string]any{}
+	usesDSH := false
+	for k, v := range e {
+		out[k] = v
+		usesDSH = usesDSH || v == "dsh"
+	}
+	if d := wizardDSH(clis); usesDSH && d.Path != "" {
+		cmd, args := dshLaunch(d.Path)
+		out["dsh_cmd"] = append([]string{cmd}, args[:len(args)-2]...) // without "--profile acp": the engine boots headless
+		if r.AgentType == "dsh" && r.Provider != nil {
+			out["dsh_patch"], out["dsh_env_file"] = DSHPatchPath(dataDir, r.project), DSHEnvPath(dataDir, r.project)
+		}
+	}
+	return out
+}
+
 // wikiMarker starts the wiki section of a role's persona.
 const wikiMarker, wikiMarkerEnd = "<!-- conest:wiki -->", "<!-- /conest:wiki -->"
 
@@ -219,7 +242,7 @@ type roleWikiSetup struct {
 }
 
 // prepareRoleWikis installs the programs (or uses the user's) and makes the main wiki when there is none.
-func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines map[string]string) (*roleWikiSetup, string, error) {
+func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines map[string]any) (*roleWikiSetup, string, error) {
 	if runtime.GOOS == "windows" {
 		return nil, "", errors.New("role wikis need zsh and fcntl: not on Windows")
 	}
@@ -252,7 +275,7 @@ func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines m
 }
 
 // roleWikiEntry adds the role to bots.json (an entry already there is kept) and makes its wiki.
-func (s *roleWikiSetup) addRole(ctx context.Context, r plannedRole, lead string, engines map[string]string) (string, error) {
+func (s *roleWikiSetup) addRole(ctx context.Context, r plannedRole, lead string, engines map[string]any) (string, error) {
 	bots := filepath.Join(s.dir, "bots.json")
 	all := map[string]json.RawMessage{}
 	if b, err := os.ReadFile(bots); err == nil {
@@ -313,7 +336,7 @@ func applyRoleWikis(ctx context.Context, res *WizardResult, env WizardEnv, req W
 	if len(roles) == 0 {
 		return env.WikiSubScript
 	}
-	s, detail, err := prepareRoleWikis(ctx, env, pl.fallbackName, roleWikiEngines(pl.roles[roles[0]].AgentType, req.Wiki, clis))
+	s, detail, err := prepareRoleWikis(ctx, env, pl.fallbackName, roleWikiConfig(env.DataDir, pl.roles[roles[0]], req.Wiki, clis))
 	if err != nil {
 		addStep(res, "wiki", err, "")
 		return env.WikiSubScript
@@ -324,7 +347,7 @@ func applyRoleWikis(ctx context.Context, res *WizardResult, env WizardEnv, req W
 	for _, i := range roles {
 		r := pl.roles[i]
 		step := fmt.Sprintf("role %d wiki", i+1)
-		wiki, err := s.addRole(ctx, r, pl.fallbackName, roleWikiEngines(r.AgentType, req.Wiki, clis))
+		wiki, err := s.addRole(ctx, r, pl.fallbackName, roleWikiConfig(env.DataDir, r, req.Wiki, clis))
 		if err != nil {
 			addStep(res, step, err, "")
 			continue

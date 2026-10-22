@@ -42,6 +42,7 @@ var WikiEngines = []WikiEngine{
 	{"opus", "Claude Opus", "claudecode"},
 	{"codex:high", "Codex (GPT)", "codex"},
 	{"agy", "Gemini (Antigravity)", "antigravity"},
+	{"dsh", "DSH (DeepSeek Harness)", "dsh"},
 }
 
 // wikiDefaults: ingest.py DEFAULTS (ingest_engine, night_engine, split_engine), used when config.json has no value.

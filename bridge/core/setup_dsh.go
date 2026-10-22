@@ -64,6 +64,12 @@ func DSHPatchPath(dataDir, project string) string {
 	return filepath.Join(dataDir, "dsh", project+".patch.yml")
 }
 
+// DSHEnvPath holds the role's wizard-picked key as KEY=VALUE (0600) for runs outside the role's own process (the wiki's
+// dsh engine runs from cron, which does not get the role's env).
+func DSHEnvPath(dataDir, project string) string {
+	return filepath.Join(dataDir, "dsh", project+".env")
+}
+
 // dshProviderPatch points llm-deepseek at the vendor's Anthropic endpoint and makes model the default.
 func dshProviderPatch(project, baseURL, model string) string {
 	q := func(s string) string { b, _ := json.Marshal(s); return string(b) } // JSON string = YAML double-quoted scalar
@@ -129,6 +135,9 @@ func writeDSHProviderPatch(dataDir, project string, p WizardProvider) (string, e
 	}
 	path := DSHPatchPath(dataDir, project)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if err := AtomicWriteFile(DSHEnvPath(dataDir, project), []byte(DSHKeyEnv+"="+p.APIKey+"\n"), 0o600); err != nil {
 		return "", err
 	}
 	return path, AtomicWriteFile(path, []byte(dshProviderPatch(project, base, model)), 0o644)

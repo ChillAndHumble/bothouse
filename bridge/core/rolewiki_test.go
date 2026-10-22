@@ -153,3 +153,20 @@ func TestApplyWizardRoleWikis(t *testing.T) {
 		t.Fatalf("rerun: %+v hooks %v", res, store.hooks)
 	}
 }
+
+func TestRoleWikiConfigDSH(t *testing.T) {
+	dsh, script, node := fakeDSH(t)
+	real, _ := filepath.EvalSymlinks(script)
+	clis := []LocalCLI{{AgentType: "dsh", Path: dsh, Supported: true}}
+	r := plannedRole{wizardIdentity: wizardIdentity{WizardRole: WizardRole{AgentType: "dsh", Provider: &WizardProvider{Vendor: "deepseek", APIKey: "k"}}}, project: "whale"}
+	c := roleWikiConfig("/data", r, nil, clis)
+	cmd, _ := c["dsh_cmd"].([]string)
+	if c["ingest_engine"] != "dsh" || c["dream_engine"] != "dsh" || len(cmd) != 2 || cmd[0] != node || cmd[1] != real ||
+		c["dsh_patch"] != DSHPatchPath("/data", "whale") || c["dsh_env_file"] != DSHEnvPath("/data", "whale") {
+		t.Fatalf("config = %v", c)
+	}
+	r.Provider = nil // the user's own DSH setup: no overlay
+	if c := roleWikiConfig("/data", r, nil, clis); c["dsh_patch"] != nil || c["dsh_cmd"] == nil {
+		t.Fatalf("own setup config = %v", c)
+	}
+}
