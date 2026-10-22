@@ -76,9 +76,19 @@ def commit(w, msg):
                    cwd=w, check=True)
 
 
+def made(w):
+    """True when w is a finished wiki (config.json is written last). A half-made one (template copied, then a
+    crash before config.json) is removed so this run makes it again."""
+    if (w / "config.json").exists():
+        return True
+    if (w / ".git").exists() and (w / "bin").is_dir():
+        shutil.rmtree(w)
+    return False
+
+
 def main_wiki(w, lead):
     w = Path(w).expanduser()
-    if (w / "bin" / "ingest.py").exists():
+    if made(w):
         print(w, "exists")
         return
     if w.exists() and any(w.iterdir()):
@@ -95,7 +105,7 @@ def main_wiki(w, lead):
     cfg = {"assistant": lead, "bots": {lead: [lead]},
            # each role's sessions go into that role's own wiki (bots.json); this one reads none (an empty dir)
            "transcripts": str(w / ".no-sessions"), "rule_files": []}
-    cfg.update({k: v for k, v in json.loads(os.environ.get("WIKI_ENGINES") or "{}").items()
+    cfg.update({k: v for k, v in (json.loads(os.environ.get("WIKI_ENGINES") or "{}") or {}).items()
                 if k.endswith("_engine") or k in ("after_codex", "codex_models", "dsh_cmd", "dsh_patch", "dsh_env_file")})
     (w / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")
     commit(w, "llm-wiki：主 wiki 和共享程序（向导建）")
@@ -105,9 +115,13 @@ def main_wiki(w, lead):
 def main(bot):
     name = NAMES[bot]
     w = Path(_bots[bot].get("wiki") or Path(_bots[bot]["workdir"]) / "wiki").expanduser()
-    if w.exists():
+    if made(w):
         print(bot, w, "exists")
         return
+    if w.exists() and any(w.iterdir()):
+        sys.exit(f"{w} exists and is not a wiki (no config.json): not touching it")
+    if w.exists():
+        w.rmdir()
     from_template(w)
     schema = (w / "schema/CLAUDE.zh-CN.md").read_text()
     body = schema.split("## 分层", 1)[1]
@@ -150,7 +164,7 @@ def main(bot):
     }
     if _bots[bot].get("dsh_home"):
         cfg["dsh_home"] = _bots[bot]["dsh_home"]  # the dsh engine runs under the role's DSH home (ingest.py dsh_env)
-    engines = json.loads(os.environ.get("WIKI_ENGINES") or "{}")
+    engines = (json.loads(os.environ.get("WIKI_ENGINES") or "{}") or {})
     cfg.update({k: v for k, v in engines.items() if k.endswith("_engine") or k in ("after_codex", "codex_models", "dsh_cmd", "dsh_patch", "dsh_env_file")})
     (w / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")  # git-ignored
     r = subprocess.run([sys.executable, "-I", "bin/lint.py"], cwd=w, capture_output=True, text=True)

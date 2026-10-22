@@ -233,6 +233,15 @@ var roleWikiRun = func(ctx context.Context, env []string, name string, args ...s
 	return s, nil
 }
 
+// enginesJSON: WIKI_ENGINES for setup_wiki.py; no engine found (nil) is "{}", not "null".
+func enginesJSON(engines map[string]string) string {
+	if engines == nil {
+		return "{}"
+	}
+	b, _ := json.Marshal(engines)
+	return string(b)
+}
+
 // roleWikiSetup is one wizard run's wiki setup: where the programs are, and the hook to add.
 type roleWikiSetup struct {
 	dir      string // the programs (export.py, setup_wiki.py, sub-wiki.sh, bots.json)
@@ -250,6 +259,9 @@ func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines m
 	if err != nil {
 		return nil, "", err
 	}
+	if _, err := exec.LookPath("zsh"); err != nil { // the agent.closed hook and the cron jobs run sub-wiki.sh with zsh
+		return nil, "", errors.New("zsh not found: the wiki hook and nightly jobs run sub-wiki.sh with zsh")
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, "", errors.New("git not found: the wikis are git repositories")
 	}
@@ -264,8 +276,8 @@ func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines m
 	}
 	detail := ""
 	if mw, ok := FindWiki(); !ok {
-		eng, _ := json.Marshal(engines)
-		if _, err := roleWikiRun(ctx, []string{"LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"), "WIKI_ENGINES=" + string(eng)},
+		eng := enginesJSON(engines)
+		if _, err := roleWikiRun(ctx, []string{"LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"), "WIKI_ENGINES=" + eng},
 			py, "-I", filepath.Join(s.dir, "setup_wiki.py"), "--main", mw, lead); err != nil {
 			return nil, "", err
 		}
@@ -312,9 +324,9 @@ func (s *roleWikiSetup) addRole(ctx context.Context, r plannedRole, lead string,
 			return "", err
 		}
 	}
-	eng, _ := json.Marshal(engines)
+	eng := enginesJSON(engines)
 	if _, err := roleWikiRun(ctx, []string{"WIKI_BOTS=" + bots, "LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"),
-		"WIKI_LEAD=" + lead, "WIKI_ENGINES=" + string(eng)},
+		"WIKI_LEAD=" + lead, "WIKI_ENGINES=" + eng},
 		s.python, "-I", filepath.Join(s.dir, "setup_wiki.py"), r.project); err != nil {
 		return "", err
 	}
