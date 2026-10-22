@@ -199,6 +199,17 @@ def route(req, bot=""):
 
 
 def decide(req, me=""):
+    action, reason, sc = _decide_lead(req, me)
+    if action == "reply" and req.get("busy"):  # @主角色/叫她名字且她正忙：是不是叫停，同 decide_sub（用户原话「艾特她的时候，不要只有insert插入，而是还有abort插入」）
+        content = (req.get("content") or "").strip()
+        if req.get("mentioned") or any(n in content for n in NAMES[me]):
+            sc2 = judge(content, True, req.get("buffered") or [], me)
+            if ACTIONS[sc2.choice] == "abort":
+                return "abort", reason + "；model: 打断", sc2
+    return action, reason, sc
+
+
+def _decide_lead(req, me=""):
     content = (req.get("content") or "").strip()
     buffered = req.get("buffered") or []
     busy = bool(req.get("busy"))
