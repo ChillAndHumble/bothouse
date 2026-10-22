@@ -105,3 +105,10 @@ export async function applyWizard(req: WizardRequest): Promise<WizardResult> {
   if (json.data) return json.data as WizardResult;
   throw new Error(json.error || `HTTP ${res.status}`);
 }
+
+export interface DSHStatus {
+  found: boolean; version?: string; plugin_installed: boolean; profile: string;
+  open_command: string; log?: string;
+}
+export const getDSHStatus = () => api.get<DSHStatus>('/setup/dsh/status');
+export const installDSHPlugin = (lang: string) => api.post<DSHStatus>('/setup/dsh/install', { lang });

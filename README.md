@@ -1,5 +1,7 @@
 # bothouse
 
+DSH setup: choose **DSH** in the first wizard step, then detect dsh → install plugins → run the returned command to open DSH web. Bots, CLIs, personas and models are configured in DSH afterwards. The wizard passes Chinese or English to the installer. A source checkout containing `dsh/install.sh` is required (or set `BOTHOUSE_DSH_DIR`). CLI equivalent: `bothouse setup dsh install --lang zh`.
+
 English | [中文](README.zh-CN.md)
 
 **Your AIs shouldn't wake up with amnesia every day.** bothouse turns Claude, Codex, Gemini, DeepSeek, MiniMax and friends into a team that lives in your group chat: named roles, real handoffs, a memory of yesterday, and a review every night. It gets to know you better the more you use it.

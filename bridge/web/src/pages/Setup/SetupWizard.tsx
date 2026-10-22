@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Bot, Check, CheckCircle2, Copy, ExternalLink, Globe, House, Loader2, MessageSquare, Plus, RefreshCw, Smartphone, Trash2, XCircle } from 'lucide-react';
+import { Bot, Check, CheckCircle2, Copy, ExternalLink, Globe, House, Loader2, Puzzle, MessageSquare, Plus, RefreshCw, Smartphone, Trash2, XCircle } from 'lucide-react';
 import { useThemeStore } from '@/store/theme';
 import './setup.css';
 import { Badge, Button, Card, Input, Textarea } from '@/components/ui';
@@ -13,6 +13,7 @@ import {
   type CloudWebTest, type DiscordBotInfo, type LocalHubStatus, type DiscordChannel, type ExistingBot, type LocalCLI, type MatrixCell, type PersonaPreset,
   type SetupPersona, type SetupStateResp, type WizardRequest, type WizardResult, type WizardVendor, type WizardWiki,
 } from '@/api/wizard';
+import DSHSetup from './DSHSetup';
 import { isZhLang, keptLangLabel, langLabel, replyLangOptions, stepLabel, wizardTexts } from './texts';
 
 interface RoleDraft {
@@ -63,7 +64,8 @@ export default function SetupWizard() {
   const sysReply = lang;
 
   const [step, setStep] = useState(0);
-  const [platform, setPlatform] = useState<'discord' | 'feishu' | 'cloud_web'>('discord');
+  const [picked, setPlatform] = useState<'discord' | 'feishu' | 'cloud_web' | 'dsh'>('discord');
+  const platform = picked;
   // 自建平台 (cloud_web): the hub on this machine, or someone else's (address + token, tested)
   const [hub, setHub] = useState<LocalHubStatus | null>(null);
   const [hubBusy, setHubBusy] = useState<'' | 'detect' | 'start'>('');
@@ -295,6 +297,7 @@ export default function SetupWizard() {
 
   // ── request ──
   const buildRequest = (maskSecrets = false): WizardRequest => {
+    if (platform === 'dsh') throw new Error('DSH uses the plugin installer');
     const mask = (s: string, ph: string) => (maskSecrets && s ? ph : s);
     const req: WizardRequest = {
       platform: platform === 'feishu' ? ((feishu?.platform_type as 'feishu' | 'lark') || 'feishu') : platform,
@@ -392,6 +395,8 @@ export default function SetupWizard() {
     c.login === 'logged_in' ? <Badge variant="success">{T.loggedIn}</Badge>
       : c.login === 'not_logged_in' ? <Badge variant="warning">{T.notLoggedIn}</Badge> : <Badge>{T.unknownLogin}</Badge>;
 
+  if (picked === 'dsh' && step > 0) return <DSHSetup lang={lang} onBack={() => setStep(0)} />;
+
   return (
     <div className="setup-wizard animate-fade-in space-y-6 w-full max-w-4xl mx-auto" data-testid="setup-wizard">
       <div className="setup-welcome">
@@ -417,8 +422,8 @@ export default function SetupWizard() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">{T.title}</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{T.subtitle}</p>
-          {roles.some((r) => !keptLang(r)) && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{picked === 'dsh' ? (zh ? '检测 dsh → 安装插件 → 打开 DSH 网页。角色、CLI 和人设在 DSH 页面上配置。' : 'Detect dsh → install plugins → open DSH web. Configure roles, CLIs and personas in DSH.') : T.subtitle}</p>
+          {picked !== 'dsh' && roles.some((r) => !keptLang(r)) && (
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-1" data-testid="reply-lang-line">{T.replyLangLine}<b>{langLabel(lang)}</b><span className="text-xs text-gray-500">{T.replyLangHow}</span></p>
           )}
           {keptRoles.length > 0 && (
@@ -432,7 +437,7 @@ export default function SetupWizard() {
 
       {/* stepper */}
       <div className="setup-steps flex flex-wrap gap-1.5" aria-label={T.title}>
-        {visibleSteps.map((s, i) => (
+        {(picked === 'dsh' ? [0] : visibleSteps).map((s, i) => (
           <span key={s} aria-current={s === step ? 'step' : undefined} className={`px-2.5 py-1 rounded-full text-xs ${s === step ? 'bg-accent text-white dark:text-black' : i < pos ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-white/[0.06] text-gray-500'}`}>
             {i + 1}. {T.steps[s]}
           </span>
@@ -444,16 +449,16 @@ export default function SetupWizard() {
         {step === 0 && (
           <div className="space-y-3">
             <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{T.platformQ}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {([['discord', 'Discord', T.discordDesc, MessageSquare], ['feishu', zh ? '飞书 / Lark' : 'Feishu / Lark', T.feishuDesc, Smartphone],
-                ['cloud_web', T.cloudWebLabel, T.cloudWebDesc, Globe]] as const).map(([k, label, desc, Icon]) => (
-                <button key={k} aria-pressed={platform === k} data-testid={`platform-${k}`} onClick={() => {
+                ['dsh', 'DSH', T.dshDesc, Puzzle], ['cloud_web', T.cloudWebLabel, T.cloudWebDesc, Globe]] as const).map(([k, label, desc, Icon]) => (
+                <button key={k} aria-pressed={picked === k} data-testid={`platform-${k}`} onClick={() => {
                   setPlatform(k);
                   if (k === 'feishu') setRoles((rs) => rs.slice(0, 1));
-                  if (k === 'cloud_web') setRoles((rs) => rs.map((r, i) => (i === 0 && !r.name && !r.reuse_project ? { ...r, name: T.cwDefaultName } : r)));
+                  if (k === 'cloud_web' || k === 'dsh') setRoles((rs) => rs.map((r, i) => (i === 0 && !r.name && !r.reuse_project ? { ...r, name: T.cwDefaultName } : r)));
                 }}
-                  className={`setup-platform text-left p-4 rounded-xl border transition-all ${platform === k ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'}`}>
-                  <div className="flex items-center gap-2 font-medium text-gray-900 dark:text-white"><Icon size={16} />{label}{platform === k && <Check size={14} className="text-accent" />}</div>
+                  className={`setup-platform text-left p-4 rounded-xl border transition-all ${picked === k ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'}`}>
+                  <div className="flex items-center gap-2 font-medium text-gray-900 dark:text-white"><Icon size={16} />{label}{picked === k && <Check size={14} className="text-accent" />}</div>
                   <p className="text-xs text-gray-500 mt-1">{desc}</p>
                 </button>
               ))}
