@@ -139,8 +139,9 @@ func TestApplyWizardRoleWikis(t *testing.T) {
 	if !strings.Contains(string(persona), wikiMarker) || !strings.Contains(string(persona), "--switch whale dream off") {
 		t.Fatalf("persona = %s", persona)
 	}
-	sub := filepath.Join(dir, "sub-wiki.sh")
-	if len(store.hooks) != 1 || store.hooks[0] != "agent.closed /bin/sh "+wikiQuote(sub)+" hook" {
+	sub := filepath.Join(dir, "sub-wiki.py")
+	py, _ := FindPython()
+	if len(store.hooks) != 1 || store.hooks[0] != "agent.closed "+subWikiCommand(py, sub, "hook") {
 		t.Fatalf("hooks = %v", store.hooks)
 	}
 	nightly := ""
@@ -149,7 +150,7 @@ func TestApplyWizardRoleWikis(t *testing.T) {
 			nightly = j.Exec
 		}
 	}
-	if !strings.Contains(nightly, "sub-wiki.sh") || !strings.Contains(nightly, "nightly") {
+	if !strings.Contains(nightly, "sub-wiki.py") || !strings.Contains(nightly, "nightly") {
 		t.Fatalf("nightly job = %q (jobs %d)", nightly, len(cron.jobs))
 	}
 	// the switch the persona names works

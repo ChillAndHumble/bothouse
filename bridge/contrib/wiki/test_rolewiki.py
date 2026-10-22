@@ -2,7 +2,7 @@
 """Tests of the per-role wiki pieces the setup wizard uses: export.py kinds (claudecode, dsh default home, a type with
 no reader = diary only), the on/off switch and --list, setup_wiki.py from the plain template (main and role wiki).
 Run: python3 -I bridge/contrib/wiki/test_rolewiki.py"""
-import json, os, re, subprocess, sys, tempfile, unittest
+import json, os, re, subprocess, sys, tempfile, time, unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -106,14 +106,16 @@ class RoleWiki(unittest.TestCase):
         self.assertTrue((w / "config.json").exists())
 
 
-class SubWikiSh(unittest.TestCase):
-    """sub-wiki.sh is POSIX sh (no zsh needed): with a fake export.py --list of two bots, nightly runs each one's
-    bin/ingest.py; hook-run finds the exported session by id. Run under /bin/sh and, if present, dash."""
+class SubWikiPy(unittest.TestCase):
+    """sub-wiki.py (Mac, Linux and Windows alike): with a fake export.py --list of two bots, nightly runs each one's
+    bin/ingest.py; hook-run finds the exported session by id; hook returns at once and runs hook-run detached;
+    the old sub-wiki.sh entry forwards to it."""
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.dir = self.tmp / "prog"
         self.dir.mkdir()
-        (self.dir / "sub-wiki.sh").write_text((HERE / "sub-wiki.sh").read_text())
+        for f in ("sub-wiki.py", "sub-wiki.sh"):
+            (self.dir / f).write_text((HERE / f).read_text())
         self.calls = self.tmp / "calls"
         lines = []
         for b in ("juzi", "whale"):
@@ -126,26 +128,71 @@ class SubWikiSh(unittest.TestCase):
             "import sys\nif '--list' in sys.argv: print(" + repr("\n".join(lines)) + ")\n")
         self.env = dict(os.environ, WIKI_PYTHON=sys.executable, WIKI_TRANSCRIPTS=str(self.tmp / "tr"))
 
-    def shells(self):
-        return [s for s in ("/bin/sh", "/bin/dash", "/usr/bin/dash") if os.path.exists(s)]
-
-    def run_sh(self, sh, *args):
-        subprocess.run([sh, str(self.dir / "sub-wiki.sh"), *args], env=self.env, check=True, timeout=30)
+    def got(self):
         got = self.calls.read_text().splitlines()
         self.calls.unlink()
         return got
 
+    def run_py(self, *args):
+        subprocess.run([sys.executable, "-I", str(self.dir / "sub-wiki.py"), *args], env=self.env, check=True, timeout=30)
+        return self.got()
+
     def test_nightly_runs_each_bot(self):
-        for sh in self.shells():
-            self.assertEqual(self.run_sh(sh, "nightly"), ["juzi --nightly", "whale --nightly"], sh)
+        self.assertEqual(self.run_py("nightly"), ["juzi --nightly", "whale --nightly"])
 
     def test_hook_run_finds_session(self):
         d = self.tmp / "tr" / "whale" / "2026-10"
         d.mkdir(parents=True)
         (d / "abcd1234-sess-42.jsonl").write_text("")
-        for sh in self.shells():
-            self.assertEqual(self.run_sh(sh, "hook-run", "whale", "sess-42"), ["whale --session abcd1234-sess-42"], sh)
-            self.assertEqual(self.run_sh(sh, "hook-run", "whale", "nope"), ["whale --pending"], sh)
+        self.assertEqual(self.run_py("hook-run", "whale", "sess-42"), ["whale --session abcd1234-sess-42"])
+        self.assertEqual(self.run_py("hook-run", "whale", "nope"), ["whale --pending"])
+
+    def test_hook_detaches(self):
+        env = dict(self.env, CC_HOOK_PROJECT="proj-whale", CC_HOOK_AGENT_SESSION_ID="nope")
+        subprocess.run([sys.executable, "-I", str(self.dir / "sub-wiki.py"), "hook"], env=env, check=True, timeout=10)
+        for _ in range(100):
+            if self.calls.exists() and self.calls.read_text().endswith("\n"):
+                break
+            time.sleep(0.1)
+        self.assertEqual(self.got(), ["whale --pending"])
+        env["CC_HOOK_PROJECT"] = "other"  # a project outside bots.json: nothing runs
+        subprocess.run([sys.executable, "-I", str(self.dir / "sub-wiki.py"), "hook"], env=env, check=True, timeout=10)
+        time.sleep(1)
+        self.assertFalse(self.calls.exists())
+
+    @unittest.skipIf(os.name == "nt", "no /bin/sh on Windows")
+    def test_sh_forwards(self):
+        subprocess.run(["/bin/sh", str(self.dir / "sub-wiki.sh"), "lint"], env=self.env, check=True, timeout=30)
+        self.assertEqual(self.got(), ["juzi --lint", "whale --lint"])
+
+
+class FileLock(unittest.TestCase):
+    """llmwiki/filelock.py: an exclusive lock a second opener cannot take (fcntl on Mac/Linux, msvcrt on Windows)."""
+    def setUp(self):
+        sys.path.insert(0, str(HERE / "llmwiki"))
+        import filelock
+        self.lock = filelock.lock
+        self.path = Path(tempfile.mkdtemp()) / ".ingest.lock"
+
+    def test_exclusive(self):
+        for mode in ("w", "a"):
+            with open(self.path, mode) as a:
+                self.lock(a)
+                with open(self.path, mode) as b:
+                    self.assertRaises(BlockingIOError, self.lock, b, False)
+            with open(self.path, mode) as b:  # released on close
+                self.lock(b, False)
+
+    def test_other_process_waits(self):
+        code = ("import sys, time; sys.path.insert(0, sys.argv[1]); import filelock\n"
+                "f = open(sys.argv[2], 'w'); t = time.time(); filelock.lock(f); print(time.time() - t)")
+        with open(self.path, "w") as a:
+            self.lock(a)
+            p = subprocess.Popen([sys.executable, "-I", "-c", code, str(HERE / "llmwiki"), str(self.path)],
+                                 stdout=subprocess.PIPE, text=True)
+            time.sleep(1)
+        waited = float(p.communicate(timeout=30)[0])
+        self.assertGreater(waited, 0.5)
 
 
 if __name__ == "__main__":

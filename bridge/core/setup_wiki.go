@@ -256,12 +256,16 @@ var wikiCronJobs = []wikiCronJob{
 	{"wiki weekly lint", "0 3 * * 0", "lint"},
 }
 
-// SubWikiScriptFromHooks: the sub-wiki.sh of an agent.closed hook command (README step 3), "" if none.
+// SubWikiScriptFromHooks: the sub-wiki.py of an agent.closed hook command (README step 3), "" if none. A hook
+// from before sub-wiki.py (to sub-wiki.sh, now a one-line forwarder) gives the sub-wiki.py next to it.
 func SubWikiScriptFromHooks(commands []string) string {
 	for _, c := range commands {
 		for _, f := range strings.Fields(c) {
 			f = strings.Trim(f, `"'`)
-			if strings.HasSuffix(f, "sub-wiki.sh") && fileExists(f) {
+			if strings.HasSuffix(f, "sub-wiki.sh") {
+				f = strings.TrimSuffix(f, ".sh") + ".py"
+			}
+			if strings.HasSuffix(f, "sub-wiki.py") && fileExists(f) {
 				return f
 			}
 		}
@@ -269,14 +273,54 @@ func SubWikiScriptFromHooks(commands []string) string {
 	return ""
 }
 
+// wikiPython: the Python the wiki commands run (FindPython), "python3" if none is found now.
+func wikiPython() string {
+	if p, err := FindPython(); err == nil {
+		return p
+	}
+	return "python3"
+}
+
+// cmdQuote quotes for the shell cron jobs and hooks run in: POSIX sh, or PowerShell on Windows (engine.go
+// runs cron exec with powershell.exe there, and hooks with the default shell, also powershell.exe). Both
+// shells take single quotes; PowerShell escapes an embedded ' as ”.
+func cmdQuote(s string) string {
+	if runtime.GOOS == "windows" {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellRun: the command line that runs program prog with args in that shell. PowerShell needs the call
+// operator & to run a quoted path; sh does not.
+func shellRun(prog string, args ...string) string {
+	cmd := cmdQuote(prog)
+	if runtime.GOOS == "windows" {
+		cmd = "& " + cmd
+	}
+	for _, a := range args {
+		cmd += " " + a
+	}
+	return cmd
+}
+
+// subWikiCommand: `<python> <sub-wiki.py> <mode>`, the same on Mac, Linux and Windows.
+func subWikiCommand(py, sub, mode string) string {
+	return shellRun(py, "-I", cmdQuote(sub), mode)
+}
+
 func wikiExec(dir, sub, arg string) string {
-	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" } // POSIX quoting
-	cmd := fmt.Sprintf("python3 -I %s --%s", q(filepath.Join(dir, "bin", "ingest.py")), arg)
+	py := wikiPython()
+	cmd := shellRun(py, "-I", cmdQuote(filepath.Join(dir, "bin", "ingest.py")), "--"+arg)
 	if home, _ := os.UserHomeDir(); dir != filepath.Join(home, "wiki") {
-		cmd = "WIKI_DIR=" + q(dir) + " " + cmd
+		if runtime.GOOS == "windows" {
+			cmd = "$env:WIKI_DIR=" + cmdQuote(dir) + "; " + cmd
+		} else {
+			cmd = "WIKI_DIR=" + cmdQuote(dir) + " " + cmd
+		}
 	}
 	if sub != "" {
-		cmd += fmt.Sprintf("; sh %s %s", q(sub), arg)
+		cmd += "; " + subWikiCommand(py, sub, arg)
 	}
 	return cmd
 }
@@ -295,9 +339,9 @@ func AddWikiCronJobs(c WizardCron, project, sessionKey, dir, sub string) (added,
 	noLimit := 0
 	for _, w := range wikiCronJobs {
 		if j := have[w.desc]; j != nil {
-			// a job from before the role wikis (#35) runs only the main wiki: add the sub-wiki.sh part;
-			// one from before sub-wiki.sh went POSIX runs it with zsh (often missing on Linux): rewrite it to sh
-			if sub != "" && (!strings.Contains(j.Exec, "sub-wiki.sh") || strings.Contains(j.Exec, "zsh")) {
+			// a job from before the role wikis (#35) runs only the main wiki: add the sub-wiki part; one from
+			// before sub-wiki.py runs sub-wiki.sh with zsh or sh (no sh on Windows): rewrite it to python
+			if sub != "" && !strings.Contains(j.Exec, "sub-wiki.py") {
 				if err := c.SetExec(j.ID, wikiExec(dir, sub, w.arg)); err != nil {
 					return added, kept, err
 				}
@@ -342,10 +386,6 @@ func applyWizardWiki(res *WizardResult, env WizardEnv, req WizardRequest, projec
 		} else if len(keys) > 0 {
 			addStep(res, "wiki", nil, filepath.Join(dir, "config.json")+": "+strings.Join(keys, ", "))
 		}
-	}
-	if runtime.GOOS == "windows" {
-		addStep(res, "wiki cron", nil, "skipped on Windows: see bridge/contrib/wiki/README.md step 4")
-		return
 	}
 	if sessionKey == "" {
 		addStep(res, "wiki cron", nil, "skipped: no default channel; add them by hand, bridge/contrib/wiki/README.md step 4")
