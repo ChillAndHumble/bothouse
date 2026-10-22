@@ -22,6 +22,14 @@ import (
 // configWizardStore implements core.WizardStore on top of config.toml.
 type configWizardStore struct{}
 
+func (configWizardStore) EnsureHook(event, command string) (bool, error) {
+	return config.EnsureWizardHook(event, command)
+}
+
+func (bootstrapOnWriteStore) EnsureHook(event, command string) (bool, error) {
+	return config.EnsureWizardHook(event, command) // called after ApplyProjects wrote the config
+}
+
 func toCoreSnapshot(ps []config.WizardProjectSnapshot) core.WizardSnapshot {
 	out := core.WizardSnapshot{Projects: make([]core.WizardExistingProject, 0, len(ps))}
 	for _, p := range ps {

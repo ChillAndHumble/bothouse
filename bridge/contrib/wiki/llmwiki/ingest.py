@@ -67,6 +67,9 @@ DEFAULTS = {
     "ingest_engine": "haiku", "fallback_engine": "sonnet", "night_engine": "codex:high", "review_engine": "codex:high",
     "lint_engine": "codex:max", "dream_engine": "codex:high", "split_engine": "codex:high",
     "codex_models": ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"], "after_codex": ["agy", "haiku"],
+    # the nightly reflection (dream) on or off: the role turns it off when its user asks in chat (export.py --switch;
+    # user 2026-10-22 「插件默认全开，别人可关」「用户直接跟机器人说，就可以关了」)
+    "dream": True,
 }
 
 
@@ -1501,7 +1504,8 @@ def run(a, engines=None):
     WIKI = WORK  # every model pass, git call and prompt below works in the worktree
     if a.lint:
         lint_pass(db)
-        dream(db, time.time() + NIGHT_BUDGET)
+        if CFG["dream"]:
+            dream(db, time.time() + NIGHT_BUDGET)
         return
     items = []
     closed = take_queue() | ({a.session} if a.session else set())
@@ -2186,7 +2190,8 @@ def nightly(a):
     deadline = time.time() + NIGHT_BUDGET
     run(a, engines=[NIGHT_ENGINE])
     split_pass(state())
-    dream(state(), deadline)  # before review: review backlog can eat the whole budget
+    if CFG["dream"]:
+        dream(state(), deadline)  # before review: review backlog can eat the whole budget
     review(state(), deadline)
 
 
