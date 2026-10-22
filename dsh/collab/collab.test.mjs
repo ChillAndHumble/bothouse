@@ -620,3 +620,54 @@ test('cloud-web: a bot may not take a name another member already uses', () => {
   assert.equal(ws.of('register_ack')[0].ok, false);
   assert.equal(ws.closed.code, 4002);
 });
+
+test('roster: a local CLI member is created without a model check and survives reload', async () => {
+  const hub = makeHub();
+  const members = fakeDsh().attach(hub, []);
+  const llm = fakeLlm();
+  llm.resolveModelInfo = async () => { throw new Error('model check must be skipped for cli members'); };
+  const roster = new Roster(hub, members, llm);
+  roster.load([]);
+  const cc = await roster.create({ name: 'CC', cli: 'claude', persona: '本地' });
+  assert.deepEqual(cc, { id: 'cc', name: 'CC', cli: 'claude', persona: '本地', source: 'ui' });
+  assert.equal(hub.store.member('cc').cli, 'claude');
+  await assert.rejects(roster.create({ name: 'Bad', cli: 'vim' }), /cli must be one of/);
+  const edited = await roster.update('cc', { name: 'CC', cli: 'codex' });
+  assert.equal(edited.cli, 'codex');
+  const reloaded = fakeDsh().attach(makeHubFrom(hub.store), []);
+  new Roster(reloaded.hub, reloaded, fakeLlm()).load([]);
+  assert.equal(reloaded.config.get('cc').cli, 'codex');
+});
+
+test('store: a v3 database gains the cli column and keeps its members', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const path = join(mkdtempSync(join(tmpdir(), 'collab-')), 'v3.sqlite3');
+  const s = new Store(path);
+  s.addMember({ id: 'old', name: 'Old', model: { provider: 'relay', model: 'm1' } });
+  s.db.exec('ALTER TABLE members DROP COLUMN cli; PRAGMA user_version = 3');
+  s.close();
+  const up = new Store(path);
+  assert.equal(up.db.prepare('PRAGMA user_version').get().user_version, 4);
+  assert.equal(up.member('old').cli, null);
+  assert.equal(up.member('old').model, 'm1');
+  assert.equal(up.addMember({ id: 'gm', name: 'GM', cli: 'gemini' }).cli, 'gemini');
+  assert.deepEqual(up.members().map(m => m.id), ['old', 'gm']);
+  up.close();
+});
+
+test('clis: detection lists installed CLIs in order; handler answers GET with [{cli, path}]', async () => {
+  const { detectClis, handler } = await import('./clis.mjs');
+  const paths = { codex: '/usr/local/bin/codex', claude: '/opt/bin/claude' };
+  const lookup = async name => paths[name];
+  assert.deepEqual(await detectClis(lookup), [{ cli: 'claude', path: '/opt/bin/claude' }, { cli: 'codex', path: '/usr/local/bin/codex' }]);
+  const res = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { this.body = body; } };
+  await handler({ method: 'GET' }, res, lookup);
+  assert.equal(res.status, 200);
+  assert.deepEqual(JSON.parse(res.body), [{ cli: 'claude', path: '/opt/bin/claude' }, { cli: 'codex', path: '/usr/local/bin/codex' }]);
+  await handler({ method: 'POST' }, res, lookup);
+  assert.equal(res.status, 405);
+  const real = await detectClis();
+  for (const c of real) assert.ok(c.path.startsWith('/'), `real which gives absolute path for ${c.cli}`);
+});

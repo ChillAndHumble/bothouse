@@ -8,6 +8,8 @@ const MAX_NAME = 32;
 const MAX_PERSONA = 4000;
 const RESERVED = new Set(['owner', 'user', 'system']);
 const MODEL_LIST_TIMEOUT_MS = 5_000;
+/** Local CLI agents a member may run as (task spec 2026-10-23: cli: 'claude' | 'codex' | 'gemini'). */
+export const CLIS = ['claude', 'codex', 'gemini'];
 
 /** Store row → the member shape DshMembers and the hub use. */
 export function rowToMember(row) {
@@ -15,6 +17,7 @@ export function rowToMember(row) {
     id: row.id,
     name: row.name,
     ...(row.provider && row.model ? { model: { provider: row.provider, model: row.model } } : {}),
+    ...(row.cli ? { cli: row.cli } : {}),
     persona: row.persona ?? '',
     source: row.source,
   };
@@ -90,6 +93,12 @@ export class Roster {
     if (clash !== undefined) throw new CollabError('conflict', `name ${name} is already used by ${clash.name}`);
     const persona = String(input?.persona ?? '');
     if (persona.length > MAX_PERSONA) throw new CollabError('invalid', `persona exceeds ${MAX_PERSONA} characters`);
+    if (input?.cli != null) {
+      // A local CLI member brings its own model; no provider route to check.
+      const cli = String(input.cli);
+      if (!CLIS.includes(cli)) throw new CollabError('invalid', `cli must be one of ${CLIS.join(', ')}`);
+      return { name, persona, cli };
+    }
     let model;
     if (input?.model != null) {
       const provider = String(input.model.provider ?? '');
