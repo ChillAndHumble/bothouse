@@ -43,7 +43,8 @@
    [[hooks]]
    event = "agent.closed"
    type = "command"
-   command = "/bin/sh <本目录>/sub-wiki.sh hook"
+   command = "python3 -X utf8 -I <本目录>/sub-wiki.py hook"                 # Mac / Linux
+   # command = "& python -X utf8 -I '<本目录>\\sub-wiki.py' hook"           # Windows（PowerShell）
    ```
 
 4. 定时：向导（网页或 `cc-connect setup apply`）发现 `~/wiki/bin/ingest.py`（或 `$WIKI_DIR`）时已自动加好下面三条

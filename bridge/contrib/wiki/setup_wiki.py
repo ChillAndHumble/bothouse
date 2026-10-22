@@ -12,7 +12,7 @@
        WIKI_ENGINES = JSON object of config.json engine keys overriding the codex defaults below (the wizard sets
        them from the role's own CLI, so a machine without Codex still runs its wikis)
 """
-import json, os, re, shutil, subprocess, sys
+import json, os, re, shutil, stat, subprocess, sys
 from pathlib import Path
 H = Path.home()
 HERE = Path(__file__).resolve().parent
@@ -82,7 +82,8 @@ def made(w):
     if (w / "config.json").exists():
         return True
     if (w / ".git").exists() and (w / "bin").is_dir():
-        shutil.rmtree(w)
+        # git writes .git/objects read-only; Windows refuses to delete a read-only file, so clear the flag and retry
+        shutil.rmtree(w, onerror=lambda fn, path, _: (os.chmod(path, stat.S_IWRITE), fn(path)))
     return False
 
 

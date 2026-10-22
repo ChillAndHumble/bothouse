@@ -14,7 +14,7 @@ class RoleWiki(unittest.TestCase):
         self.home = self.tmp / "home"
         self.home.mkdir()
         self.bots = self.tmp / "bots.json"
-        self.env = dict(os.environ, HOME=str(self.home), WIKI_BOTS=str(self.bots), WIKI_TRANSCRIPTS=str(self.tmp / "tr"),
+        self.env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home), WIKI_BOTS=str(self.bots), WIKI_TRANSCRIPTS=str(self.tmp / "tr"),
                         LLM_WIKI_SRC=str(HERE / "template"), WIKI_DIR=str(self.home / "wiki"))
         self.env.pop("DSH_HOME", None)
 
