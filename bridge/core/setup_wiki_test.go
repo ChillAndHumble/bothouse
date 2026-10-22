@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -143,5 +144,23 @@ func TestApplyWizardAddsWikiCron(t *testing.T) {
 	bad.Wiki = &WizardWiki{Night: "nope"}
 	if r := ApplyWizard(context.Background(), WizardEnv{Store: newMemStore(), DataDir: t.TempDir(), CLIs: testCLIs}, bad); r.Saved || r.Error == "" {
 		t.Fatalf("bad model saved: %+v", r)
+	}
+}
+
+func TestApplyWizardWikiNeedsZsh(t *testing.T) {
+	fakeWiki(t, "")
+	bin := t.TempDir() // python and git on PATH, no zsh
+	for _, n := range []string{"python3", "git"} {
+		p, err := exec.LookPath(n)
+		if err != nil {
+			t.Skip(err)
+		}
+		_ = os.Symlink(p, filepath.Join(bin, n))
+	}
+	t.Setenv("PATH", bin)
+	res := &WizardResult{}
+	applyWizardWiki(res, WizardEnv{DataDir: t.TempDir()}, WizardRequest{}, "p", "discord:1")
+	if len(res.Steps) != 1 || res.Steps[0].Step != "wiki cron" || res.Steps[0].OK || !strings.Contains(res.Steps[0].Detail, "zsh") {
+		t.Fatalf("want a failed wiki cron step about zsh, got %+v", res.Steps)
 	}
 }

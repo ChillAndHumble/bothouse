@@ -11,8 +11,10 @@ package core
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -344,6 +346,10 @@ func applyWizardWiki(res *WizardResult, env WizardEnv, req WizardRequest, projec
 	}
 	if runtime.GOOS == "windows" {
 		addStep(res, "wiki cron", nil, "skipped on Windows: see bridge/contrib/wiki/README.md step 4")
+		return
+	}
+	if _, err := exec.LookPath("zsh"); err != nil { // the cron jobs run sub-wiki.sh with zsh
+		addStep(res, "wiki cron", errors.New("zsh not found: the nightly wiki jobs run sub-wiki.sh with zsh"), "")
 		return
 	}
 	if sessionKey == "" {
