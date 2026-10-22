@@ -22,7 +22,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -244,23 +243,17 @@ func enginesJSON(engines map[string]any) string {
 
 // roleWikiSetup is one wizard run's wiki setup: where the programs are, and the hook to add.
 type roleWikiSetup struct {
-	dir      string // the programs (export.py, setup_wiki.py, sub-wiki.sh, bots.json)
-	sub      string // sub-wiki.sh
+	dir      string // the programs (export.py, setup_wiki.py, sub-wiki.py, bots.json)
+	sub      string // sub-wiki.py
 	python   string
 	ownSetup bool // the config already had an agent.closed hook to a sub-wiki.sh
 }
 
 // prepareRoleWikis installs the programs (or uses the user's) and makes the main wiki when there is none.
 func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines map[string]any) (*roleWikiSetup, string, error) {
-	if runtime.GOOS == "windows" {
-		return nil, "", errors.New("role wikis need zsh and fcntl: not on Windows")
-	}
 	py, err := FindPython()
 	if err != nil {
 		return nil, "", err
-	}
-	if _, err := exec.LookPath("zsh"); err != nil { // the agent.closed hook and the cron jobs run sub-wiki.sh with zsh
-		return nil, "", errors.New("zsh not found: the wiki hook and nightly jobs run sub-wiki.sh with zsh")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, "", errors.New("git not found: the wikis are git repositories")
@@ -272,13 +265,13 @@ func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines m
 		if s.dir, err = InstallRoleWikiPrograms(env.DataDir); err != nil {
 			return nil, "", err
 		}
-		s.sub = filepath.Join(s.dir, "sub-wiki.sh")
+		s.sub = filepath.Join(s.dir, "sub-wiki.py")
 	}
 	detail := ""
 	if mw, ok := FindWiki(); !ok {
 		eng := enginesJSON(engines)
 		if _, err := roleWikiRun(ctx, []string{"LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"), "WIKI_ENGINES=" + eng},
-			py, "-I", filepath.Join(s.dir, "setup_wiki.py"), "--main", mw, lead); err != nil {
+			py, "-X", "utf8", "-I", filepath.Join(s.dir, "setup_wiki.py"), "--main", mw, lead); err != nil {
 			return nil, "", err
 		}
 		detail = "main wiki " + mw
@@ -327,14 +320,14 @@ func (s *roleWikiSetup) addRole(ctx context.Context, r plannedRole, lead string,
 	eng := enginesJSON(engines)
 	if _, err := roleWikiRun(ctx, []string{"WIKI_BOTS=" + bots, "LLM_WIKI_SRC=" + filepath.Join(s.dir, "template"),
 		"WIKI_LEAD=" + lead, "WIKI_ENGINES=" + eng},
-		s.python, "-I", filepath.Join(s.dir, "setup_wiki.py"), r.project); err != nil {
+		s.python, "-X", "utf8", "-I", filepath.Join(s.dir, "setup_wiki.py"), r.project); err != nil {
 		return "", err
 	}
 	return wiki, nil
 }
 
 // applyRoleWikis: step "role N wiki" of ApplyWizard for every new role, then the agent.closed hook. Returns the
-// sub-wiki.sh the wiki cron jobs should run ("" = none). A failure is reported but does not undo the roles.
+// sub-wiki.py the wiki cron jobs should run ("" = none). A failure is reported but does not undo the roles.
 func applyRoleWikis(ctx context.Context, res *WizardResult, env WizardEnv, req WizardRequest, pl *wizardPlan, clis []LocalCLI) string {
 	if RoleWikiFS == nil && env.WikiSubScript == "" {
 		return env.WikiSubScript
@@ -378,7 +371,7 @@ func applyRoleWikis(ctx context.Context, res *WizardResult, env WizardEnv, req W
 	}
 	if !s.ownSetup {
 		if hs, ok := env.Store.(WizardHookStore); ok {
-			cmd := "/bin/zsh -f " + wikiQuote(s.sub) + " hook"
+			cmd := subWikiCommand(s.python, s.sub, "hook")
 			if _, err := hs.EnsureHook("agent.closed", cmd); err != nil {
 				addStep(res, "wiki hook", err, "")
 			} else {

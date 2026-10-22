@@ -42,8 +42,11 @@ Which sessions belong to a bot (data, 2026-10-17):
     delegationDepth 0 (subagents run inside a turn; their results are already in it). Her Codex sessions from
     before the switch are still exported, so a rollback loses nothing.
 """
-import fcntl, json, os, re, shutil, sqlite3, sys, tempfile, time
+import json, os, re, shutil, sqlite3, sys, tempfile, time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "llmwiki"))
+import filelock  # noqa: E402  (fcntl on Mac/Linux, msvcrt on Windows)
 
 HOME = Path.home()
 OUT = Path(os.environ.get("WIKI_TRANSCRIPTS") or Path(__file__).resolve().parent / "transcripts").expanduser()
@@ -723,7 +726,7 @@ def export(bot, out=OUT, wiki=None, wait=True):
     try:
         if lock:
             try:  # same lock as ingest.py main(); released when closed
-                fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+                filelock.lock(lock, wait)
             except BlockingIOError:  # --no-wait: an ingest run holds it; the next day run exports this bot
                 n["busy"] = 1
                 return n
