@@ -546,6 +546,21 @@
   resize: vertical;
 }
 
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .dialogActions {
   display: flex;
   gap: 8px;

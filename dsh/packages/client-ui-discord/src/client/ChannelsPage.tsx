@@ -124,7 +124,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }: {
  * @param props - framework, injected, and locale shares.
  * @returns the three-column channel view.
  */
-export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, addMember, updateMember, removeMember, t }: ChannelsPageProps) {
+export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, listClis, addMember, updateMember, removeMember, t }: ChannelsPageProps) {
   const state = useChannels(snapshot => snapshot)
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [errors, setErrors] = useState<Record<number, string | undefined>>({})
@@ -401,6 +401,7 @@ export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listMo
         <MemberDialog
           member={dialog ?? undefined}
           listModels={listModels}
+          listClis={listClis}
           onSubmit={input => (dialog === null ? addMember(input) : updateMember(dialog.id, input))}
           onClose={() => { setDialog(undefined) }}
           t={t}
