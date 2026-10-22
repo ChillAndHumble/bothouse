@@ -399,7 +399,20 @@ export default function SetupWizard() {
         <p className="setup-eyebrow">{T.welcomeEyebrow}</p>
         <h1>{T.welcomeTitle}</h1>
         <p className="setup-intro">{T.welcomeIntro}</p>
-        <div className="setup-team" aria-hidden="true"><span>Cl</span><span>Co</span><span>Ge</span><span>DS</span><span>Mi</span></div>
+        <div className="setup-team" aria-label={T.teamCliNames}>
+          {[
+            { src: '/avatars/orange.png', name: 'Claude' },
+            { src: '/avatars/dragon.png', name: 'Codex' },
+            { src: '/avatars/rainbow.png', name: 'Gemini' },
+            { src: '/avatars/whale.png', name: 'DSH (DeepSeek Harness)' },
+            { src: '/avatars/lanxi.png', name: 'MiniMax' },
+          ].map(({ src, name }) => (
+            <span key={name} title={name}>
+              <img src={src} alt={name} width={42} height={42} />
+              <small>{name.startsWith('DSH') ? 'DSH' : name}</small>
+            </span>
+          ))}
+        </div>
       </div>
       <div className="flex items-start justify-between gap-4">
         <div>
