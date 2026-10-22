@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -128,58 +129,102 @@ func fetchReleasesFrom(apiURL string) ([]ReleaseInfo, error) {
 // SelfUpdate downloads and installs the given release version.
 // If preferGitee is true, tries Gitee download first.
 func SelfUpdate(tag string, preferGitee bool) error {
-	goos := runtime.GOOS
-	goarch := runtime.GOARCH
-
-	ext := ".tar.gz"
-	if goos == "windows" {
-		ext = ".zip"
-	}
-	filename := fmt.Sprintf("cc-connect-%s-%s-%s%s", tag, goos, goarch, ext)
-
-	giteeURL := fmt.Sprintf("%s/%s/%s", giteeDownload, tag, filename)
-	githubURL := fmt.Sprintf("%s/%s/%s", githubDownload, tag, filename)
-	urls := []string{githubURL, giteeURL}
+	bases := []string{githubDownload}
 	if preferGitee {
-		urls = []string{giteeURL, githubURL}
+		bases[0] = giteeDownload
 	}
-
-	var data []byte
-	var lastErr error
-	var from string
-	for _, u := range urls {
-		slog.Info("updater: downloading", "url", u)
-		data, lastErr = downloadFile(u)
-		if lastErr == nil {
-			from = u
-			break
-		}
-		slog.Debug("updater: download failed, trying next", "error", lastErr)
-	}
-	if lastErr != nil && data == nil {
-		return fmt.Errorf("download failed from all sources: %w", lastErr)
-	}
-	// conest: the release workflow publishes checksums.txt next to the archives; refuse to
-	// install anything that is not listed there with the same SHA-256.
-	sums, err := downloadFile(strings.TrimSuffix(from, filename) + "checksums.txt")
+	data, filename, err := DownloadReleaseAsset(bases, tag, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
-		return fmt.Errorf("download checksums.txt: %w", err)
-	}
-	if err := VerifyReleaseChecksum(data, sums, filename); err != nil {
 		return err
 	}
-
-	var binary []byte
-	if goos == "windows" {
-		binary, err = extractBinaryFromZip(data)
-	} else {
-		binary, err = extractBinaryFromTarGz(data)
-	}
+	binary, err := ExtractReleaseBinary(data, filename)
 	if err != nil {
 		return fmt.Errorf("extract binary: %w", err)
 	}
-
 	return replaceBinary(binary)
+}
+
+// ReleaseAssetNames prefers directly usable bothouse files, then the legacy updater package.
+func ReleaseAssetNames(tag, goos, goarch string) []string {
+	name := fmt.Sprintf("bothouse-%s-%s", goos, goarch)
+	ext := ".tar.gz"
+	switch goos {
+	case "windows":
+		name += ".exe"
+		ext = ".zip"
+	case "darwin":
+		name += ".dmg"
+	}
+	legacy := fmt.Sprintf("cc-connect-%s-%s-%s", tag, goos, goarch)
+	historical := legacy
+	if goos == "windows" {
+		historical += ".exe"
+	}
+	return []string{name, legacy + ext, historical}
+}
+
+// DownloadReleaseAsset verifies the exact downloaded name. A checksum failure is fatal:
+// it must never silently downgrade to a different package.
+func DownloadReleaseAsset(bases []string, tag, goos, goarch string) ([]byte, string, error) {
+	var lastErr error
+	for _, filename := range ReleaseAssetNames(tag, goos, goarch) {
+		for _, base := range bases {
+			from := fmt.Sprintf("%s/%s/", base, tag)
+			slog.Info("updater: downloading", "url", from+filename)
+			data, err := downloadFile(from + filename)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			checksumName := "checksums.txt"
+			if strings.HasPrefix(filename, "bothouse-") {
+				checksumName = "SHA256SUMS"
+			}
+			sums, err := downloadFile(from + checksumName)
+			if err != nil {
+				return nil, "", fmt.Errorf("download %s: %w", checksumName, err)
+			}
+			if err := VerifyReleaseChecksum(data, sums, filename); err != nil {
+				return nil, "", err
+			}
+			return data, filename, nil
+		}
+	}
+	return nil, "", fmt.Errorf("download failed from all sources: %w", lastErr)
+}
+
+// ExtractReleaseBinary accepts the release's native format and legacy archives.
+func ExtractReleaseBinary(data []byte, filename string) ([]byte, error) {
+	switch {
+	case strings.HasSuffix(filename, ".zip"):
+		return extractBinaryFromZip(data)
+	case strings.HasSuffix(filename, ".tar.gz"):
+		return extractBinaryFromTarGz(data)
+	case strings.HasSuffix(filename, ".dmg"):
+		if runtime.GOOS != "darwin" {
+			return nil, fmt.Errorf("dmg extraction requires macOS")
+		}
+		dir, err := os.MkdirTemp("", "bothouse-update-*")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(dir)
+		disk := filepath.Join(dir, "bothouse.dmg")
+		mount := filepath.Join(dir, "volume")
+		if err := os.WriteFile(disk, data, 0600); err != nil {
+			return nil, err
+		}
+		if out, err := exec.Command("hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mount, disk).CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("mount dmg: %w: %s", err, out)
+		}
+		binary, readErr := os.ReadFile(filepath.Join(mount, "Bothouse.app", "Contents", "MacOS", "bothouse"))
+		if out, err := exec.Command("hdiutil", "detach", mount).CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("unmount dmg: %w: %s", err, out)
+		}
+		return binary, readErr
+	default:
+		return data, nil
+	}
 }
 
 func downloadFile(url string) ([]byte, error) {

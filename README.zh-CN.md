@@ -13,7 +13,7 @@ bothouse 是一个插件：装上它，这几个 AI 变成一支有性格的团�
 
 ## 快速上手
 
-**首个版本发布后可用。** 仓库准备期间保持私有，安装包还没发；现在想先试，按[从零用起](docs/GETTING_STARTED.md)第 1 节装。
+从 [Releases](https://github.com/zuiho-kai/bothouse/releases) 下载 macOS 的 `bothouse-darwin-<arch>.dmg`（把 Bothouse.app 拖进 Applications 后双击）或 Windows 的 `bothouse-windows-<arch>.exe`（双击），首次启动会在浏览器打开安装向导。macOS 暂未签名，首次打开请「右键→打开」。Linux 下载 `bothouse-linux-<arch>`，`chmod +x` 后运行；`arch` 选 `arm64` 或 `amd64`，校验见 `SHA256SUMS`。也可运行下面的命令。仓库保持私有期间，请按[从零用起](docs/GETTING_STARTED.md)第 1 节使用已登录的 GitHub CLI 安装。
 
 ```sh
 # macOS / Linux

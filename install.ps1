@@ -63,24 +63,25 @@ function Install-CcConnect {
       }
     }
 
-    $asset = "cc-connect-$tag-windows-$arch.zip"
+    $asset = "bothouse-windows-$arch.exe"
     $from = if ($repo -ne 'zuiho-kai/bothouse') { " from $repo" } else { '' }
     Write-Host "Installing cc-connect $tag (windows/$arch)$from into $installDir"
+    Write-Host "Downloading $asset"
 
     # 2. download
-    $zip = Join-Path $tmp $asset
-    $sums = Join-Path $tmp 'checksums.txt'
+    $download = Join-Path $tmp $asset
+    $sums = Join-Path $tmp 'SHA256SUMS'
     $fetchWeb = {
       $base = "https://github.com/$repo/releases/download/$tag"
       try {
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $zip
-        Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile $sums
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $download
+        Invoke-WebRequest -UseBasicParsing -Uri "$base/SHA256SUMS" -OutFile $sums
         return $true
       } catch { return $false }
     }
     $fetchGh = {
       if (-not (Test-Gh)) { return $false }
-      & gh release download $tag -R $repo -p $asset -p checksums.txt -D $tmp --clobber
+      & gh release download $tag -R $repo -p $asset -p SHA256SUMS -D $tmp --clobber
       return ($LASTEXITCODE -eq 0)
     }
     if ($via -eq 'gh') {
@@ -95,14 +96,11 @@ function Install-CcConnect {
       $parts = $line -split '\s+', 2
       if ($parts.Count -eq 2 -and $parts[1].TrimStart('*') -eq $asset) { $expected = $parts[0].ToLower() }
     }
-    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $download).Hash.ToLower()
     if (-not $expected -or $expected -ne $actual) { Fail "checksum mismatch for $asset" }
     Write-Host "Checksum OK ($asset sha256 $actual)"
 
-    $unpack = Join-Path $tmp 'unpack'
-    Expand-Archive -LiteralPath $zip -DestinationPath $unpack -Force
-    $newExe = Join-Path $unpack 'cc-connect.exe'
-    if (-not (Test-Path -LiteralPath $newExe)) { Fail "cc-connect.exe not found in $asset" }
+    $newExe = $download
 
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     $target = Join-Path $installDir 'cc-connect.exe'
@@ -165,10 +163,10 @@ function Install-CcConnect {
     Write-Host "It opens the setup wizard in your browser. Guide: https://github.com/$repo/blob/main/docs/GETTING_STARTED.md"
   } finally {
     # only the files this script made, one by one, then the (now empty) folders
-    foreach ($f in @((Join-Path $tmp 'unpack\cc-connect.exe'), (Join-Path $tmp 'checksums.txt'), (Join-Path $tmp "cc-connect-$tag-windows-$arch.zip"))) {
+    foreach ($f in @((Join-Path $tmp 'SHA256SUMS'), (Join-Path $tmp "bothouse-windows-$arch.exe"))) {
       Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
     }
-    foreach ($d in @((Join-Path $tmp 'unpack'), $tmp)) {
+    foreach ($d in @($tmp)) {
       Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue
     }
   }

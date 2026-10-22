@@ -8,7 +8,13 @@ bothouse = **团队协作 + wiki 记忆**：一群 AI 伙伴在聊天软件里�
 
 只有这一条路。macOS、Linux、Windows 都行（Apple 芯片 / Intel / arm64 / x86_64）。不用装 Go，也不用装 Node。
 
-**1. 装。** 下载预编译的 `cc-connect`（带网页向导），放进 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）。
+**1. 装。** 从 [Releases](https://github.com/zuiho-kai/bothouse/releases) 下载：
+
+- macOS：`bothouse-darwin-arm64.dmg`（Apple Silicon）或 `bothouse-darwin-amd64.dmg`（Intel）；把 Bothouse.app 拖进 Applications 后双击。尚未签名，首次打开请「右键→打开」。
+- Windows：`bothouse-windows-amd64.exe` 或 `bothouse-windows-arm64.exe`，下载后双击。
+- Linux：`bothouse-linux-amd64` 或 `bothouse-linux-arm64`，`chmod +x` 后运行。
+
+首次运行无配置时会自动在浏览器打开安装向导。`SHA256SUMS` 提供 SHA-256 校验。旧 `cc-connect-<tag>-<os>-<arch>.tar.gz` / `.zip` 和 `checksums.txt` 保留供旧版更新；新版优先下载新文件，找不到时回退旧包。也可用下面的命令行安装，命令仍为 `cc-connect`（macOS / Linux 放进 `~/.local/bin`，Windows 放进 `%USERPROFILE%\.local\bin`）。
 
 macOS / Linux，在终端里：
 

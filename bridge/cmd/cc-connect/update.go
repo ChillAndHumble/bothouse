@@ -190,49 +190,12 @@ func runUpdate() {
 	}
 	fmt.Printf("New version available: %s → %s\n", version, label)
 
-	// Try archive format first (tar.gz/zip), then bare binary as fallback
-	archiveAsset := archiveAssetName(latest)
-	archiveURL := fmt.Sprintf("%s/%s/%s", downloadBase, latest, archiveAsset)
-
-	fmt.Printf("Downloading %s ...\n", archiveURL)
-
-	tmpFile, err := downloadToTemp(archiveURL)
-	needExtract := err == nil
-
+	tmpFile, err := downloadUpdateAsset(downloadBase, latest)
 	if err != nil {
-		// Fallback: try bare binary format (older releases)
-		binaryAsset := binaryAssetName(latest)
-		binaryURL := fmt.Sprintf("%s/%s/%s", downloadBase, latest, binaryAsset)
-		fmt.Printf("Archive not found, trying bare binary %s ...\n", binaryURL)
-
-		tmpFile, err = downloadToTemp(binaryURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// conest: verify against the release's checksums.txt before touching the installed binary.
-	assetName := archiveAsset
-	if !needExtract {
-		assetName = binaryAssetName(latest)
-	}
-	if err := verifyDownloaded(tmpFile, fmt.Sprintf("%s/%s/checksums.txt", downloadBase, latest), assetName); err != nil {
-		os.Remove(tmpFile)
 		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	if needExtract {
-		// Downloaded an archive - extract binary
-		extracted, extractErr := extractBinaryFromArchive(tmpFile, archiveAsset)
-		os.Remove(tmpFile) // clean up archive
-		if extractErr != nil {
-			fmt.Fprintf(os.Stderr, "Extract failed: %v\n", extractErr)
-			os.Exit(1)
-		}
-		tmpFile = extracted
-	}
 	defer os.Remove(tmpFile)
 
 	execPath, err := os.Executable()
@@ -341,14 +304,31 @@ func binaryAssetName(tag string) string {
 	return name
 }
 
-func archiveAssetName(tag string) string {
-	goos := runtime.GOOS
-	goarch := runtime.GOARCH
-	base := fmt.Sprintf("cc-connect-%s-%s-%s", tag, goos, goarch)
-	if goos == "windows" {
-		return base + ".zip"
+// Both update entry points use the same names, checksum policy and fallback order.
+func downloadUpdateAsset(base, tag string) (string, error) {
+	data, name, err := core.DownloadReleaseAsset([]string{base}, tag, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return "", err
 	}
-	return base + ".tar.gz"
+	data, err = core.ExtractReleaseBinary(data, name)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp("", "bothouse-update-*")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", err
+	}
+	if err = f.Close(); err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 // extractBinaryFromArchive extracts the cc-connect binary from a .tar.gz or .zip archive.

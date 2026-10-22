@@ -1,9 +1,6 @@
-name: Release cc-connect
+name: Release bothouse
 
-# 打 tag（v*）时编 cc-connect 预编译包（带网页安装向导）发到 GitHub Release：
-# macOS / Linux 是 .tar.gz（装法见根目录 install.sh），Windows 是 .zip（根目录 install.ps1）。
-# 发布后 verify-windows 在干净的 windows-latest 上按文档那一行命令装一遍，跑首次运行、向导、
-# 重启、退出和 setup apply 假数据（不用任何真凭据）。
+# Native downloads plus legacy archives for old updaters. DMGs are built on macOS.
 
 on:
   push:
@@ -24,7 +21,13 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 30
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -61,32 +64,49 @@ jobs:
           mkdir -p ../dist
           commit=$(git rev-parse --short HEAD)
           built=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          # 包名和 cmd/cc-connect/update.go 的 archiveAssetName 一致，`cc-connect update` 能直接用。
-          # Windows: .zip with cc-connect.exe — the name `cc-connect update` (archiveAssetName) and install.ps1 expect.
-          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+          targets="linux/amd64 linux/arm64 windows/amd64 windows/arm64"
+          if [ "$RUNNER_OS" = macOS ]; then targets="darwin/arm64 darwin/amd64"; fi
+          for target in $targets; do
             os=${target%/*}; arch=${target#*/}
-            name="cc-connect-${TAG}-${os}-${arch}"
+            legacy="cc-connect-${TAG}-${os}-${arch}"
+            native="bothouse-${os}-${arch}"
             exe=cc-connect; [ "$os" = windows ] && exe=cc-connect.exe
-            mkdir -p "build/${name}"
+            mkdir -p "build/${legacy}"
+            binary="build/${legacy}/${exe}"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -tags goolm \
               -ldflags "-s -w -X main.version=${TAG} -X main.commit=${commit} -X main.buildTime=${built}" \
-              -o "build/${name}/${exe}" ./cmd/cc-connect
-            if [ "$os" = windows ]; then
-              (cd "build/${name}" && zip -q -X "../../../dist/${name}.zip" "${exe}")
-            else
-              tar -C "build/${name}" -czf "../dist/${name}.tar.gz" "${exe}"
-            fi
+              -o "$binary" ./cmd/cc-connect
+            case "$os" in
+              windows)
+                cp "$binary" "../dist/${native}.exe"
+                (cd "build/${legacy}" && zip -q -X "../../../dist/${legacy}.zip" "$exe") ;;
+              darwin)
+                ../.github/release-check/package-dmg.sh "$binary" "../dist/${native}.dmg" "$TAG" "$arch"
+                tar -C "build/${legacy}" -czf "../dist/${legacy}.tar.gz" "$exe" ;;
+              linux)
+                cp "$binary" "../dist/${native}"
+                tar -C "build/${legacy}" -czf "../dist/${legacy}.tar.gz" "$exe" ;;
+            esac
           done
-          cd ../dist && sha256sum *.tar.gz *.zip > checksums.txt && cat checksums.txt
+          cd ../dist
+          shasum -a 256 bothouse-* cc-connect-* > SHA256SUMS
       - name: Smoke test (linux/amd64)
+        if: runner.os == 'Linux'
         run: |
-          set -euo pipefail
-          mkdir -p /tmp/smoke && tar -C /tmp/smoke -xzf "dist/cc-connect-${TAG}-linux-amd64.tar.gz"
-          /tmp/smoke/cc-connect --version
-          /tmp/smoke/cc-connect setup --help | grep -q 'setup apply'
+          dist/bothouse-linux-amd64 --version
+          dist/bothouse-linux-amd64 setup --help | grep -q 'setup apply'
+      - name: Smoke test (macOS app bundle)
+        if: runner.os == 'macOS'
+        run: |
+          arch=arm64; [ "$(uname -m)" != x86_64 ] || arch=amd64
+          mount=$(mktemp -d)
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "dist/bothouse-darwin-${arch}.dmg"
+          plutil -lint "$mount/Bothouse.app/Contents/Info.plist"
+          "$mount/Bothouse.app/Contents/MacOS/bothouse" --version
+          hdiutil detach "$mount"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-dist
+          name: release-dist-${{ matrix.runner }}
           path: dist/
           if-no-files-found: error
           # 1 天：artifact 只在本次 run 的 job 之间传递，发布后不再需要；额度按账号算，
@@ -103,20 +123,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: release-dist
+          name: release-dist-ubuntu-latest
           path: dist
       - name: Smoke test (windows/amd64)
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $asset = "cc-connect-$env:TAG-windows-amd64.zip"
-          $want = ((Get-Content dist/checksums.txt | Where-Object { $_ -match " $([regex]::Escape($asset))$" }) -split ' ')[0]
+          $asset = "bothouse-windows-amd64.exe"
+          $want = ((Get-Content dist/SHA256SUMS | Where-Object { $_ -match " $([regex]::Escape($asset))$" }) -split ' ')[0]
           $got = (Get-FileHash -Algorithm SHA256 "dist/$asset").Hash.ToLower()
           if ($want -ne $got) { throw "checksum mismatch: $want vs $got" }
-          Expand-Archive "dist/$asset" -DestinationPath smoke
-          ./smoke/cc-connect.exe --version
+          ./dist/bothouse-windows-amd64.exe --version
           if ($LASTEXITCODE -ne 0) { throw "--version exit $LASTEXITCODE" }
-          $help = ./smoke/cc-connect.exe setup --help | Out-String
+          $help = ./dist/bothouse-windows-amd64.exe setup --help | Out-String
           if ($help -notmatch 'setup apply') { throw "setup --help has no 'setup apply'" }
 
   publish:
@@ -131,20 +150,22 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: release-dist
+          pattern: release-dist-*
+          merge-multiple: true
           path: dist
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          (cd dist && sha256sum bothouse-* cc-connect-* > SHA256SUMS && cp SHA256SUMS checksums.txt)
           pre=()
           case "$TAG" in *-*) pre=(--prerelease) ;; esac
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
             gh release create "$TAG" dist/* "${pre[@]}" --title "$TAG" \
-              --notes "安装：macOS / Linux 用仓库根目录 install.sh，Windows 用 install.ps1（arm64、amd64），见 docs/GETTING_STARTED.md。"
+              --notes "安装：下载 bothouse-darwin-<arch>.dmg，把 Bothouse.app 拖入 Applications 后双击；未签名，首次打开请右键→打开。Windows 下载 bothouse-windows-<arch>.exe 双击打开向导。Linux 下载 bothouse-linux-<arch>，chmod +x 后运行。校验见 SHA256SUMS。命令行安装也可使用 install.sh / install.ps1，详见 docs/GETTING_STARTED.md。"
           fi
 
   # Acceptance on a clean Windows runner, through the published release: the documented one-line

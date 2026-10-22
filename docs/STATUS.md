@@ -1,5 +1,7 @@
 # 能力与验证状态
 
+2026-10-22 Issue #50：新增可直接下载的 Windows exe、macOS Bothouse.app/dmg、Linux 裸二进制及 SHA256SUMS，保留旧包更新兼容；v0.1.1 用 681dc94 源码补传。macOS arm64 已经 open 启动并验证浏览器 /setup 与 API；两个 dmg 的更新提取已验。Go 沙箱全量 48 包、CUJ、回归及 vet 通过。Windows PE/交叉构建已验，真实 Windows 执行与桌面双击、本机签名／公证未验；最终发布和 main 记录见 `/tmp/rename/result.md`。历史准备记录如下。
+
 本页只记录 bothouse 软件仓库的能力边界。源码存在不等于已发布安装包，旧实例可用不等于新用户从零安装已经验收。
 2026-10-21 #229 / PR #230：DSH原生「频道」入口已实现，使用collab同源API/SSE，展示配置频道、消息、成员和工作状态。前端11项、后端15项、DSH完整类型检查及插件构建通过，8项数据源回归纳入CI。用户此前确认页面正常，本轮未重新完成浏览器验收；真实DeepSeek回复与gate自动补历史待验证。创建/管理频道、@菜单、手机切频道与历史翻页未做；未合并、未部署。详见[安装和验证](../dsh/collab/README.md)。
 
