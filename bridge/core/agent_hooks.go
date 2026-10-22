@@ -301,9 +301,11 @@ func AgentHooksEnabled(workDir string) ([]string, error) {
 	return out, nil
 }
 
-// wizardHooksFor: the wizard switches hooks on for new roles of this agent type. Claude Code only: the wizard
-// has no DSH agent type (DSH roles are set up by hand; "cc-connect setup hooks on --cli dsh").
-func wizardHooksFor(agentType string) bool { return agentType == "claudecode" && AgentHookFS != nil }
+// wizardHooksFor: the wizard switches hooks on for new roles of this agent type: Claude Code natively, DSH
+// (agent type "dsh") through its hook bridge.
+func wizardHooksFor(agentType string) bool {
+	return (agentType == "claudecode" || agentType == "dsh") && AgentHookFS != nil
+}
 
 // AgentHookSwitchFile is the role's on/off switch: {"off": [hook names] or ["all"]}. run.py reads it on every
 // call and writes it for "run.py off|on" (what the agent runs when its user asks in chat).
@@ -650,7 +652,8 @@ const dshPatchBegin, dshPatchEnd = "# conest:hooks begin", "# conest:hooks end"
 // (DSHHookSettingsPath), whose commands run hooks only in cc-connect's DSH roles (run.py --dsh-global).
 // The plugin is named by its file: a package name is resolved from the profile directory
 // ($DSH_HOME/profiles/<name>), where the bridge is not installed (ERR_MODULE_NOT_FOUND in a fresh DSH_HOME);
-// the bridge ships with dsh itself (a dependency of @deepseek-ai/dsh).
+// the bridge is its own package, @deepseek-ai/dsh-hooks-claude-code: only a devDependency of @deepseek-ai/dsh, so
+// `npm i -g @deepseek-ai/dsh` does not install it (the wizard installs it into the data dir, EnsureDSHBridgeFor).
 func dshHookPatch(bridge, settings string) string {
 	q, _ := json.Marshal(bridge) // a JSON string is a valid YAML double-quoted scalar
 	c, _ := json.Marshal(settings)
@@ -696,6 +699,11 @@ func FindDSHHookBridge() (string, error) {
 	if err != nil {
 		return "", errors.New("dsh not found on PATH: install DSH, or give the bridge file with --dsh-bridge")
 	}
+	return findDSHBridgeNear(bin)
+}
+
+// findDSHBridgeNear looks for the bridge next to the dsh at bin.
+func findDSHBridgeNear(bin string) (string, error) {
 	if real, err := filepath.EvalSymlinks(bin); err == nil {
 		bin = real
 	}
