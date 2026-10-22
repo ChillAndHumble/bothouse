@@ -234,7 +234,7 @@ var roleWikiRun = func(ctx context.Context, env []string, name string, args ...s
 }
 
 // enginesJSON: WIKI_ENGINES for setup_wiki.py; no engine found (nil) is "{}", not "null".
-func enginesJSON(engines map[string]string) string {
+func enginesJSON(engines map[string]any) string {
 	if engines == nil {
 		return "{}"
 	}
