@@ -29,6 +29,37 @@ type memCron struct{ jobs []*CronJob }
 
 func (c *memCron) List() ([]*CronJob, error) { return c.jobs, nil }
 func (c *memCron) Add(j *CronJob) error      { c.jobs = append(c.jobs, j); return nil }
+func (c *memCron) SetExec(id, exec string) error {
+	for _, j := range c.jobs {
+		if j.ID == id {
+			j.Exec = exec
+		}
+	}
+	return nil
+}
+
+func TestEnginesJSONNil(t *testing.T) {
+	if got := enginesJSON(nil); got != "{}" {
+		t.Fatalf("nil engines: %q", got)
+	}
+}
+
+func TestPrepareRoleWikisNeedsZsh(t *testing.T) {
+	useRepoWiki(t)
+	bin := t.TempDir() // python and git on PATH, no zsh
+	for _, n := range []string{"python3", "git"} {
+		p, err := exec.LookPath(n)
+		if err != nil {
+			t.Skip(err)
+		}
+		_ = os.Symlink(p, filepath.Join(bin, n))
+	}
+	t.Setenv("PATH", bin)
+	_, _, err := prepareRoleWikis(context.Background(), WizardEnv{DataDir: t.TempDir()}, "lead", nil)
+	if err == nil || !strings.Contains(err.Error(), "zsh") {
+		t.Fatalf("want zsh error, got %v", err)
+	}
+}
 
 func useRepoWiki(t *testing.T) {
 	t.Helper()

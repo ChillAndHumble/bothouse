@@ -221,12 +221,16 @@ func readOrderedJSON(path string) ([]string, []json.RawMessage, error) {
 type WizardCron interface {
 	List() ([]*CronJob, error)
 	Add(job *CronJob) error
+	SetExec(id, exec string) error
 }
 
 type schedulerCron struct{ cs *CronScheduler }
 
 func (c schedulerCron) List() ([]*CronJob, error) { return c.cs.Store().List(), nil }
 func (c schedulerCron) Add(j *CronJob) error      { return c.cs.AddJob(j) }
+func (c schedulerCron) SetExec(id, exec string) error {
+	return c.cs.UpdateJob(id, "exec", exec)
+}
 
 // CronOfScheduler: WizardCron on a running scheduler (jobs start without a restart).
 func CronOfScheduler(cs *CronScheduler) WizardCron { return schedulerCron{cs} }
@@ -235,6 +239,12 @@ type storeCron struct{ s *CronStore }
 
 func (c storeCron) List() ([]*CronJob, error) { return c.s.List(), nil }
 func (c storeCron) Add(j *CronJob) error      { return c.s.Add(j) }
+func (c storeCron) SetExec(id, exec string) error {
+	if !c.s.Update(id, "exec", exec) {
+		return fmt.Errorf("cron job %s: exec not updated", id)
+	}
+	return nil
+}
 
 // wikiCronJob: one of the wiki's runs. Schedules and names: bridge/contrib/wiki/README.md step 4 (the author's
 // launchd setup moved to cc-connect cron); the same description means the same job (no duplicates).
@@ -278,13 +288,19 @@ func AddWikiCronJobs(c WizardCron, project, sessionKey, dir, sub string) (added,
 	if err != nil {
 		return nil, nil, err
 	}
-	have := map[string]bool{}
+	have := map[string]*CronJob{}
 	for _, j := range jobs {
-		have[j.Description] = true
+		have[j.Description] = j
 	}
 	noLimit := 0
 	for _, w := range wikiCronJobs {
-		if have[w.desc] {
+		if j := have[w.desc]; j != nil {
+			// a job from before the role wikis (#35) runs only the main wiki: add the sub-wiki.sh part
+			if sub != "" && !strings.Contains(j.Exec, "sub-wiki.sh") {
+				if err := c.SetExec(j.ID, wikiExec(dir, sub, w.arg)); err != nil {
+					return added, kept, err
+				}
+			}
 			kept = append(kept, w.desc)
 			continue
 		}

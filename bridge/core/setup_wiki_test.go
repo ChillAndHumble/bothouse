@@ -89,6 +89,28 @@ func TestAddWikiCronJobsOnce(t *testing.T) {
 	}
 }
 
+func TestAddWikiCronJobsAddsSubToOldJob(t *testing.T) {
+	st, err := NewCronStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AddWikiCronJobs(storeCron{st}, "lead", "discord:1", "/w", ""); err != nil { // as #35 made them
+		t.Fatal(err)
+	}
+	sub := filepath.Join(t.TempDir(), "sub-wiki.sh")
+	if _, _, err := AddWikiCronJobs(storeCron{st}, "lead", "discord:1", "/w", sub); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.List()) != 3 {
+		t.Fatalf("jobs: %d", len(st.List()))
+	}
+	for _, j := range st.List() {
+		if !strings.Contains(j.Exec, "sub-wiki.sh") {
+			t.Fatalf("old job not updated: %s", j.Exec)
+		}
+	}
+}
+
 func TestApplyWizardAddsWikiCron(t *testing.T) {
 	noHardware(t)
 	wiki := fakeWiki(t, "")

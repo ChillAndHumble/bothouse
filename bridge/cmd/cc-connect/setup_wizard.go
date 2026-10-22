@@ -580,6 +580,20 @@ func fileExistsCmd(p string) bool {
 	return err == nil
 }
 
+func (c socketCron) SetExec(id, exec string) error {
+	payload, _ := json.Marshal(map[string]any{"id": id, "field": "exec", "value": exec})
+	resp, err := apiPost(c.sock, "/cron/edit", payload)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("cron edit: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 // socketCron adds the wizard's cron jobs through a running cc-connect (its /cron/list and /cron/add), so the
 // jobs start now and the running process does not write its older job list over them.
 type socketCron struct{ sock string }

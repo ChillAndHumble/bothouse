@@ -95,6 +95,16 @@ class RoleWiki(unittest.TestCase):
                            env=self.env, capture_output=True, text=True)
         self.assertNotIn("unknown key", r.stdout + r.stderr)
 
+    def test_setup_null_engines_and_half_made(self):
+        self.env["WIKI_ENGINES"] = "null"  # Go's json.Marshal of a nil map
+        self.run_py("setup_wiki.py", "--main", str(self.home / "wiki"), "主管")
+        self.role("whale", "dsh")
+        w = self.home / "roles" / "whale" / "wiki"
+        self.run_py("setup_wiki.py", "whale")
+        (w / "config.json").unlink()  # a crash after the template copy, before config.json
+        self.assertNotIn("exists", self.run_py("setup_wiki.py", "whale"))
+        self.assertTrue((w / "config.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
