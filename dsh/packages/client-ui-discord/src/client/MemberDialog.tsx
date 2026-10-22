@@ -1,12 +1,13 @@
 /**
- * Add/edit dialog for one DSH channel member: name, model (grouped by provider
- * route, as the host lists them) and persona. Submission goes through the
+ * Add/edit dialog for one channel member: name, persona, and either a DSH
+ * model (grouped by provider route, as the host lists them) or, when adding, a
+ * CLI agent installed on this machine (Claude Code, Codex, Gemini). Submission goes through the
  * injected action; the host's refusal (name taken, model unavailable) is shown
  * inline and the form keeps its values.
  */
 import { useEffect, useState, type FormEvent } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ChannelMember, MemberInput, ModelRoute } from './channel-source.ts'
+import type { ChannelMember, LocalCli, MemberInput, ModelRoute } from './channel-source.ts'
 import type { NS } from './locales.ts'
 import css from './ChannelsPage.module.css'
 
@@ -14,6 +15,7 @@ import css from './ChannelsPage.module.css'
 export interface MemberDialogProps {
   readonly member: ChannelMember | undefined
   readonly listModels: () => Promise<readonly ModelRoute[]>
+  readonly listClis: () => Promise<readonly LocalCli[]>
   readonly onSubmit: (input: MemberInput) => Promise<void>
   readonly onClose: () => void
   readonly t: TranslateNS<typeof NS>
@@ -21,18 +23,30 @@ export interface MemberDialogProps {
 
 const SEP = '\u0000'
 
+/** CLI choices offered for a local-CLI member, in display order (user request 2026-10-23). */
+const CLI_CHOICES: readonly { readonly cli: string; readonly label: string }[] = [
+  { cli: 'claude', label: 'Claude Code' },
+  { cli: 'codex', label: 'Codex' },
+  { cli: 'gemini', label: 'Gemini' },
+]
+
+type MemberType = 'dsh' | 'cli'
+
 /**
  * Render the member dialog.
  * @param props - target member, actions, and copy.
  * @returns a modal form.
  */
-export function MemberDialog({ member, listModels, onSubmit, onClose, t }: MemberDialogProps) {
+export function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }: MemberDialogProps) {
   const [name, setName] = useState(member?.name ?? '')
   const [persona, setPersona] = useState(member?.persona ?? '')
   const [modelKey, setModelKey] = useState(member?.model ? member.model.provider + SEP + member.model.model : '')
   const [routes, setRoutes] = useState<readonly ModelRoute[] | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const [type, setType] = useState<MemberType>('dsh')
+  const [clis, setClis] = useState<readonly LocalCli[] | undefined>(undefined)
+  const [cli, setCli] = useState('')
 
   // One read of the host's model catalog per dialog opening.
   useEffect(() => {
@@ -43,17 +57,31 @@ export function MemberDialog({ member, listModels, onSubmit, onClose, t }: Membe
     return () => { live = false }
   }, [listModels])
 
+  // Detect local CLIs once, the first time the "local CLI" type is picked.
+  const wantClis = type === 'cli' && clis === undefined
+  useEffect(() => {
+    if (!wantClis) return
+    let live = true
+    listClis().then((list) => {
+      if (!live) return
+      setClis(list)
+      setCli(prev => prev !== '' ? prev : CLI_CHOICES.find(c => list.some(l => l.cli === c.cli))?.cli ?? '')
+    }).catch((reason: unknown) => {
+      if (live) { setClis([]); setError(reason instanceof Error ? reason.message : String(reason)) }
+    })
+    return () => { live = false }
+  }, [wantClis, listClis])
+
   const submit = (event: FormEvent): void => {
     event.preventDefault()
     if (busy) return
     const [provider, model] = modelKey === '' ? [] : modelKey.split(SEP)
     setBusy(true)
     setError(undefined)
-    onSubmit({
-      name: name.trim(),
-      persona,
-      model: provider !== undefined && model !== undefined ? { provider, model } : null,
-    }).then(onClose).catch((reason: unknown) => {
+    const input: MemberInput = type === 'cli'
+      ? { name: name.trim(), persona, cli }
+      : { name: name.trim(), persona, model: provider !== undefined && model !== undefined ? { provider, model } : null }
+    onSubmit(input).then(onClose).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason))
     }).finally(() => { setBusy(false) })
   }
@@ -76,7 +104,36 @@ export function MemberDialog({ member, listModels, onSubmit, onClose, t }: Membe
           <span>{t('memberName')}</span>
           <input className={css.fieldInput} value={name} maxLength={32} autoFocus onChange={(event) => { setName(event.target.value) }} />
         </label>
-        <label className={css.field}>
+        {member === undefined && (
+          <div className={css.field} role="radiogroup" aria-label={t('memberType')}>
+            <span>{t('memberType')}</span>
+            <span className={css.choiceRow}>
+              {(['dsh', 'cli'] as const).map(value => (
+                <label key={value} className={css.choice}>
+                  <input type="radio" name="member-type" value={value} checked={type === value} onChange={() => { setType(value); setError(undefined) }} />
+                  {value === 'dsh' ? t('memberTypeDsh') : t('memberTypeCli')}
+                </label>
+              ))}
+            </span>
+          </div>
+        )}
+        {type === 'cli' && (
+          <div className={css.field} role="radiogroup" aria-label={t('memberCli')}>
+            <span>{clis === undefined ? t('memberCliLoading') : t('memberCli')}</span>
+            <span className={css.choiceRow}>
+              {CLI_CHOICES.map(({ cli: id, label }) => {
+                const found = clis?.find(l => l.cli === id)
+                return (
+                  <label key={id} className={css.choice} title={found?.path}>
+                    <input type="radio" name="member-cli" value={id} checked={cli === id} disabled={found === undefined} onChange={() => { setCli(id) }} />
+                    {found === undefined && clis !== undefined ? `${label} (${t('memberCliMissing')})` : label}
+                  </label>
+                )
+              })}
+            </span>
+          </div>
+        )}
+        {type === 'dsh' && <label className={css.field}>
           <span>{t('memberModel')}</span>
           <select className={css.fieldInput} value={modelKey} disabled={routes === undefined} onChange={(event) => { setModelKey(event.target.value) }}>
             <option value="">{routes === undefined ? t('memberModelLoading') : t('memberModelDefault')}</option>
@@ -91,7 +148,7 @@ export function MemberDialog({ member, listModels, onSubmit, onClose, t }: Membe
               </optgroup>
             ))}
           </select>
-        </label>
+        </label>}
         <label className={css.field}>
           <span>{t('memberPersona')}</span>
           <textarea className={css.fieldInput} rows={4} value={persona} maxLength={4000} onChange={(event) => { setPersona(event.target.value) }} />
@@ -99,7 +156,7 @@ export function MemberDialog({ member, listModels, onSubmit, onClose, t }: Membe
         {error !== undefined && <div className={css.sendError} role="alert">{error}</div>}
         <div className={css.dialogActions}>
           <button type="button" className={css.secondaryButton} onClick={onClose}>{t('cancel')}</button>
-          <button type="submit" className={css.primaryButton} disabled={busy || name.trim() === ''}>{t('save')}</button>
+          <button type="submit" className={css.primaryButton} disabled={busy || name.trim() === '' || (type === 'cli' && cli === '')}>{t('save')}</button>
         </div>
       </form>
     </div>
