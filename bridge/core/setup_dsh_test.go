@@ -27,7 +27,7 @@ func TestDSHLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	// only the hook bridge block: not a model setup
-	if err := os.WriteFile(filepath.Join(home, "cordis.patch.yml"), []byte(dshHookPatch("/b.js", "/s.json")), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(home, "cordis.patch.yml"), []byte(dshHookPatch("/b.js", "/s.json", "/w")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if dshLogin(h) != "not_logged_in" {
@@ -176,6 +176,9 @@ func TestApplyWizardDSHRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	pt := string(b)
+	if i := strings.Index(pt, dshPatchBegin); i >= 0 {
+		pt = pt[:i] // the provider part; the bridge block is checked below
+	}
 	for _, want := range []string{`baseURL: "https://api.deepseek.com/anthropic"`, "apiKeyEnv: " + DSHKeyEnv, `- id: "deepseek-chat"`, "- id: acp"} {
 		if !strings.Contains(pt, want) {
 			t.Errorf("patch lacks %q:\n%s", want, pt)
@@ -190,9 +193,14 @@ func TestApplyWizardDSHRole(t *testing.T) {
 	if len(installed) != 1 || installed[0] != "@deepseek-ai/dsh-hooks-claude-code@0.2.1-rc.2" {
 		t.Fatalf("bridge install = %v", installed)
 	}
-	home, _ := os.ReadFile(filepath.Join(dshHome, "cordis.patch.yml"))
-	if !strings.Contains(string(home), filepath.Join(data, "dsh-hooks", "0.2.1-rc.2")) {
-		t.Fatalf("home layer = %s", home)
+	// the user's own DSH_HOME is not written; the role's overlay mounts the bridge
+	if ents, _ := os.ReadDir(dshHome); len(ents) != 0 {
+		t.Fatalf("DSH_HOME was written: %v", ents)
+	}
+	ov, _ := os.ReadFile(patch)
+	if !strings.Contains(string(ov), "id: hooks-claude-code") || !strings.Contains(string(ov), filepath.Join(data, "dsh-hooks", "0.2.1-rc.2")) ||
+		!strings.Contains(string(ov), "projectDir: \""+wd+"\"") || !strings.Contains(string(ov), "baseURL:") {
+		t.Fatalf("overlay = %s", ov)
 	}
 	roles, err := readDSHRoles(AgentHooksDir(data))
 	if err != nil || len(roles[wd].Hooks) == 0 || roles[wd].DSHHome != dshHome {
@@ -227,7 +235,8 @@ func TestApplyWizardDSHOwnSetupAndFailures(t *testing.T) {
 	t.Cleanup(func() { npmInstall = oldNpm })
 	clis := []LocalCLI{{AgentType: "dsh", Path: dsh, Supported: true, Login: "logged_in"}}
 
-	// no third-party API: the user's own DSH setup, no overlay, no key
+	// no third-party API: the user's own DSH setup, no key; the overlay is there (for the bridge) but sets no model
+	dshHome := os.Getenv("DSH_HOME")
 	data := t.TempDir()
 	store := newMemStore()
 	res := ApplyWizard(context.Background(), WizardEnv{Store: store, DataDir: data, CLIs: clis}, dshWizardReq(nil))
@@ -235,8 +244,12 @@ func TestApplyWizardDSHOwnSetupAndFailures(t *testing.T) {
 		t.Fatalf("apply: %+v", res)
 	}
 	p := store.projects["whale"]
-	if slices.Contains(p.AgentArgs, "--patch") || p.AgentEnv[DSHKeyEnv] != "" || fileExists(DSHPatchPath(data, "whale")) {
-		t.Fatalf("own setup must not get an overlay: %+v", p)
+	ov, _ := os.ReadFile(DSHPatchPath(data, "whale"))
+	if !slices.Contains(p.AgentArgs, "--patch") || p.AgentEnv[DSHKeyEnv] != "" || strings.Contains(string(ov), "llm-deepseek") {
+		t.Fatalf("own setup: %+v overlay %q", p, ov)
+	}
+	if ents, _ := os.ReadDir(dshHome); len(ents) != 0 {
+		t.Fatalf("DSH_HOME was written: %v", ents)
 	}
 	// the bridge could not be installed: the hooks step fails, the role is still made
 	for _, s := range res.Steps {

@@ -915,7 +915,7 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 			switch {
 			case r.writesPersona():
 				addStep(res, step, nil, stepDryPersonaWrite(req.Language, PersonaFilePath(r.AgentType, r.workDir), r.ReplyLanguage))
-				if r.AgentType == "dsh" && r.Provider != nil {
+				if r.AgentType == "dsh" && !r.reused {
 					addStep(res, fmt.Sprintf("role %d dsh", i+1), nil, DSHPatchPath(env.DataDir, r.project))
 				}
 				if !r.reused && wizardHooksFor(r.AgentType) {
@@ -1018,10 +1018,11 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 		}
 		addStep(res, step, nil, stepPersonaWritten(req.Language, r.project, path))
 		dsh := wizardDSH(clis)
-		if r.AgentType == "dsh" && r.Provider != nil {
-			// the third-party API picked for a DSH role: its overlay (dsh --patch), the key is in the role's env
+		if r.AgentType == "dsh" && !r.reused {
+			// every new DSH role gets its overlay (dsh --patch): the third-party API picked for it (the key is in
+			// the role's env) and the hook bridge; the user's own $DSH_HOME is not written
 			ds := fmt.Sprintf("role %d dsh", i+1)
-			p, err := writeDSHProviderPatch(env.DataDir, r.project, *r.Provider)
+			p, err := writeDSHProviderPatch(env.DataDir, r.project, r.Provider)
 			if err != nil {
 				return fail(ds, err)
 			}
@@ -1035,6 +1036,7 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 			o := AgentHookOptions{DataDir: env.DataDir, WorkDir: r.workDir, CLI: r.AgentType, Lang: r.ReplyLanguage}
 			var err error
 			if r.AgentType == "dsh" {
+				o.DSHPatch = DSHPatchPath(env.DataDir, r.project)
 				o.DSHBridge, err = EnsureDSHBridgeFor(ctx, env.DataDir, dsh.Path, dsh.Version)
 			}
 			var h *AgentHookResult
