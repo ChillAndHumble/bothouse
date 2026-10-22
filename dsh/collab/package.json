@@ -18,6 +18,6 @@
     "@zed-industries/claude-code-acp": "^0.16.2"
   },
   "optionalDependencies": {
-    "@zed-industries/codex-acp": "^0.16.0"
+    "@agentclientprotocol/codex-acp": "^2.2.2"
   }
 }

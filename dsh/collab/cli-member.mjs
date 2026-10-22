@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url)
 // 适配器包名/命令来自用户派活原话（2026-10-23）
 const ADAPTERS = {
   claude: { pkg: '@zed-industries/claude-code-acp', args: [] },
-  codex: { pkg: '@zed-industries/codex-acp', args: [] },
+  codex: { pkg: '@agentclientprotocol/codex-acp', args: [] },
   gemini: { cmd: 'gemini', args: ['--experimental-acp'] },
 }
 

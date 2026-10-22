@@ -13,6 +13,8 @@ import { Hub } from './hub.mjs';
 import { CloudWebGateway, WS_PATH } from './cloudweb.mjs';
 import { DshMembers } from './dsh-member.mjs';
 import { Roster } from './roster.mjs';
+import { createCliMember } from './cli-member.mjs';
+import { handler as clisHandler } from './clis.mjs';
 
 export const name = 'conest-collab';
 export const inject = [
@@ -71,7 +73,7 @@ export async function apply(ctx, rawConfig) {
   const hub = new Hub(store, ctx.logger);
   hub.setMember({ id: OWNER, name: config.ownerName, kind: 'human', online: true });
   const gateway = new CloudWebGateway(hub, { token: config.botToken, logger: ctx.logger });
-  const dsh = new DshMembers(hub, { ctx, createUserMessage, workspacePath: config.workspacePath, logger: ctx.logger }, [], { maxRelay: config.maxRelay });
+  const dsh = new DshMembers(hub, { ctx, createUserMessage, createCliMember, workspacePath: config.workspacePath, logger: ctx.logger }, [], { maxRelay: config.maxRelay });
   const roster = new Roster(hub, dsh, ctx.llm);
   // Config members are seeds; UI-created members persist in the store. Both must be routable before recovery.
   roster.load(config.dshMembers);
@@ -151,6 +153,7 @@ export async function apply(ctx, rawConfig) {
         return { message: publicMessage(message) };
       });
     }
+    if (path === '/collab/api/clis') return clisHandler(req, res);
     if (path === '/collab/api/models' && req.method === 'GET') return json(res, 200, { routes: await roster.models() });
     if (path === '/collab/api/rooms' && req.method === 'POST') {
       return withBody(req, res, (body) => {
