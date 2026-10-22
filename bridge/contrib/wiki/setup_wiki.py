@@ -148,6 +148,8 @@ def main(bot):
         "after_codex": [],  # no Claude fallback: a failed batch waits for the next night
         "rule_files": [PERSONA[bot]],
     }
+    if _bots[bot].get("dsh_home"):
+        cfg["dsh_home"] = _bots[bot]["dsh_home"]  # the dsh engine runs under the role's DSH home (ingest.py dsh_env)
     engines = json.loads(os.environ.get("WIKI_ENGINES") or "{}")
     cfg.update({k: v for k, v in engines.items() if k.endswith("_engine") or k in ("after_codex", "codex_models", "dsh_cmd", "dsh_patch", "dsh_env_file")})
     (w / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n")  # git-ignored

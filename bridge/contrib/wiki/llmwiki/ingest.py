@@ -72,8 +72,9 @@ DEFAULTS = {
     "dream": True,
     # dsh engine: the command that starts dsh (the wizard writes [node, dsh's bin.js] so a service PATH without node
     # works), an extra overlay (`dsh --patch`, the role's wizard-picked API; "" = none) and a KEY=VALUE file whose
-    # variables the run gets (that overlay's key; "" = none)
-    "dsh_cmd": ["dsh"], "dsh_patch": "", "dsh_env_file": "",
+    # variables the run gets (that overlay's key; "" = none); dsh_home = the role's DSH_HOME (bots.json "dsh_home",
+    # written by rolewiki.go; "" = leave DSH_HOME as inherited)
+    "dsh_cmd": ["dsh"], "dsh_patch": "", "dsh_env_file": "", "dsh_home": "",
 }
 
 
@@ -196,7 +197,7 @@ TIER = os.environ.get("WIKI_CODEX_TIER", "")  # codex only: "fast" = Fast mode (
 MIRROR_TO = os.environ.get("WIKI_MIRROR_TO", "mac" if sys.platform.startswith("linux") else "")
 HOSTS = Path(os.path.expanduser(CFG["hosts"] or "/nonexistent-wiki-hosts"))  # on the Mac: <hostname>/{projects/,ingest.sqlite,ingest.log}
 MIRRORED = WIKI / ".mirror.json"  # on the mirroring machine: {transcript path: size already sent}
-SOP_ENGINES = set(os.environ.get("WIKI_SOP_ENGINES", "codex,agy,gemini,claude,haiku,sonnet,opus").split(","))
+SOP_ENGINES = set(os.environ.get("WIKI_SOP_ENGINES", "codex,agy,gemini,claude,haiku,sonnet,opus,dsh").split(","))
 
 SECRET = re.compile(
     r"(-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
@@ -1199,7 +1200,9 @@ def codex(instruction, stdin="", label="?", context=None, effort=None, model=Non
 
 
 def dsh_env():
-    env = {**os.environ, "WIKI_INGEST": "1"}
+    env = {**os.environ, "WIKI_INGEST": "1"}  # run.py lets every hook pass for this run (the role's hooks would refuse .ingest-work)
+    if CFG["dsh_home"]:
+        env["DSH_HOME"] = os.path.expanduser(CFG["dsh_home"])
     f = os.path.expanduser(CFG["dsh_env_file"]) if CFG["dsh_env_file"] else ""
     if f and os.path.exists(f):
         for line in open(f, encoding="utf-8"):
