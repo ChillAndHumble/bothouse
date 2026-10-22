@@ -34,6 +34,12 @@ import (
 
 const insertNote = "（以下是补充信息，不是提问。若它不改变你之前的结论、也无需动作，只回复 NO_REPLY；否则简短回应。）"
 
+// mentionedNote goes before a person's message that called this bot (an @ of the bot or its role,
+// a bare @, or a reply to its message) when the gate says reply: such a turn must not end in a bare
+// NO_REPLY. 2026-10-22, user: 「好像我回你的时候同时艾特彩虹猫，你们都不理我，然后还有空@也不理我」
+// (both times the gate said reply and the model answered NO_REPLY).
+const mentionedNote = "（用户这条明确 @ 了你或回复了你，必须回复，不要只回 NO_REPLY。）"
+
 type gateState struct {
 	url             string
 	timeout         time.Duration
@@ -146,17 +152,22 @@ func (e *Engine) SetGate(url string, timeoutMs int, fallback string) {
 	default:
 		fallback = "reply"
 	}
-	// Claude Code merges stdin input into the running turn, Codex app-server via turn/steer;
-	// codex exec would start a second process, so other agents get busy inserts as a queued turn.
-	inject := e.agent != nil && e.agent.Name() == "claudecode"
-	var injectDyn func() bool
-	if m, ok := e.agent.(interface{ SupportsMidTurnInput() bool }); ok {
-		// Asked per message: ACP learns it from the agent's handshake, after the gate is set up.
-		injectDyn = m.SupportsMidTurnInput
-	}
+	inject, injectDyn := midTurnInjectCaps(e.agent)
 	e.gate = &gateState{url: url, timeout: time.Duration(timeoutMs) * time.Millisecond, fallback: fallback, inject: inject, injectDyn: injectDyn, textBurstWindow: burstWindow,
 		buf: map[string][]string{}, held: map[string]*heldMsg{}, released: map[*Message]bool{}}
 	slog.Info("gate enabled", "url", url, "timeout_ms", timeoutMs, "fallback", fallback, "mid_turn_inject", e.gate.canInject())
+}
+
+// midTurnInjectCaps reports whether agent folds input sent during a turn into that turn.
+// Claude Code merges stdin input into the running turn, Codex app-server via turn/steer;
+// codex exec would start a second process, so other agents get busy inserts as a queued turn.
+// injectDyn is asked per message: ACP learns it from the agent's handshake, after setup.
+func midTurnInjectCaps(agent Agent) (inject bool, injectDyn func() bool) {
+	inject = agent != nil && agent.Name() == "claudecode"
+	if m, ok := agent.(interface{ SupportsMidTurnInput() bool }); ok {
+		injectDyn = m.SupportsMidTurnInput
+	}
+	return inject, injectDyn
 }
 
 // SetGateBurstWindow configures idle text coalescing before the engine starts
@@ -236,6 +247,9 @@ func (e *Engine) applyGate(p Platform, msg *Message, session *Session, interacti
 	}
 	if g == nil || msg.IsPermissionResponse {
 		if !msg.IsPermissionResponse {
+			if g == nil && e.applyLocalGate(p, msg, session, interactiveKey) {
+				return true
+			}
 			e.teamNoteTurn(msg, session)
 		}
 		return false
@@ -335,6 +349,9 @@ func (e *Engine) applyGate(p Platform, msg *Message, session *Session, interacti
 		}
 	}
 	content := msg.Content
+	if dec.Action == "reply" && msg.Mentioned && !msg.FromBot {
+		content = mentionedNote + "\n" + content
+	}
 	session.backfillMu.Lock() // maomao fork: read and mark seen as one step (Session.backfillMu)
 	if back, images, ok := e.channelBackfill(p, msg, session); ok {
 		// The channel itself is the record: it covers the gate buffer and also
