@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url)
 const ADAPTERS = {
   claude: { pkg: '@zed-industries/claude-code-acp', args: [] },
   codex: { pkg: '@agentclientprotocol/codex-acp', args: [] },
-  gemini: { cmd: 'gemini', args: ['--experimental-acp'] },
+  gemini: { cmd: 'gemini', args: ['--acp'] },
 }
 
 function resolveBin(pkg) {

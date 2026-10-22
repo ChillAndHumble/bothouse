@@ -24,6 +24,9 @@ DSH_DIR="$(cd "$(dirname "$DSH_JS")/.." && pwd)"
 WEB_APP="$DSH_DIR/node_modules/@deepseek-ai/dsh-web-app"
 [ -d "$WEB_APP" ] || { echo "dsh-web-app not found under $DSH_DIR" >&2; exit 1; }
 
+echo "== install collab dependencies"
+(cd "$HERE/collab" && pnpm install)
+
 echo "== build client-ui-discord"
 (cd "$UI" && pnpm install --ignore-workspace && pnpm run bundle)
 
