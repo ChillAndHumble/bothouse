@@ -37,7 +37,7 @@ WEB_APP="$DSH_DIR/node_modules/@deepseek-ai/dsh-web-app"
 
 if [ ! -d "$HERE/collab/node_modules" ]; then
   echo "== install collab dependencies"
-  (cd "$HERE/collab" && pnpm install)
+  (cd "$HERE/collab" && pnpm install --frozen-lockfile --config.minimum-release-age=0)
 fi
 
 if [ -f "$UI/lib/client.js" ]; then
