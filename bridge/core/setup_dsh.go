@@ -59,7 +59,8 @@ func dshHasOwnModel(dshHome string) bool {
 	return false
 }
 
-// DSHPatchPath is the role's overlay (dsh --patch), written only when the wizard picked a third-party API.
+// DSHPatchPath is the role's overlay (dsh --patch), every DSH role has one: the third-party API picked in the
+// wizard (if any) and the hook bridge (EnsureDSHHookBridge). The user's own $DSH_HOME is not written.
 func DSHPatchPath(dataDir, project string) string {
 	return filepath.Join(dataDir, "dsh", project+".patch.yml")
 }
@@ -115,15 +116,46 @@ func dshLaunch(dshPath string) (cmd string, args []string) {
 func dshRoleLaunch(dshPath, dataDir, project, workDir string, p *WizardProvider) (string, []string, map[string]string) {
 	cmd, args := dshLaunch(dshPath)
 	env := map[string]string{"UV_CACHE_DIR": filepath.Join(workDir, ".cache", "uv")}
+	args = append(args, "--patch", DSHPatchPath(dataDir, project))
 	if p != nil {
-		args = append(args, "--patch", DSHPatchPath(dataDir, project))
 		env[DSHKeyEnv] = p.APIKey
 	}
 	return cmd, args, env
 }
 
-// writeDSHProviderPatch writes the role's overlay for the third-party API in p.
-func writeDSHProviderPatch(dataDir, project string, p WizardProvider) (string, error) {
+// writeDSHProviderPatch writes the role's overlay: the third-party API in p (nil = the user's own model setup,
+// an empty overlay "[]"); a hook bridge block already in it is kept.
+func writeDSHProviderPatch(dataDir, project string, p *WizardProvider) (string, error) {
+	path := DSHPatchPath(dataDir, project)
+	body := "[]\n"
+	if p != nil {
+		var err error
+		if body, err = dshProviderBody(project, *p); err != nil {
+			return "", err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+		// the wiki's dsh ingest runs outside the role's process, so it reads the key from this 0600 file
+		if err := AtomicWriteFile(DSHEnvPath(dataDir, project), []byte(DSHKeyEnv+"="+p.APIKey+"\n"), 0o600); err != nil {
+			return "", err
+		}
+	}
+	if old, err := os.ReadFile(path); err == nil {
+		if i := strings.Index(string(old), dshPatchBegin); i >= 0 {
+			if strings.TrimSpace(body) == "[]" {
+				body = ""
+			}
+			body += string(old[i:])
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	return path, AtomicWriteFile(path, []byte(body), 0o644)
+}
+
+func dshProviderBody(project string, p WizardProvider) (string, error) {
 	v, _ := wizardVendor(p.Vendor)
 	base := v.Endpoints[ProtocolAnthropic]
 	if base == "" {
@@ -133,14 +165,7 @@ func writeDSHProviderPatch(dataDir, project string, p WizardProvider) (string, e
 	if model == "" {
 		model = v.Model
 	}
-	path := DSHPatchPath(dataDir, project)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", err
-	}
-	if err := AtomicWriteFile(DSHEnvPath(dataDir, project), []byte(DSHKeyEnv+"="+p.APIKey+"\n"), 0o600); err != nil {
-		return "", err
-	}
-	return path, AtomicWriteFile(path, []byte(dshProviderPatch(project, base, model)), 0o644)
+	return dshProviderPatch(project, base, model), nil
 }
 
 var dshVersionRe = regexp.MustCompile(`\d+\.\d+\.\d+[0-9A-Za-z.+-]*`)
@@ -216,13 +241,13 @@ func wizardDSH(clis []LocalCLI) LocalCLI {
 	return LocalCLI{}
 }
 
-// hookSettingsShown is the hook file the wizard reports: DSH reads the DSH-wide one (DSHHookSettingsPath).
+// hookSettingsShown is the hook file the wizard reports: for DSH the role's overlay that mounts the bridge.
 func hookSettingsShown(agentType, workDir string, h *AgentHookResult) string {
 	if agentType == "dsh" {
 		if h != nil && h.DSHPatchFile != "" {
 			return h.DSHPatchFile
 		}
-		return DSHHookSettingsPath("")
+		return DSHHookSettingsPath(workDir)
 	}
 	if h != nil {
 		return h.SettingsFile
