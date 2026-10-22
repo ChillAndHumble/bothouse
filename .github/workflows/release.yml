@@ -64,7 +64,7 @@ jobs:
           mkdir -p ../dist
           commit=$(git rev-parse --short HEAD)
           built=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          targets="linux/amd64 linux/arm64 windows/amd64 windows/arm64"
+          targets="linux/amd64 linux/arm64 windows/amd64"
           if [ "$RUNNER_OS" = macOS ]; then targets="darwin/arm64 darwin/amd64"; fi
           for target in $targets; do
             os=${target%/*}; arch=${target#*/}
@@ -77,30 +77,35 @@ jobs:
               -o "$binary" ./cmd/cc-connect
             case "$os" in
               windows)
-                cp "$binary" "../dist/${native}.exe"
-                ;;
-              darwin)
-                ../.github/release-check/package-dmg.sh "$binary" "../dist/${native}.dmg" "$TAG" "$arch"
+                cp "$binary" ../dist/bothouse-windows.exe
                 ;;
               linux)
-                cp "$binary" "../dist/${native}"
+                label=$arch; [ "$arch" != amd64 ] || label=x64
+                cp "$binary" "../dist/bothouse-linux-${label}"
                 ;;
             esac
           done
+          if [ "$RUNNER_OS" = macOS ]; then
+            lipo -create build/bothouse-darwin-arm64/bothouse build/bothouse-darwin-amd64/bothouse \
+              -output build/bothouse-universal
+            ../.github/release-check/package-dmg.sh build/bothouse-universal ../dist/bothouse-mac.dmg "$TAG"
+          fi
           cd ../dist
           shasum -a 256 bothouse-* > SHA256SUMS
       - name: Smoke test (linux/amd64)
         if: runner.os == 'Linux'
         run: |
-          dist/bothouse-linux-amd64 --version
-          dist/bothouse-linux-amd64 setup --help | grep -q 'setup apply'
+          dist/bothouse-linux-x64 --version
+          dist/bothouse-linux-x64 setup --help | grep -q 'setup apply'
       - name: Smoke test (macOS app bundle)
         if: runner.os == 'macOS'
         run: |
-          arch=arm64; [ "$(uname -m)" != x86_64 ] || arch=amd64
           mount=$(mktemp -d)
-          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "dist/bothouse-darwin-${arch}.dmg"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" dist/bothouse-mac.dmg
           plutil -lint "$mount/Bothouse.app/Contents/Info.plist"
+          lipo -info "$mount/Bothouse.app/Contents/MacOS/bothouse"
+          lipo "$mount/Bothouse.app/Contents/MacOS/bothouse" -verify_arch arm64
+          lipo "$mount/Bothouse.app/Contents/MacOS/bothouse" -verify_arch x86_64
           "$mount/Bothouse.app/Contents/MacOS/bothouse" --version
           hdiutil detach "$mount"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -128,13 +133,13 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $asset = "bothouse-windows-amd64.exe"
+          $asset = "bothouse-windows.exe"
           $want = ((Get-Content dist/SHA256SUMS | Where-Object { $_ -match " $([regex]::Escape($asset))$" }) -split ' ')[0]
           $got = (Get-FileHash -Algorithm SHA256 "dist/$asset").Hash.ToLower()
           if ($want -ne $got) { throw "checksum mismatch: $want vs $got" }
-          ./dist/bothouse-windows-amd64.exe --version
+          ./dist/bothouse-windows.exe --version
           if ($LASTEXITCODE -ne 0) { throw "--version exit $LASTEXITCODE" }
-          $help = ./dist/bothouse-windows-amd64.exe setup --help | Out-String
+          $help = ./dist/bothouse-windows.exe setup --help | Out-String
           if ($help -notmatch 'setup apply') { throw "setup --help has no 'setup apply'" }
 
   publish:
@@ -171,10 +176,9 @@ jobs:
           Download and open the file for your platform. On first launch, the browser setup wizard opens.
           The macOS app is unsigned: right-click → Open the first time.
 
-          - **macOS (Apple Silicon):** `bothouse-darwin-arm64.dmg`
-          - **macOS (Intel):** `bothouse-darwin-amd64.dmg`
-          - **Windows:** `bothouse-windows-amd64.exe` (ARM: `bothouse-windows-arm64.exe`)
-          - **Linux:** `bothouse-linux-amd64` / `bothouse-linux-arm64` (`chmod +x`, then run)
+          - **Mac (Apple Silicon and Intel):** `bothouse-mac.dmg` (universal Bothouse.app)
+          - **Windows (x64 and ARM64):** `bothouse-windows.exe`
+          - **Linux:** `bothouse-linux-x64` / `bothouse-linux-arm64` (`chmod +x`, then run)
           - **Checksums:** `SHA256SUMS`
 
           Terminal installation: `install.sh` / `install.ps1`; see the README.
@@ -188,7 +192,10 @@ jobs:
 
           ### 安装
 
-          macOS 下载 dmg，将 Bothouse.app 拖入 Applications 后双击；Windows 下载 exe 双击。
+          - **Mac（Apple 芯片和 Intel 通用）：** `bothouse-mac.dmg`，将 Bothouse.app 拖入 Applications 后双击。
+          - **Windows（x64 和 ARM64）：** `bothouse-windows.exe`，下载后双击。
+          - **Linux：** `bothouse-linux-x64` / `bothouse-linux-arm64`。
+
           首次启动会打开浏览器安装向导。macOS 未签名，首次打开请「右键→打开」。
           Linux 下载对应架构文件，`chmod +x` 后运行。校验见 `SHA256SUMS`。
           命令行安装可用 `install.sh` / `install.ps1`，详见 README。

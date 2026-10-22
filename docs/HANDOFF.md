@@ -1,5 +1,7 @@
 # 共栖当前交接
 
+2026-10-23：按用户「免审:小改动」授权统一下载入口，直接推 main。Mac 用 lipo 合并 arm64/amd64 为 universal，仅发布 bothouse-mac.dmg（Bothouse.app，卷名 Bothouse）；Windows 仅发布 x64 的 bothouse-windows.exe，Linux 为 bothouse-linux-x64 / bothouse-linux-arm64。安装脚本和 CLI/网页共用的更新器认新名，更新器兼容旧架构文件和历史压缩包，校验失败不回退。发布 workflow 同步构建与 smoke；打包脚本拒绝单架构输入。回归先红后绿，沙箱 Go 全量、CUJ、定向回归、vet、actionlint、shell 语法检查、Linux 安装与坏校验拒绝通过。v0.1.2 资产替换、Mac 实际启动与安装/更新提取的最终证据见 /tmp/rename/result4.md；旧资产的逐字节备份在 /tmp/rename/dist-v0.1.2。单一 Agent 实现并自查。
+
 2026-10-22 bothouse v0.1.2 改名与安装包：CLI 帮助、版本、启动消息、网页、安装脚本及当前安装文档统一使用 bothouse；module 与内部包名保留。配置默认 ~/.bothouse，仅当它不存在而旧目录存在时沿用旧目录，不迁移文件。发布产物为双架构 dmg/exe/Linux 裸文件和 SHA256SUMS，自更新先新名后历史名，v0.1.1 资产保持原状。沙箱 Go 全量、CUJ、定向回归、vet、前端构建与 actionlint 通过；目录回归已验证旧逻辑失败、新逻辑通过。额外 promise-guard 回放的两个时间/任务环境相关失败在改前改后相同，未扩大修复。用户明确要求推 main 并打 v0.1.2；发布与安装包验收的最终证据记录在 /tmp/rename/result.md。没有操作生产机器人配置、进程或频道；单一 Agent 实现和自查。
 
 ## 2026-10-22：Bothouse 可双击下载（Issue #50）

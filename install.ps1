@@ -38,8 +38,7 @@ function Install-Bothouse {
     $archName = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
   }
   switch -Regex ($archName) {
-    '^(X64|AMD64)$' { $arch = 'amd64' }
-    '^(Arm64|ARM64)$' { $arch = 'arm64' }
+    '^(X64|AMD64|Arm64)$' { $arch = 'amd64' } # Windows on ARM runs the same x64 executable.
     default { Fail "unsupported CPU $($archName): arm64 and amd64 only" }
   }
 
@@ -63,7 +62,7 @@ function Install-Bothouse {
       }
     }
 
-    $asset = "bothouse-windows-$arch.exe"
+    $asset = 'bothouse-windows.exe'
     $from = if ($repo -ne 'zuiho-kai/bothouse') { " from $repo" } else { '' }
     Write-Host "Installing bothouse $tag (windows/$arch)$from into $installDir"
     Write-Host "Downloading $asset"
@@ -163,7 +162,7 @@ function Install-Bothouse {
     Write-Host "It opens the setup wizard in your browser. Guide: https://github.com/$repo/blob/main/docs/GETTING_STARTED.md"
   } finally {
     # only the files this script made, one by one, then the (now empty) folders
-    foreach ($f in @((Join-Path $tmp 'SHA256SUMS'), (Join-Path $tmp "bothouse-windows-$arch.exe"))) {
+    foreach ($f in @((Join-Path $tmp 'SHA256SUMS'), (Join-Path $tmp 'bothouse-windows.exe'))) {
       Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
     }
     foreach ($d in @($tmp)) {
