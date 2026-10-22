@@ -39,7 +39,10 @@ function Avatar({ id, name, small }: { id: string; name: string; small?: boolean
   )
 }
 
-function KindTag({ kind, t }: { kind: ChannelMember['kind'] | undefined; t: T }) {
+const CLI_TAG = { claude: 'kindClaude', codex: 'kindCodex', gemini: 'kindGemini' } as const
+
+function KindTag({ kind, cli, t }: { kind: ChannelMember['kind'] | undefined; cli?: ChannelMember['cli']; t: T }) {
+  if (cli !== undefined) return <span className={css.tag}>{t(CLI_TAG[cli])}</span>
   if (kind === 'dsh') return <span className={css.tag}>{t('kindDsh')}</span>
   if (kind === 'bot') return <span className={css.tag}>{t('kindBot')}</span>
   return null
@@ -56,7 +59,7 @@ function MessageRow({ message, member, t }: { message: ChannelMessage; member: C
       <div className={css.messageBody}>
         <div className={css.messageHead}>
           <span className={css.author}>{message.name}</span>
-          <KindTag kind={member?.kind} t={t} />
+          <KindTag kind={member?.kind} cli={member?.cli} t={t} />
           <time className={css.time}>{new Date(message.created_at * 1000).toLocaleString()}</time>
         </div>
         {card === undefined
@@ -98,9 +101,9 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }: {
               <span className={css.presence} />
             </span>
             <span className={css.memberText}>
-              <span className={css.memberName}>{m.name}<KindTag kind={m.kind} t={t} /></span>
+              <span className={css.memberName}>{m.name}<KindTag kind={m.kind} cli={m.cli} t={t} /></span>
               <span className={css.memberStatus}>{busy.has(m.id) ? t('working') : m.online ? t('online') : t('offline')}</span>
-              {m.kind === 'dsh' && (
+              {m.kind === 'dsh' && m.cli === undefined && (
                 <span className={css.memberModel}>{m.model ? `${m.model.provider}/${m.model.model}` : t('defaultModel')}</span>
               )}
             </span>
@@ -124,7 +127,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }: {
  * @param props - framework, injected, and locale shares.
  * @returns the three-column channel view.
  */
-export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, addMember, updateMember, removeMember, t }: ChannelsPageProps) {
+export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, listClis, addMember, updateMember, removeMember, t }: ChannelsPageProps) {
   const state = useChannels(snapshot => snapshot)
   const [drafts, setDrafts] = useState<Record<number, string>>({})
   const [errors, setErrors] = useState<Record<number, string | undefined>>({})
@@ -345,7 +348,7 @@ export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listMo
                       {m.online && <span className={css.presence} />}
                     </span>
                     <span className={css.mentionName}>{m.name}</span>
-                    <KindTag kind={m.kind} t={t} />
+                    <KindTag kind={m.kind} cli={m.cli} t={t} />
                     <span className={css.mentionMeta}>
                       {busy.has(m.id) ? t('working') : m.online ? `@${m.id}` : t('offline')}
                     </span>
@@ -401,6 +404,7 @@ export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listMo
         <MemberDialog
           member={dialog ?? undefined}
           listModels={listModels}
+          listClis={listClis}
           onSubmit={input => (dialog === null ? addMember(input) : updateMember(dialog.id, input))}
           onClose={() => { setDialog(undefined) }}
           t={t}

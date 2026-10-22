@@ -159,6 +159,7 @@
   background: var(--dsw-alias-state-business-primary);
   font-size: 10px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .text {
@@ -544,6 +545,21 @@
 
 .field textarea {
   resize: vertical;
+}
+
+.choiceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .dialogActions {

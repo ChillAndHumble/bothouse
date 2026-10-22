@@ -52,9 +52,9 @@ export class Hub {
   }
 
   memberView() {
-    return this.memberList().map(({ id, name, kind, online, model, persona, source }) => ({
+    return this.memberList().map(({ id, name, kind, online, model, cli, persona, source }) => ({
       id, name, kind, online: online !== false,
-      ...(kind === 'dsh' ? { model: model ?? null, persona: persona ?? '', editable: source === 'ui' } : {}),
+      ...(kind === 'dsh' ? { model: model ?? null, ...(cli ? { cli } : {}), persona: persona ?? '', editable: source === 'ui' } : {}),
     }));
   }
 
