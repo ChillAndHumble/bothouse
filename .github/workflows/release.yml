@@ -89,7 +89,9 @@ jobs:
           name: release-dist
           path: dist/
           if-no-files-found: error
-          retention-days: 7
+          # 1 天：artifact 只在本次 run 的 job 之间传递，发布后不再需要；额度按账号算，
+          # run 39784879535 (v0.1.1) 因 "Artifact storage quota has been hit" 上传失败。
+          retention-days: 1
 
   # Same check as the linux/amd64 smoke test, on a real Windows machine, before anything is published.
   smoke-windows:
