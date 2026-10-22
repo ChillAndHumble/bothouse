@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Bot, Check, CheckCircle2, Copy, ExternalLink, Globe, Loader2, MessageSquare, Plus, RefreshCw, Smartphone, Trash2, XCircle } from 'lucide-react';
+import { Bot, Check, CheckCircle2, Copy, ExternalLink, Globe, House, Loader2, MessageSquare, Plus, RefreshCw, Smartphone, Trash2, XCircle } from 'lucide-react';
+import { useThemeStore } from '@/store/theme';
+import './setup.css';
 import { Badge, Button, Card, Input, Textarea } from '@/components/ui';
 import PlatformSetupQR from '@/pages/Projects/PlatformSetupQR';
 import { restartSystem } from '@/api/status';
@@ -49,6 +51,10 @@ const selectCls = 'w-full px-3 py-2 text-sm rounded-lg border border-gray-300 da
 let keySeq = 1;
 
 export default function SetupWizard() {
+  useEffect(() => {
+    // Also cover entering setup from an already-open management page.
+    if (!localStorage.getItem('cc_theme')) useThemeStore.getState().setTheme('light');
+  }, []);
   const { i18n } = useTranslation();
   const lang = i18n.language || 'en';
   const zh = isZhLang(lang);
@@ -260,7 +266,7 @@ export default function SetupWizard() {
       }
     }, 800); // 来源：输入停顿后再测，免得每敲一个字发一次请求（无数据依据的交互延迟，可改）
     return () => window.clearTimeout(jevTimer.current);
-  }, [jev.base_url, jev.api_key, jev.model, lang, fallbackName, jevUnchanged]);
+  }, [jev, lang, fallbackName, jevUnchanged]);
 
   // 下一步 on the jev step: unchanged → keep; empty → remove; tested usable → save. 跳过 → remove.
   // 下一步 / 跳过 never remove a working jev: skipping (or leaving the boxes empty) keeps the one in
@@ -387,7 +393,14 @@ export default function SetupWizard() {
       : c.login === 'not_logged_in' ? <Badge variant="warning">{T.notLoggedIn}</Badge> : <Badge>{T.unknownLogin}</Badge>;
 
   return (
-    <div className="animate-fade-in space-y-4 max-w-3xl" data-testid="setup-wizard">
+    <div className="setup-wizard animate-fade-in space-y-6 w-full max-w-4xl mx-auto" data-testid="setup-wizard">
+      <div className="setup-welcome">
+        <span className="setup-home" aria-hidden="true"><House size={26} strokeWidth={1.7} /></span>
+        <p className="setup-eyebrow">{T.welcomeEyebrow}</p>
+        <h1>{T.welcomeTitle}</h1>
+        <p className="setup-intro">{T.welcomeIntro}</p>
+        <div className="setup-team" aria-hidden="true"><span>Cl</span><span>Co</span><span>Ge</span><span>DS</span><span>Mi</span></div>
+      </div>
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">{T.title}</h2>
@@ -405,15 +418,15 @@ export default function SetupWizard() {
       </div>
 
       {/* stepper */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="setup-steps flex flex-wrap gap-1.5" aria-label={T.title}>
         {visibleSteps.map((s, i) => (
-          <span key={s} className={`px-2.5 py-1 rounded-full text-xs ${s === step ? 'bg-accent text-white dark:text-black' : i < pos ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-white/[0.06] text-gray-500'}`}>
+          <span key={s} aria-current={s === step ? 'step' : undefined} className={`px-2.5 py-1 rounded-full text-xs ${s === step ? 'bg-accent text-white dark:text-black' : i < pos ? 'bg-accent/15 text-accent' : 'bg-gray-100 dark:bg-white/[0.06] text-gray-500'}`}>
             {i + 1}. {T.steps[s]}
           </span>
         ))}
       </div>
 
-      <Card className="space-y-4 text-gray-800 dark:text-gray-200">
+      <Card className="setup-card space-y-6 text-gray-800 dark:text-gray-200">
         {/* 0 platform */}
         {step === 0 && (
           <div className="space-y-3">
@@ -421,12 +434,12 @@ export default function SetupWizard() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {([['discord', 'Discord', T.discordDesc, MessageSquare], ['feishu', zh ? '飞书 / Lark' : 'Feishu / Lark', T.feishuDesc, Smartphone],
                 ['cloud_web', T.cloudWebLabel, T.cloudWebDesc, Globe]] as const).map(([k, label, desc, Icon]) => (
-                <button key={k} data-testid={`platform-${k}`} onClick={() => {
+                <button key={k} aria-pressed={platform === k} data-testid={`platform-${k}`} onClick={() => {
                   setPlatform(k);
                   if (k === 'feishu') setRoles((rs) => rs.slice(0, 1));
                   if (k === 'cloud_web') setRoles((rs) => rs.map((r, i) => (i === 0 && !r.name && !r.reuse_project ? { ...r, name: T.cwDefaultName } : r)));
                 }}
-                  className={`text-left p-4 rounded-xl border transition-all ${platform === k ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'}`}>
+                  className={`setup-platform text-left p-4 rounded-xl border transition-all ${platform === k ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'}`}>
                   <div className="flex items-center gap-2 font-medium text-gray-900 dark:text-white"><Icon size={16} />{label}{platform === k && <Check size={14} className="text-accent" />}</div>
                   <p className="text-xs text-gray-500 mt-1">{desc}</p>
                 </button>

@@ -1,5 +1,7 @@
 # 共栖当前交接
 
+2026-10-23：Issue #52，分支 feat/wizard-theme。安装向导增加白底蓝紫强调色的明亮风格，保留黑底荧光绿深色；右上角按钮通过 cc_theme 记住用户选择。Setup 隐藏管理侧栏，新增品牌欢迎区与圆角卡片。前端 lint、7 项 Vitest、构建与沙箱 Go 全量（49 个包）通过；临时 HOME=/tmp/themetest 下构建二进制的真实向导通过 Chromium 桌面/手机检查。截图、配色 wiki 行号和验证说明见 [wizard-theme](verification/wizard-theme.md)，draft PR 与最终验证结果记录在 /tmp/theme/result.md。单一 Agent 实现与自查，未部署、未合并，没有操作发布目录。
+
 2026-10-22 bothouse v0.1.2 改名与安装包：CLI 帮助、版本、启动消息、网页、安装脚本及当前安装文档统一使用 bothouse；module 与内部包名保留。配置默认 ~/.bothouse，仅当它不存在而旧目录存在时沿用旧目录，不迁移文件。发布产物为双架构 dmg/exe/Linux 裸文件和 SHA256SUMS，自更新先新名后历史名，v0.1.1 资产保持原状。沙箱 Go 全量、CUJ、定向回归、vet、前端构建与 actionlint 通过；目录回归已验证旧逻辑失败、新逻辑通过。额外 promise-guard 回放的两个时间/任务环境相关失败在改前改后相同，未扩大修复。用户明确要求推 main 并打 v0.1.2；发布与安装包验收的最终证据记录在 /tmp/rename/result.md。没有操作生产机器人配置、进程或频道；单一 Agent 实现和自查。
 
 ## 2026-10-22：Bothouse 可双击下载（Issue #50）
