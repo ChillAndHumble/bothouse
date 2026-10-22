@@ -27,7 +27,7 @@ export interface MemberModel {
   readonly model: string
 }
 
-/** One channel member: the human owner, a DSH-native member, or a cc-connect bot. */
+/** One channel member: the human owner, a DSH-native member, or a bothouse bot. */
 export interface ChannelMember {
   readonly id: string
   readonly name: string
