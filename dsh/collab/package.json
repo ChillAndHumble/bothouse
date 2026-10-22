@@ -1,0 +1,9 @@
+{
+  "name": "conest-collab",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "plugin.mjs",
+  "exports": { ".": "./plugin.mjs", "./package.json": "./package.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
