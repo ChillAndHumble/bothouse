@@ -106,5 +106,47 @@ class RoleWiki(unittest.TestCase):
         self.assertTrue((w / "config.json").exists())
 
 
+class SubWikiSh(unittest.TestCase):
+    """sub-wiki.sh is POSIX sh (no zsh needed): with a fake export.py --list of two bots, nightly runs each one's
+    bin/ingest.py; hook-run finds the exported session by id. Run under /bin/sh and, if present, dash."""
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.dir = self.tmp / "prog"
+        self.dir.mkdir()
+        (self.dir / "sub-wiki.sh").write_text((HERE / "sub-wiki.sh").read_text())
+        self.calls = self.tmp / "calls"
+        lines = []
+        for b in ("juzi", "whale"):
+            w = self.tmp / "wikis" / b
+            (w / "bin").mkdir(parents=True)
+            (w / "bin" / "ingest.py").write_text(
+                f"import sys\nopen({str(self.calls)!r}, 'a').write({b!r} + ' ' + ' '.join(sys.argv[1:]) + '\\n')\n")
+            lines.append(f"{b} proj-{b} {w}")
+        (self.dir / "export.py").write_text(
+            "import sys\nif '--list' in sys.argv: print(" + repr("\n".join(lines)) + ")\n")
+        self.env = dict(os.environ, WIKI_PYTHON=sys.executable, WIKI_TRANSCRIPTS=str(self.tmp / "tr"))
+
+    def shells(self):
+        return [s for s in ("/bin/sh", "/bin/dash", "/usr/bin/dash") if os.path.exists(s)]
+
+    def run_sh(self, sh, *args):
+        subprocess.run([sh, str(self.dir / "sub-wiki.sh"), *args], env=self.env, check=True, timeout=30)
+        got = self.calls.read_text().splitlines()
+        self.calls.unlink()
+        return got
+
+    def test_nightly_runs_each_bot(self):
+        for sh in self.shells():
+            self.assertEqual(self.run_sh(sh, "nightly"), ["juzi --nightly", "whale --nightly"], sh)
+
+    def test_hook_run_finds_session(self):
+        d = self.tmp / "tr" / "whale" / "2026-10"
+        d.mkdir(parents=True)
+        (d / "abcd1234-sess-42.jsonl").write_text("")
+        for sh in self.shells():
+            self.assertEqual(self.run_sh(sh, "hook-run", "whale", "sess-42"), ["whale --session abcd1234-sess-42"], sh)
+            self.assertEqual(self.run_sh(sh, "hook-run", "whale", "nope"), ["whale --pending"], sh)
+
+
 if __name__ == "__main__":
     unittest.main()

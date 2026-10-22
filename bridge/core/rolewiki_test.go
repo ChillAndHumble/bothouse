@@ -44,23 +44,6 @@ func TestEnginesJSONNil(t *testing.T) {
 	}
 }
 
-func TestPrepareRoleWikisNeedsZsh(t *testing.T) {
-	useRepoWiki(t)
-	bin := t.TempDir() // python and git on PATH, no zsh
-	for _, n := range []string{"python3", "git"} {
-		p, err := exec.LookPath(n)
-		if err != nil {
-			t.Skip(err)
-		}
-		_ = os.Symlink(p, filepath.Join(bin, n))
-	}
-	t.Setenv("PATH", bin)
-	_, _, err := prepareRoleWikis(context.Background(), WizardEnv{DataDir: t.TempDir()}, "lead", nil)
-	if err == nil || !strings.Contains(err.Error(), "zsh") {
-		t.Fatalf("want zsh error, got %v", err)
-	}
-}
-
 func useRepoWiki(t *testing.T) {
 	t.Helper()
 	if _, err := FindPython(); err != nil {
@@ -157,7 +140,7 @@ func TestApplyWizardRoleWikis(t *testing.T) {
 		t.Fatalf("persona = %s", persona)
 	}
 	sub := filepath.Join(dir, "sub-wiki.sh")
-	if len(store.hooks) != 1 || store.hooks[0] != "agent.closed /bin/zsh -f "+wikiQuote(sub)+" hook" {
+	if len(store.hooks) != 1 || store.hooks[0] != "agent.closed /bin/sh "+wikiQuote(sub)+" hook" {
 		t.Fatalf("hooks = %v", store.hooks)
 	}
 	nightly := ""

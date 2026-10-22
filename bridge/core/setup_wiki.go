@@ -11,10 +11,8 @@ package core
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -278,7 +276,7 @@ func wikiExec(dir, sub, arg string) string {
 		cmd = "WIKI_DIR=" + q(dir) + " " + cmd
 	}
 	if sub != "" {
-		cmd += fmt.Sprintf("; zsh -f %s %s", q(sub), arg)
+		cmd += fmt.Sprintf("; sh %s %s", q(sub), arg)
 	}
 	return cmd
 }
@@ -297,8 +295,9 @@ func AddWikiCronJobs(c WizardCron, project, sessionKey, dir, sub string) (added,
 	noLimit := 0
 	for _, w := range wikiCronJobs {
 		if j := have[w.desc]; j != nil {
-			// a job from before the role wikis (#35) runs only the main wiki: add the sub-wiki.sh part
-			if sub != "" && !strings.Contains(j.Exec, "sub-wiki.sh") {
+			// a job from before the role wikis (#35) runs only the main wiki: add the sub-wiki.sh part;
+			// one from before sub-wiki.sh went POSIX runs it with zsh (often missing on Linux): rewrite it to sh
+			if sub != "" && (!strings.Contains(j.Exec, "sub-wiki.sh") || strings.Contains(j.Exec, "zsh")) {
 				if err := c.SetExec(j.ID, wikiExec(dir, sub, w.arg)); err != nil {
 					return added, kept, err
 				}
@@ -346,10 +345,6 @@ func applyWizardWiki(res *WizardResult, env WizardEnv, req WizardRequest, projec
 	}
 	if runtime.GOOS == "windows" {
 		addStep(res, "wiki cron", nil, "skipped on Windows: see bridge/contrib/wiki/README.md step 4")
-		return
-	}
-	if _, err := exec.LookPath("zsh"); err != nil { // the cron jobs run sub-wiki.sh with zsh
-		addStep(res, "wiki cron", errors.New("zsh not found: the nightly wiki jobs run sub-wiki.sh with zsh"), "")
 		return
 	}
 	if sessionKey == "" {

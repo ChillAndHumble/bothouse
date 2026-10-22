@@ -43,7 +43,7 @@
    [[hooks]]
    event = "agent.closed"
    type = "command"
-   command = "/bin/zsh -f <本目录>/sub-wiki.sh hook"
+   command = "/bin/sh <本目录>/sub-wiki.sh hook"
    ```
 
 4. 定时：向导（网页或 `cc-connect setup apply`）发现 `~/wiki/bin/ingest.py`（或 `$WIKI_DIR`）时已自动加好下面三条
@@ -52,9 +52,9 @@
 
    ```sh
    S="--project <主角色项目> --session-key <会话 key> --mute"
-   cc-connect cron add $S --cron "*/30 * * * *" --exec "python3 -I ~/wiki/bin/ingest.py --pending; zsh -f <本目录>/sub-wiki.sh pending" --desc "wiki ingest"
-   cc-connect cron add $S --cron "0 3 * * 1-6"  --exec "python3 -I ~/wiki/bin/ingest.py --nightly; zsh -f <本目录>/sub-wiki.sh nightly" --desc "wiki nightly + 反思"
-   cc-connect cron add $S --cron "0 3 * * 0"    --exec "python3 -I ~/wiki/bin/ingest.py --lint; zsh -f <本目录>/sub-wiki.sh lint" --desc "wiki weekly lint"
+   cc-connect cron add $S --cron "*/30 * * * *" --exec "python3 -I ~/wiki/bin/ingest.py --pending; sh <本目录>/sub-wiki.sh pending" --desc "wiki ingest"
+   cc-connect cron add $S --cron "0 3 * * 1-6"  --exec "python3 -I ~/wiki/bin/ingest.py --nightly; sh <本目录>/sub-wiki.sh nightly" --desc "wiki nightly + 反思"
+   cc-connect cron add $S --cron "0 3 * * 0"    --exec "python3 -I ~/wiki/bin/ingest.py --lint; sh <本目录>/sub-wiki.sh lint" --desc "wiki weekly lint"
    ```
 
 环境变量：`WIKI_DIR`（主 wiki，默认 `~/wiki`）、`WIKI_BIN`（共享工具目录，默认 `~/wiki/bin`）、`WIKI_BOTS`、

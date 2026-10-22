@@ -230,14 +230,11 @@ type roleWikiSetup struct {
 // prepareRoleWikis installs the programs (or uses the user's) and makes the main wiki when there is none.
 func prepareRoleWikis(ctx context.Context, env WizardEnv, lead string, engines map[string]string) (*roleWikiSetup, string, error) {
 	if runtime.GOOS == "windows" {
-		return nil, "", errors.New("role wikis need zsh and fcntl: not on Windows")
+		return nil, "", errors.New("role wikis need /bin/sh and fcntl: not on Windows")
 	}
 	py, err := FindPython()
 	if err != nil {
 		return nil, "", err
-	}
-	if _, err := exec.LookPath("zsh"); err != nil { // the agent.closed hook and the cron jobs run sub-wiki.sh with zsh
-		return nil, "", errors.New("zsh not found: the wiki hook and nightly jobs run sub-wiki.sh with zsh")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, "", errors.New("git not found: the wikis are git repositories")
@@ -355,7 +352,7 @@ func applyRoleWikis(ctx context.Context, res *WizardResult, env WizardEnv, req W
 	}
 	if !s.ownSetup {
 		if hs, ok := env.Store.(WizardHookStore); ok {
-			cmd := "/bin/zsh -f " + wikiQuote(s.sub) + " hook"
+			cmd := "/bin/sh " + wikiQuote(s.sub) + " hook"
 			if _, err := hs.EnsureHook("agent.closed", cmd); err != nil {
 				addStep(res, "wiki hook", err, "")
 			} else {
