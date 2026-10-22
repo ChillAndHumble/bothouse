@@ -364,3 +364,31 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	}
 	return os.Rename(name, path)
 }
+
+// EnsureWizardHook adds a global [[hooks]] entry of type command unless one with the same event and command is there.
+func EnsureWizardHook(event, command string) (added bool, err error) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	if ConfigPath == "" {
+		return false, fmt.Errorf("config path not set")
+	}
+	raw, err := os.ReadFile(ConfigPath)
+	if err != nil {
+		return false, fmt.Errorf("read config: %w", err)
+	}
+	doc := map[string]any{}
+	if err := toml.Unmarshal(raw, &doc); err != nil {
+		return false, fmt.Errorf("parse config: %w", err)
+	}
+	hooks, err := tableList(doc, "hooks")
+	if err != nil {
+		return false, err
+	}
+	for _, h := range hooks {
+		if h["event"] == event && h["command"] == command {
+			return false, nil
+		}
+	}
+	doc["hooks"] = append(hooks, map[string]any{"event": event, "type": "command", "command": command})
+	return true, saveConfig(doc)
+}

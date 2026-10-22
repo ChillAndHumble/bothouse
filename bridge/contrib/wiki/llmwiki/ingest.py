@@ -24,10 +24,11 @@ Other machines mirror their transcripts to the Mac after each run (MIRROR_TO); t
 The teammates' wikis (contrib/wiki/setup_wiki.py) run this same file with WIKI_DIR=<their wiki>: their config.json sets
 whose sessions, rules and channel it is (DEFAULTS are 橘's); their bin/ingest.py and bin/lint.py only exec this one.
 """
-import argparse, calendar, fcntl, hashlib, json, os, posixpath, re, sqlite3, subprocess, sys, tempfile, time, traceback
+import argparse, calendar, hashlib, json, os, posixpath, re, sqlite3, subprocess, sys, tempfile, time, traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I drops the script dir; lint.py lives next to us
+import filelock  # exclusive file lock on Mac/Linux/Windows
 import daypack  # the day's objective record (cost, slow commands, promises) dream's 今日反思 reads
 import lint  # MAX_TOPICS and README topic counting: split_pass must count topics exactly as lint does
 import sessionlog  # the unified session record: every runtime's sessions, one format (sessionlog.py docstring)
@@ -67,6 +68,9 @@ DEFAULTS = {
     "ingest_engine": "haiku", "fallback_engine": "sonnet", "night_engine": "codex:high", "review_engine": "codex:high",
     "lint_engine": "codex:max", "dream_engine": "codex:high", "split_engine": "codex:high",
     "codex_models": ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"], "after_codex": ["agy", "haiku"],
+    # the nightly reflection (dream) on or off: the role turns it off when its user asks in chat (export.py --switch;
+    # user 2026-10-22 「插件默认全开，别人可关」「用户直接跟机器人说，就可以关了」)
+    "dream": True,
 }
 
 
@@ -1501,7 +1505,8 @@ def run(a, engines=None):
     WIKI = WORK  # every model pass, git call and prompt below works in the worktree
     if a.lint:
         lint_pass(db)
-        dream(db, time.time() + NIGHT_BUDGET)
+        if CFG["dream"]:
+            dream(db, time.time() + NIGHT_BUDGET)
         return
     items = []
     closed = take_queue() | ({a.session} if a.session else set())
@@ -2186,7 +2191,8 @@ def nightly(a):
     deadline = time.time() + NIGHT_BUDGET
     run(a, engines=[NIGHT_ENGINE])
     split_pass(state())
-    dream(state(), deadline)  # before review: review backlog can eat the whole budget
+    if CFG["dream"]:
+        dream(state(), deadline)  # before review: review backlog can eat the whole budget
     review(state(), deadline)
 
 
@@ -2689,7 +2695,7 @@ def main():
     if a.status:
         with open(LOCK, "w") as lk:
             try:
-                fcntl.flock(lk, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                filelock.lock(lk, False)
                 prepare()
             except BlockingIOError:
                 print("(an ingest run holds the lock: as of its last read of the session record)")
@@ -2703,10 +2709,10 @@ def main():
     if a.make_room:
         with open(LOCK, "w") as lk:
             try:
-                fcntl.flock(lk, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                filelock.lock(lk, False)
             except BlockingIOError:
                 print("an ingest run holds the lock; waiting for it to finish…", flush=True)
-                fcntl.flock(lk, fcntl.LOCK_EX)
+                filelock.lock(lk)
             pull()
             rc = make_room(a.make_room)
             push()
@@ -2715,7 +2721,7 @@ def main():
         with open(LOCK, "w") as lk:
             try:
                 # scheduled night/week runs wait for a day run to finish; day runs never wait
-                fcntl.flock(lk, fcntl.LOCK_EX | (0 if a.nightly or a.lint else fcntl.LOCK_NB))
+                filelock.lock(lk, a.nightly or a.lint)
             except BlockingIOError:
                 if a.session:  # a run is going: leave the closed session for it instead of queueing a process
                     with open(QUEUE, "a") as q:

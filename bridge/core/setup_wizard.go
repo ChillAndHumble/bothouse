@@ -924,6 +924,9 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 				if !r.reused && AgentToolFS != nil {
 					addStep(res, fmt.Sprintf("role %d tools", i+1), nil, stepToolsOn(req.Language, AgentToolNames(), PersonaFilePath(r.AgentType, r.workDir)))
 				}
+				if !r.reused && (RoleWikiFS != nil || env.WikiSubScript != "") {
+					addStep(res, fmt.Sprintf("role %d wiki", i+1), nil, filepath.Join(r.workDir, "wiki"))
+				}
 			case r.updatesReplyLanguage():
 				addStep(res, step, nil, stepDryPersonaLang(req.Language, PersonaFilePath(r.AgentType, r.workDir), r.ReplyLanguage))
 			default:
@@ -1142,6 +1145,8 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 		}
 		wikiSession = wizardSessionKey(req.Platform, ch, st.FeishuChatID)
 	}
+	// every new role's own wiki + nightly reflection (core/rolewiki.go); the cron jobs below then run its sub-wiki.sh
+	env.WikiSubScript = applyRoleWikis(ctx, res, env, req, pl, clis)
 	applyWizardWiki(res, env, req, pl.fallback, wikiSession)
 	res.RestartRequired = true
 	res.Saved = true

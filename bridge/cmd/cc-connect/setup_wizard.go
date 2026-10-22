@@ -22,6 +22,14 @@ import (
 // configWizardStore implements core.WizardStore on top of config.toml.
 type configWizardStore struct{}
 
+func (configWizardStore) EnsureHook(event, command string) (bool, error) {
+	return config.EnsureWizardHook(event, command)
+}
+
+func (bootstrapOnWriteStore) EnsureHook(event, command string) (bool, error) {
+	return config.EnsureWizardHook(event, command) // called after ApplyProjects wrote the config
+}
+
 func toCoreSnapshot(ps []config.WizardProjectSnapshot) core.WizardSnapshot {
 	out := core.WizardSnapshot{Projects: make([]core.WizardExistingProject, 0, len(ps))}
 	for _, p := range ps {
@@ -571,6 +579,20 @@ func subWikiScript(cfg *config.Config) string {
 func fileExistsCmd(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+func (c socketCron) SetExec(id, exec string) error {
+	payload, _ := json.Marshal(map[string]any{"id": id, "field": "exec", "value": exec})
+	resp, err := apiPost(c.sock, "/cron/edit", payload)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("cron edit: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 // socketCron adds the wizard's cron jobs through a running cc-connect (its /cron/list and /cron/add), so the
