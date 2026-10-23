@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import VersionBadge from './VersionBadge';
 
 const navItems = [
   { key: 'dashboard', path: '/', icon: LayoutDashboard },
@@ -80,8 +81,9 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Collapse toggle */}
+      {/* Version + update, then collapse toggle */}
       <div className={cn('border-t p-2', 'border-gray-200/80 dark:border-white/[0.08]')}>
+        <VersionBadge collapsed={collapsed} />
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}

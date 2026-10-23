@@ -431,5 +431,15 @@
     "light": "Light",
     "dark": "Dark",
     "system": "System"
+  },
+  "update": {
+    "button": "Update to {{version}}",
+    "updating": "Downloading {{version}}…",
+    "restarting": "Restarting…",
+    "failed": "Update failed",
+    "openDownload": "Open download page",
+    "dev": "Development build: update check disabled",
+    "devShort": "dev build",
+    "checkFailed": "Update check failed"
   }
 }

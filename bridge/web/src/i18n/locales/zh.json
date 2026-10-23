@@ -431,5 +431,15 @@
     "light": "浅色",
     "dark": "深色",
     "system": "跟随系统"
+  },
+  "update": {
+    "button": "更新到 {{version}}",
+    "updating": "正在下载 {{version}}…",
+    "restarting": "正在重启…",
+    "failed": "更新失败",
+    "openDownload": "打开下载页",
+    "dev": "开发版不检查更新",
+    "devShort": "开发版",
+    "checkFailed": "检查更新失败"
   }
 }

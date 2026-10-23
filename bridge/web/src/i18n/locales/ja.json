@@ -430,5 +430,15 @@
     "light": "ライト",
     "dark": "ダーク",
     "system": "システムに合わせる"
+  },
+  "update": {
+    "button": "{{version}} に更新",
+    "updating": "{{version}} をダウンロード中…",
+    "restarting": "再起動中…",
+    "failed": "更新に失敗しました",
+    "openDownload": "ダウンロードページを開く",
+    "dev": "開発版は更新を確認しません",
+    "devShort": "開発版",
+    "checkFailed": "更新の確認に失敗しました"
   }
 }
