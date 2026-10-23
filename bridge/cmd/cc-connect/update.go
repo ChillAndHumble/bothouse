@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -190,13 +191,22 @@ func runUpdate() {
 	}
 	fmt.Printf("New version available: %s → %s\n", version, label)
 
+	viaRunning := false
 	// bothouse is running: let it install the update itself, so the CLI gets the same
 	// self-check as the web button (restart, and put the old version back if the new one does not come up).
 	if sock := resolveSocketPath(""); fileExistsCmd(sock) {
-		if err := updateViaRunning(sock, latest); err != nil {
+		err := updateViaRunning(sock, latest)
+		viaRunning = err == nil
+		if errors.Is(err, errNoRunningUpdate) {
+			// Leftover socket (bothouse was killed / crashed) or an older bothouse without /update:
+			// install directly below, as before this self-check existed.
+			fmt.Fprintf(os.Stderr, "Running bothouse cannot install the update (%v); installing directly.\n", err)
+		} else if err != nil {
 			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 			os.Exit(1)
 		}
+	}
+	if viaRunning {
 		if execPath, err := os.Executable(); err == nil {
 			syncNpmPackageVersion(core.BinaryFromBackupPath(execPath), strings.TrimPrefix(latest, "v"))
 		}
@@ -686,15 +696,23 @@ func syncNpmPackageVersion(execPath, newVer string) {
 	}
 }
 
+// errNoRunningUpdate: the running bothouse cannot take the update (socket dead, or a version
+// without /update); the CLI then installs directly.
+var errNoRunningUpdate = errors.New("no running bothouse to install the update")
+
 // updateViaRunning asks the running bothouse (local API socket, POST /update) to install tag
 // through its guarded update. Swappable in tests.
 var updateViaRunning = func(sockPath, tag string) error {
 	payload, _ := json.Marshal(map[string]string{"tag": tag})
 	resp, err := apiPost(sockPath, "/update", payload)
 	if err != nil {
-		return fmt.Errorf("contact running bothouse: %w", err)
+		// Nobody listening on the socket (stale file left by a crash or kill -9).
+		return fmt.Errorf("%w: contact running bothouse: %v", errNoRunningUpdate, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%w: running bothouse has no /update (older version)", errNoRunningUpdate)
+	}
 	var body struct {
 		Status string `json:"status"`
 		Error  string `json:"error"`
