@@ -1,6 +1,7 @@
 package core
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"image"
@@ -9,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -162,5 +164,27 @@ func TestApplyDiscordAvatars(t *testing.T) {
 	applyDiscordAvatars(t.Context(), dir, "zh", roles, team, []SetupTeamEntry{{Project: "a", Avatar: "orange"}}, res)
 	if calls != 2 || len(res.Warnings) != 1 || team[0].Avatar != "orange" || res.Warnings[0].Blocking {
 		t.Fatalf("failed patch: one try, a non-blocking warning, old avatar kept: calls=%d %v %v", calls, res.Warnings, team)
+	}
+}
+
+// A pack with personas only previews with "avatars": [] (the UI reads the list; null crashed it).
+func TestPreviewPackPersonasOnlyHasEmptyAvatarList(t *testing.T) {
+	var zb bytes.Buffer
+	zw := zip.NewWriter(&zb)
+	for name, body := range map[string]string{
+		"manifest.json":         `{"id":"onlyp","name":"P","version":"1.0.0","license":"CC0"}`,
+		"personas/librarian.md": "---\nname: Librarian\nintro: A quiet librarian girl.\n---\nYou are a quiet librarian girl.\n",
+	} {
+		w, _ := zw.Create(name)
+		w.Write([]byte(body))
+	}
+	zw.Close()
+	pv, err := PreviewPack(t.TempDir(), "en", zb.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(pv)
+	if !strings.Contains(string(b), `"avatars":[]`) || len(pv.Personas) != 1 {
+		t.Fatalf("preview = %s", b)
 	}
 }
