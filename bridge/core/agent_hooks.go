@@ -185,15 +185,41 @@ func ourHook(cmd string) string {
 
 // AgentHookSettingsPath is the role's project settings file: .claude/settings.json for Claude Code and DSH (DSH
 // reads it through its bridge), .gemini/settings.json for Gemini CLI (user-level is ~/.gemini/settings.json;
-// the role's work dir is the project, so the project-level file is the one we write — never the user's home).
+// the role's work dir is the project, so the project-level file is the one we write — never the user's home),
+// .codex/hooks.json for Codex (hooks are discovered beside the active config layers, so the role's own).
+//
+// Qoder (https://docs.qoder.com/cli/hooks, "Configuration File Locations"):
+//
+//	~/.qoder/settings.json                # User level, applies to all projects
+//	${project}/.qoder/settings.json       # Project level, applies to the current project; can be committed to git for team sharing
+//	${project}/.qoder/settings.local.json # Project level (local), recommended to add to .gitignore
+//
+// iFlow CLI (hooks doc, "1. Configuration Hierarchy"):
+//
+//	User Configuration: ~/.iflow/settings.json
+//	Project Configuration: ./.iflow/settings.json
+//
+// Both document a project-level file, so the role's work dir is the project and only that file is written; the
+// user-level ones are never touched (a role's HOME may be a different one, and $HOME/.qoder is not ours to edit).
 func AgentHookSettingsPath(cli, workDir string) string {
-	if cli == "antigravity" {
+	switch cli {
+	case "kimi":
+		return KimiHookConfigPath(workDir)
+	case "antigravity":
 		return AgyHookFile(workDir)
-	}
-	if cli == "gemini" {
+	case "gemini":
 		return filepath.Join(workDir, ".gemini", "settings.json")
+	case "qoder":
+		return filepath.Join(workDir, ".qoder", "settings.json")
+	case "iflow":
+		return filepath.Join(workDir, ".iflow", "settings.json")
+	case "cursor":
+		return CursorHookSettingsPath(workDir)
+	case "codex":
+		return filepath.Join(workDir, ".codex", "hooks.json")
+	default:
+		return filepath.Join(workDir, ".claude", "settings.json")
 	}
-	return filepath.Join(workDir, ".claude", "settings.json")
 }
 
 func readSettings(p string) (map[string]any, error) {
@@ -286,8 +312,18 @@ func editHooks(m map[string]any, drop func(name string) bool, add []map[string]a
 
 // AgentHooksEnabled lists the hooks switched on in the role's settings file, in agentHooks order.
 func AgentHooksEnabled(cli, workDir string) ([]string, error) {
+	if cli == "kimi" {
+		r, err := KimiHooksStatus(workDir)
+		if err != nil {
+			return nil, err
+		}
+		return r.Enabled, nil
+	}
 	if cli == "antigravity" {
 		return agyHooksEnabled(workDir)
+	}
+	if cli == "cursor" {
+		return readCursorHooksEnabled(workDir)
 	}
 	m, err := readSettings(AgentHookSettingsPath(cli, workDir))
 	if err != nil {
@@ -318,17 +354,16 @@ func AgentHooksEnabled(cli, workDir string) ([]string, error) {
 	return out, nil
 }
 
-// wizardHooksFor: the wizard switches hooks on for new roles of this agent type: Claude Code natively, DSH
-// (agent type "dsh") through its hook bridge, Gemini CLI through the same run.py translator as DSH.
+// wizardHooksFor: the wizard switches hooks on for new roles of this agent type — every CLI in AgentHookCLIs
+// (Claude Code natively, DSH through its hook bridge, Gemini / Qoder / iFlow CLI through run.py).
 func wizardHooksFor(agentType string) bool {
-	return (agentType == "claudecode" || agentType == "dsh" || agentType == "gemini" ||
-		agentType == "antigravity") && AgentHookFS != nil
+	return slices.Contains(AgentHookCLIs, agentType) && AgentHookFS != nil
 }
 
 // AgentHookSwitchFile is the role's on/off switch: {"off": [hook names] or ["all"]}. run.py reads it on every
 // call and writes it for "run.py off|on" (what the agent runs when its user asks in chat).
 func AgentHookSwitchFile(workDir string) string {
-	return filepath.Join(workDir, ".claude", "conest-hooks.json")
+	return filepath.Join(workDir, ".bothouse", "conest-hooks.json")
 }
 
 // AgentHooksSwitchedOff lists the hooks the switch file turns off ("all" = every hook).
@@ -337,6 +372,9 @@ func AgentHooksSwitchedOff(workDir string) []string {
 		Off []string `json:"off"`
 	}
 	b, err := os.ReadFile(AgentHookSwitchFile(workDir))
+	if os.IsNotExist(err) {
+		b, err = os.ReadFile(filepath.Join(workDir, ".claude", "conest-hooks.json"))
+	}
 	if err != nil || json.Unmarshal(b, &v) != nil {
 		return []string{}
 	}
@@ -352,10 +390,25 @@ func AgentHooksSwitchedOff(workDir string) []string {
 	return out
 }
 
-// AgentHookCLIs are the CLIs the hooks run under: Claude Code natively, DSH and Gemini CLI through run.py
-// (each turns its own payload into Claude Code's shape), Antigravity (agy) through its own workspace hook file
-// <work_dir>/.agents/hooks.json, with run.py --agy converting payloads.
-var AgentHookCLIs = []string{"claudecode", "dsh", "gemini", "antigravity"}
+// AgentHookCLIs are the CLIs the hooks run under: Claude Code natively, DSH, Gemini CLI, Qoder, iFlow CLI,
+// Kimi Code CLI, Cursor and Codex through run.py (each turns its own payload into Claude Code's shape; Qoder's
+// is already the same shape), Antigravity (agy) through its own workspace hook file
+// <work_dir>/.agents/hooks.json, with run.py --agy converting payloads, pi through an extension
+// (<work_dir>/.pi/bothouse-hooks.ts, loaded with --extension), OpenCode through a
+// tool.execute.before plugin in <work_dir>/.opencode/plugins that runs the role's .claude/settings.json hooks,
+// Kimi Code CLI through <work_dir>/.bothouse/kimi-home/config.toml, Cursor through
+// <work_dir>/.cursor/hooks.json, and Codex through <work_dir>/.codex/hooks.json.
+var AgentHookCLIs = []string{"claudecode", "dsh", "gemini", "antigravity", "pi", "opencode", "kimi", "cursor", "codex", "qoder", "iflow"}
+
+// iflowMatchers: the matcher each hook gets in iFlow CLI, whose built-in tool names are Gemini-like
+// (hooks doc, "Common Tool Name Reference": run_shell_command, replace, multi_edit, write_file, read_file,
+// search_file_content, list_directory, with Claude Code's names as aliases). Both names and aliases are matched,
+// so the names are listed explicitly rather than relying on the alias table.
+var iflowMatchers = map[string]string{
+	"bash-guard":            "run_shell_command|Bash|bash",
+	"param-source-guard":    "replace|multi_edit|write_file|Edit|Write|MultiEdit",
+	"dispatch-review-guard": "replace|multi_edit|write_file|Edit|Write|MultiEdit|Agent|Task|subagent",
+}
 
 // geminiMatchers: the matcher each hook gets in Gemini CLI, whose built-in tool names differ from both Claude
 // Code's and DSH's (https://geminicli.com/docs/hooks/reference "Matchers and tool names": run_shell_command,
@@ -397,11 +450,24 @@ func geminiEvent(claudeCodeEvent string) string {
 	return claudeCodeEvent
 }
 
+// Qoder and iFlow CLI need no geminiEvent-like translation: both use Claude Code's event names for the events
+// the hooks register (agentHooks), so the event is written as it is.
+//
+// Qoder (https://docs.qoder.com/cli/hooks, "Event Reference"): PreToolUse, PostToolUse, UserPromptSubmit,
+// SessionStart, Stop, Notification — the same names as Claude Code, and its payload is the same JSON on stdin
+// (session_id, transcript_path, cwd, hook_event_name, tool_name, tool_input) with the same exit codes (2 blocks,
+// stderr goes back to the agent) and the same hookSpecificOutput/permissionDecision fields.
+//
+// iFlow CLI (hooks doc, "Hook Types"): PreToolUse, PostToolUse, SetUpEnvironment, Stop, SubagentStop,
+// SessionStart, SessionEnd, UserPromptSubmit, Notification — again the same names for the events used here.
+// Its payload goes to run.py as environment variables + stdin JSON (see run.py's iflow_payload) and it blocks
+// on a non-zero exit code only, so run.py turns a Claude Code deny into exit 2.
+//
 // AgentHookOptions says which role and which hooks.
 type AgentHookOptions struct {
 	DataDir string   // cc-connect data_dir: scripts go to <data_dir>/hooks
 	WorkDir string   // the role's work_dir
-	CLI     string   // "claudecode" | "dsh"
+	CLI     string   // "claudecode" | "dsh" | "gemini" | "antigravity" | "pi" | "opencode" | "kimi" | "cursor" | "codex"
 	Lang    string   // language of the persona block (zh* = Chinese, else English); "" = the persona's reply language, else system
 	Only    []string // hooks to switch on/off; empty = all
 	DSHHome string   // DSH only: "" = $DSH_HOME, else ~/.dsh (dsh-home-paths)
@@ -413,11 +479,15 @@ type AgentHookOptions struct {
 
 // AgentHookResult is what was written.
 type AgentHookResult struct {
-	Enabled      []string `json:"enabled"`
-	HooksDir     string   `json:"hooks_dir,omitempty"`
-	SettingsFile string   `json:"settings_file"`
-	PersonaFile  string   `json:"persona_file"`
-	DSHPatchFile string   `json:"dsh_patch_file,omitempty"`
+	Warnings           []string `json:"warnings,omitempty"`
+	Enabled            []string `json:"enabled"`
+	HooksDir           string   `json:"hooks_dir,omitempty"`
+	SettingsFile       string   `json:"settings_file"`
+	PersonaFile        string   `json:"persona_file"`
+	DSHPatchFile       string   `json:"dsh_patch_file,omitempty"`
+	ReviewRequired     bool     `json:"review_required,omitempty"`
+	PiExtension        string   `json:"pi_extension_file,omitempty"`
+	OpenCodePluginFile string   `json:"opencode_plugin_file,omitempty"`
 }
 
 func (o AgentHookOptions) dshPatch() string {
@@ -429,6 +499,9 @@ func (o AgentHookOptions) dshPatch() string {
 
 func (o AgentHookOptions) names() ([]string, error) {
 	if len(o.Only) == 0 {
+		if o.CLI == "codex" {
+			return []string{"bash-guard", "fix-claim-guard"}, nil
+		}
 		return AgentHookNames(), nil
 	}
 	var out []string
@@ -436,6 +509,9 @@ func (o AgentHookOptions) names() ([]string, error) {
 		n = strings.TrimSpace(n)
 		if n == "" {
 			continue
+		}
+		if o.CLI == "codex" && n != "bash-guard" && n != "fix-claim-guard" {
+			return nil, fmt.Errorf("Codex hook %q is not adapted yet", n)
 		}
 		if _, ok := agentHookByName(n); !ok {
 			return nil, fmt.Errorf("unknown hook %q (hooks: %s)", n, strings.Join(AgentHookNames(), ", "))
@@ -449,18 +525,35 @@ func (o AgentHookOptions) personaPath() (string, error) {
 	switch o.CLI {
 	case "claudecode":
 		return PersonaFilePath("claudecode", o.WorkDir), nil
-	case "dsh":
+	case "dsh", "codex":
 		return filepath.Join(o.WorkDir, "AGENTS.md"), nil // DSH reads AGENTS.md (dsh-agent-instructions)
 	case "gemini":
 		return PersonaFilePath("gemini", o.WorkDir), nil // Gemini CLI reads GEMINI.md
 	case "antigravity":
 		return PersonaFilePath("antigravity", o.WorkDir), nil
+	case "pi":
+		return filepath.Join(o.WorkDir, "AGENTS.md"), nil // pi reads AGENTS.md (agent/pi/pi.go ProjectMemoryFile)
+	case "opencode":
+		return filepath.Join(o.WorkDir, "AGENTS.md"), nil // OpenCode reads AGENTS.md
+	case "cursor":
+		return filepath.Join(o.WorkDir, "AGENTS.md"), nil
+	case "qoder":
+		// Qoder's project memory file is AGENTS.md (its docs' InstructionsLoaded example: "file_path":
+		// "/abs/path/AGENTS.md", "memory_type": "project"); PersonaFilePath maps qoder -> AGENTS.md.
+		return PersonaFilePath("qoder", o.WorkDir), nil
+	case "iflow":
+		// The hooks doc says nothing about iFlow's instruction file; the repo's existing map has IFLOW.md
+		// (setup_wizard.go memoryFileOfAgent). Kept as is — no new name invented.
+		return PersonaFilePath("iflow", o.WorkDir), nil
 	}
 	return "", fmt.Errorf("hooks run under %s only, not %q", strings.Join(AgentHookCLIs, ", "), o.CLI)
 }
 
 // EnableAgentHooks installs the scripts and switches the hooks on for one role.
 func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
+	if o.CLI == "kimi" {
+		return setKimiHooks(o, true)
+	}
 	persona, err := o.personaPath()
 	if err != nil {
 		return nil, err
@@ -483,6 +576,9 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	if o.CLI == "antigravity" {
 		return enableAgyHooks(o, names, persona, python, dir)
 	}
+	if o.CLI == "cursor" {
+		return enableCursorHooks(o, names, persona, python, dir)
+	}
 	sp := AgentHookSettingsPath(o.CLI, o.WorkDir)
 	m, err := readSettings(sp)
 	if err != nil {
@@ -491,6 +587,10 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	var add []map[string]any
 	var events []string
 	for _, n := range names {
+		opts := []string{"--role", o.WorkDir}
+		if o.CLI == "codex" {
+			opts = append(opts, "--codex")
+		}
 		h, _ := agentHookByName(n)
 		timeout := h.Timeout
 		ev := h.Event
@@ -499,7 +599,7 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 			timeout *= 1000 // Gemini's "timeout" is milliseconds (default 60000), Claude Code's is seconds
 		}
 		hk := map[string]any{"type": "command",
-			"command": agentHookCommand(python, dir, n, "--role", o.WorkDir), "timeout": timeout}
+			"command": agentHookCommand(python, dir, n, opts...), "timeout": timeout}
 		if o.CLI == "gemini" {
 			hk["name"] = n // Gemini CLI: "/hooks disable <name>" (hooks docs); without it the command is the id
 		}
@@ -509,6 +609,14 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 			if m, ok := geminiMatchers[n]; ok {
 				matcher = m
 			}
+		}
+		if o.CLI == "iflow" {
+			if m, ok := iflowMatchers[n]; ok {
+				matcher = m
+			}
+		}
+		if o.CLI == "codex" && matcher != "" {
+			matcher = "Bash" // Codex's shell tool is Bash; only the shell hooks are installed for it
 		}
 		if matcher != "" {
 			g["matcher"] = matcher
@@ -520,7 +628,12 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	if err := writeSettings(sp, m); err != nil {
 		return nil, err
 	}
-	res := &AgentHookResult{HooksDir: dir, SettingsFile: sp, PersonaFile: persona}
+	if o.CLI == "codex" {
+		if err := enableCodexHookFeature(o.WorkDir); err != nil {
+			return nil, err
+		}
+	}
+	res := &AgentHookResult{HooksDir: dir, SettingsFile: sp, PersonaFile: persona, ReviewRequired: o.CLI == "codex"}
 	if res.Enabled, err = AgentHooksEnabled(o.CLI, o.WorkDir); err != nil {
 		return nil, err
 	}
@@ -535,6 +648,16 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 			return nil, err
 		}
 	}
+	if o.CLI == "pi" {
+		if res.PiExtension, err = EnsurePiHookExtension(o.WorkDir); err != nil {
+			return nil, err
+		}
+	}
+	if o.CLI == "opencode" {
+		if res.OpenCodePluginFile, err = EnsureOpenCodeHookPlugin(o.WorkDir); err != nil {
+			return nil, err
+		}
+	}
 	return res, nil
 }
 
@@ -542,6 +665,9 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 // block; with none left the block is removed. The scripts stay. For DSH the role leaves dsh-roles.json when it
 // has no hook left, and the bridge block leaves cordis.patch.yml when no DSH role of that DSH home is left.
 func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
+	if o.CLI == "kimi" {
+		return setKimiHooks(o, false)
+	}
 	persona, err := o.personaPath()
 	if err != nil {
 		return nil, err
@@ -552,6 +678,9 @@ func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	}
 	if o.CLI == "antigravity" {
 		return disableAgyHooks(o, names, persona)
+	}
+	if o.CLI == "cursor" {
+		return disableCursorHooks(o, names, persona)
 	}
 	sp := AgentHookSettingsPath(o.CLI, o.WorkDir)
 	m, err := readSettings(sp)
@@ -585,6 +714,16 @@ func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 			if err := RemoveDSHHookBridge(o.dshPatch(), o.WorkDir); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if o.CLI == "pi" && len(res.Enabled) == 0 {
+		if err := RemovePiHookExtension(o.WorkDir); err != nil {
+			return nil, err
+		}
+	}
+	if o.CLI == "opencode" && len(res.Enabled) == 0 {
+		if err := RemoveOpenCodeHookPlugin(o.WorkDir); err != nil {
+			return nil, err
 		}
 	}
 	return res, nil

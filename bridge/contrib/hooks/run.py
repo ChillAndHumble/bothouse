@@ -2,7 +2,7 @@
 """Hook entry for Claude Code and DSH: run.py <hook name>  (e.g. run.py bash-guard).
 Switch: run.py --role <dir> off|on [hook ...] / run.py --role <dir> status  — turn hooks off or on for this role
 (no names = all). The agent runs it when its user asks in chat (the persona block says so, with the role's
---role); a person can edit the file instead. The state is the role's .claude/conest-hooks.json:
+--role); a person can edit the file instead. The state is the role's .bothouse/conest-hooks.json:
 {"off": ["bash-guard", ...]} or {"off": ["all"]}, read on every hook call, so a change applies at once.
 Without --role the role directory is the nearest directory upwards from CLAUDE_PROJECT_DIR / the payload's cwd /
 the current directory that has .claude/settings.json.
@@ -66,6 +66,17 @@ permissionDecision deny) = {"decision": "deny", "reason": ...}; a Stop block = {
 Every passing exit under --agy (hook switched off, script missing, WIKI_INGEST, a crash) prints
 {"decision": "allow"}: agy's "decision" is Required.
 
+Qoder CLI (https://docs.qoder.com/cli/hooks) needs no translation at all: its events (PreToolUse, PostToolUse,
+UserPromptSubmit, SessionStart, Stop, Notification), its stdin JSON (session_id/transcript_path/cwd/
+hook_event_name/tool_name/tool_input), its exit codes and hookSpecificOutput.permissionDecision are Claude
+Code's, so its payload and output pass straight through.
+
+iFlow CLI (hooks doc "Hook Types" / "3. Return Value Processing") is translated minimally, see iflow_payload /
+iflow_output: event and tool name come from IFLOW_HOOK_EVENT_NAME / IFLOW_TOOL_NAME (or the same fields in its
+stdin JSON), tool names are Gemini-like, and it blocks only on a non-zero exit code, so a Claude Code deny
+becomes exit 2 + stderr. Stop is registered too but iFlow does not act on a hook's exit code there ("Other
+Hooks: Return code doesn't affect main flow"), so fix-claim-guard / promise-guard can only warn under iFlow.
+
 stdout / stderr / exit code of the hook are passed through.
 """
 import json
@@ -112,7 +123,8 @@ GEMINI_TO_CLAUDE_EVENT = {"BeforeTool": "PreToolUse", "AfterTool": "PostToolUse"
                           "AfterAgent": "Stop"}
 STATE = os.path.join(HERE, "state", "dsh-stop.json")
 DSH_ROLES = os.path.join(HERE, "dsh-roles.json")  # {role work_dir: {"hooks": [...], "dsh_home": ...}}
-OPTS = {"role": None, "dsh_home": None, "dsh_global": False, "agy": None}  # {session_id: turn already blocked once}
+OPTS = {"role": None, "dsh_home": None, "dsh_global": False, "agy": None, "kimi": False,
+        "cursor": False, "codex": False}  # {session_id: turn already blocked once}
 # 来源：实测，验收时日志在钩子开始后约 0.15 秒内写到；留足余量又不拖住回复（Stop 超时设的是 30 秒）
 STOP_WAIT = 3.0
 MODEL_HEAD, MODEL_END = "[bothouse model-control instructions]", "[/bothouse model-control instructions]"
@@ -248,6 +260,58 @@ def gemini_output(out, event):
     return ""
 
 
+# iFlow CLI (hooks doc: "Hook Types", "3. Return Value Processing"). Its hooks get the event and tool names in
+# environment variables (IFLOW_HOOK_EVENT_NAME, IFLOW_TOOL_NAME, IFLOW_TOOL_ARGS, IFLOW_USER_PROMPT) and the same
+# JSON on stdin (the doc's examples read data["tool_input"]["file_path"] and data["prompt"]); its tool names are
+# Gemini-like (run_shell_command / replace / write_file / ... with Claude Code's names as aliases). It blocks a
+# tool only on a non-zero exit code ("PreToolUse Hook: Non-zero return code blocks tool execution, displays
+# error message"), and prints stdout to the user instead of parsing Claude Code's JSON, so a deny is turned into
+# exit 2 + stderr and any other output is dropped (it would only be noise in the user's terminal).
+IFLOW_EVENTS = {"PreToolUse", "PostToolUse", "SetUpEnvironment", "Stop", "SubagentStop", "SessionStart",
+                "SessionEnd", "UserPromptSubmit", "Notification"}
+IFLOW_NAMES = {"run_shell_command": "Bash", "shell": "Bash", "bash": "Bash", "Bash": "Bash",
+               "replace": "Edit", "edit": "Edit", "Edit": "Edit", "multi_edit": "MultiEdit", "MultiEdit": "MultiEdit",
+               "write_file": "Write", "write": "Write", "Write": "Write", "read_file": "Read", "read": "Read",
+               "search_file_content": "Grep", "list_directory": "LS"}
+
+
+def iflow_payload(payload):
+    """An iFlow CLI hook payload as Claude Code's shape, filling what it only passes in the environment."""
+    ev = payload.get("hook_event_name") or os.environ.get("IFLOW_HOOK_EVENT_NAME") or ""
+    out = {"session_id": payload.get("session_id") or os.environ.get("IFLOW_SESSION_ID") or "",
+           "cwd": payload.get("cwd") or os.environ.get("IFLOW_CWD") or os.getcwd(),
+           "hook_event_name": ev, "transcript_path": payload.get("transcript_path") or os.environ.get("IFLOW_TRANSCRIPT_PATH") or ""}
+    name = payload.get("tool_name") or os.environ.get("IFLOW_TOOL_NAME") or ""
+    if out["hook_event_name"] in ("PreToolUse", "PostToolUse") and name:
+        args = payload.get("tool_input")
+        if args is None:
+            try:
+                args = json.loads(os.environ.get("IFLOW_TOOL_ARGS") or "{}")
+            except ValueError:
+                args = {}
+        out["tool_name"] = IFLOW_NAMES.get(name, name)
+        out["tool_input"] = args if isinstance(args, dict) else {}
+    elif out["hook_event_name"] == "UserPromptSubmit":
+        out["prompt"] = payload.get("prompt") or os.environ.get("IFLOW_USER_PROMPT") or ""
+    elif out["hook_event_name"] == "Notification":
+        out["message"] = payload.get("message") or os.environ.get("IFLOW_NOTIFICATION_MESSAGE") or ""
+    return out
+
+
+def iflow_output(out):
+    """(stdout, stderr, exit code) for iFlow: a Claude Code deny becomes exit 2 + the reason on stderr."""
+    try:
+        d = json.loads(out or "{}")
+    except ValueError:
+        return "", "", 0
+    if not isinstance(d, dict):
+        return "", "", 0
+    hso = d.get("hookSpecificOutput") or {}
+    if hso.get("permissionDecision") == "deny" or d.get("decision") in ("block", "deny"):
+        return "", (hso.get("permissionDecisionReason") or d.get("reason") or "blocked by a bothouse hook"), 2
+    return "", "", 0
+
+
 def user_text(text):
     t = text.strip()
     if t.startswith(MODEL_HEAD):
@@ -329,12 +393,13 @@ def load_state():
         return {}
 
 
-SWITCH = os.path.join(".claude", "conest-hooks.json")
+SWITCH = os.path.join(".bothouse", "conest-hooks.json")
+LEGACY_SWITCH = os.path.join(".claude", "conest-hooks.json")
 
 
 def hook_names():
     return sorted(f[:-3] for f in os.listdir(HERE)
-                  if f.endswith(".py") and f not in ("run.py", "doc-ok.py", "dshlog.py", "dsh-cc-compat.py", "lessons.py", "ctxsvc.py", "wiki_search.py")
+                  if f.endswith(".py") and f not in ("run.py", "doc-ok.py", "dshlog.py", "dsh-cc-compat.py", "codex-compat.py", "lessons.py", "ctxsvc.py", "wiki_search.py")
                   and not f.startswith("test_"))
 
 
@@ -344,9 +409,10 @@ def role_dir(start=None):
     d = os.path.abspath(start or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     probe = d
     while True:
-        # .gemini/settings.json: a Gemini CLI role (hooks written there; its switch file stays .claude/conest-hooks.json)
-        if (os.path.isfile(os.path.join(probe, ".claude", "settings.json"))
-                or os.path.isfile(os.path.join(probe, ".gemini", "settings.json"))):
+        if any(os.path.isfile(os.path.join(probe, p)) for p in (
+                SWITCH, LEGACY_SWITCH, ".claude/settings.json", ".gemini/settings.json", ".agents/hooks.json",
+                ".cursor/hooks.json", ".qoder/settings.json", ".iflow/settings.json",
+                ".bothouse/kimi-home/config.toml")):
             return probe
         up = os.path.dirname(probe)
         if up == probe:
@@ -356,7 +422,10 @@ def role_dir(start=None):
 
 def load_off(d):
     try:
-        with open(os.path.join(d, SWITCH), encoding="utf-8") as f:
+        path = os.path.join(d, SWITCH)
+        if not os.path.exists(path):
+            path = os.path.join(d, LEGACY_SWITCH)
+        with open(path, encoding="utf-8") as f:
             off = json.load(f).get("off") or []
         return {str(x) for x in off} if isinstance(off, list) else set()
     except (OSError, ValueError, AttributeError):
@@ -397,6 +466,12 @@ def parse_args(argv):
             continue
         if a == "--dsh-global":
             OPTS["dsh_global"] = True
+        elif a == "--kimi":
+            OPTS["kimi"] = True
+        elif a == "--cursor":
+            OPTS["cursor"] = True
+        elif a == "--codex":
+            OPTS["codex"] = True
         elif a != "--conest-hook":
             rest.append(a)
         i += 1
@@ -467,20 +542,45 @@ def main():
         pass_exit()  # switched off for this role (run.py off): pass without running the hook
     if OPTS["agy"]:
         return run_agy(target, payload, OPTS["agy"])
-    gemini = payload.get("hook_event_name") in GEMINI_EVENTS
+    codex_tmp = None
+    if OPTS["codex"]:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("codex_compat", os.path.join(HERE, "codex-compat.py"))
+        compat = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(compat)
+        payload, codex_tmp = compat.adapt(payload)
+    cursor = OPTS["cursor"] or payload.get("hook_event_name") == "beforeShellExecution"
+    if cursor:
+        OPTS["cursor"] = True
+        payload["session_id"] = payload.get("conversation_id") or payload.get("session_id") or ""
+        payload["cwd"] = payload.get("cwd") or os.getcwd()
+        payload["hook_event_name"] = "PreToolUse"
+        payload["tool_name"] = "Bash"
+        payload["tool_input"] = {"command": payload.get("command") or payload.get("tool_input", {}).get("command") or ""}
+        payload["transcript_path"] = payload.get("transcript_path") or "none"
+    gemini = not cursor and payload.get("hook_event_name") in GEMINI_EVENTS
+    # iFlow CLI: its event name comes in the environment (the hooks doc lists IFLOW_HOOK_EVENT_NAME for all hooks;
+    # its stdin JSON carries no hook_event_name, and every Claude Code / Qoder payload does, so the variable is
+    # what tells the two apart)
+    iflow = not cursor and not gemini and os.environ.get("IFLOW_HOOK_EVENT_NAME") in IFLOW_EVENTS
     tmp, turn, sid = None, None, payload.get("session_id") or ""
+    if iflow:
+        payload = iflow_payload(payload)
     if gemini:
         payload = gemini_payload(payload)
         if payload["hook_event_name"] == "Stop":
             tmp = gemini_transcript(payload, payload["cwd"])
             payload["transcript_path"] = tmp
+    if OPTS["kimi"] and payload.get("tool_name") == "bash":
+        payload["tool_name"] = "Bash"
     tool = payload.get("tool_name")
-    dsh = not gemini and isinstance(tool, str) and (tool in NAMES or tool in ("str_replace_editor", "job_output"))
+    dsh = not cursor and not gemini and isinstance(tool, str) and (tool in NAMES or tool in ("str_replace_editor", "job_output"))
     if dsh:
         payload["tool_name"], payload["tool_input"] = tool_input(tool, payload.get("tool_input"))
     stop = payload.get("hook_event_name") == "Stop"
     # Claude Code always gives a transcript; an empty one is the DSH bridge (dsh-hooks-claude-code base())
-    bridge = not gemini and (dsh or OPTS["dsh_global"] or not payload.get("transcript_path"))
+    bridge = not cursor and not gemini and not OPTS["kimi"] and not OPTS["codex"] and (
+        dsh or OPTS["dsh_global"] or not payload.get("transcript_path"))
     path = session_file(payload.get("session_id") or "") if bridge else None
     # only the first record (session header) is needed here; the whole log is read for Stop alone
     first = records(read_lines(path, head=True)) if path else []
@@ -524,6 +624,8 @@ def main():
     finally:
         if tmp:
             os.unlink(tmp)
+        if codex_tmp:
+            os.unlink(codex_tmp)
     if turn is not None:
         try:
             blocked = json.loads(proc.stdout or "{}").get("decision") == "block"
@@ -533,6 +635,33 @@ def main():
             st = load_state()
             st[sid] = turn
             write_json(STATE, st)
+    if OPTS["kimi"]:
+        try:
+            decision = json.loads(proc.stdout or "{}")
+            hook = decision.get("hookSpecificOutput") or {}
+            if hook.get("permissionDecision") == "deny" or decision.get("decision") == "block":
+                sys.stderr.write(hook.get("permissionDecisionReason") or decision.get("reason") or "Blocked by bothouse hook")
+                sys.exit(2)
+        except (ValueError, AttributeError):
+            pass
+    if cursor:
+        try:
+            d = json.loads(proc.stdout or "{}")
+        except ValueError:
+            d = {}
+        hso = d.get("hookSpecificOutput") or {}
+        if hso.get("permissionDecision") == "deny" or d.get("decision") == "block" or proc.returncode == 2:
+            reason = hso.get("permissionDecisionReason") or d.get("reason") or (proc.stderr or "").strip() or "blocked by bothouse hook"
+            sys.stdout.write(json.dumps({"permission": "deny", "agent_message": reason}, ensure_ascii=False) + "\n")
+            sys.stderr.write(reason + "\n")
+            sys.exit(2)
+        sys.stdout.write(json.dumps({"permission": "allow"}, ensure_ascii=False) + "\n")
+        sys.exit(0)
+    if iflow:
+        out, err, code = iflow_output(proc.stdout)
+        sys.stdout.write(out)
+        sys.stderr.write(err + ("\n" if err else ""))
+        sys.exit(code or (2 if proc.returncode == 2 else 0))
     if gemini:
         sys.stdout.write(gemini_output(proc.stdout, payload.get("hook_event_name")))
     else:

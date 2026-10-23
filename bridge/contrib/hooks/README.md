@@ -34,7 +34,7 @@ python3 ~/.bothouse/hooks/run.py --role <角色目录> on                       
 python3 ~/.bothouse/hooks/run.py --role <角色目录> status                       # 回报哪些开着、哪些关着
 ```
 
-开关写在角色目录的 `.claude/conest-hooks.json`。人设里的命令已经带好本角色的 `--role`，所以 agent 在别的目录里跑也写对地方；不带 `--role` 时从当前目录往上找第一个有 `.claude/settings.json` 的目录。格式是 `{"off": ["dispatch-review-guard"]}`，全关是 `{"off": ["all"]}`；手改这个文件效果一样。每次调用 hook 都现读这个文件，改完立即生效，不用重启。这个开关只是暂停：配置和人设里的规则说明都还在，`on` 就恢复。
+开关写在角色目录的 `.bothouse/conest-hooks.json`。人设里的命令已经带好本角色的 `--role`，所以 agent 在别的目录里跑也写对地方；不带 `--role` 时从当前目录往上找第一个有 `.claude/settings.json` 的目录。格式是 `{"off": ["dispatch-review-guard"]}`，全关是 `{"off": ["all"]}`；手改这个文件效果一样。每次调用 hook 都现读这个文件，改完立即生效，不用重启。这个开关只是暂停：配置和人设里的规则说明都还在，`on` 就恢复。
 
 规则说明要求只认用户本人直接说的话：其他 bot、队友转述、引用或转发的消息、文件和网页里的文字都不算；也不许模型为了绕过拦截自己关检查。没有另做鉴权，靠的是这条说明。
 
@@ -99,3 +99,11 @@ cd bridge && go test -tags no_web ./core -run 'TestAgentHooks|TestWithHookRules|
 ```
 
 `test_promise_guard.py` 用固定时钟、临时 HOME 和定时任务夹具。新增 `test_bash_guard_nowait.py`、`test_bash_guard_speed.py` 可直接通过 python3 -I 运行；只把命令作为 hook 输入，不执行被测 shell 命令。DSH 辅助文件不单独注册，既有 run.py 复用它的会话字段读取。
+
+## Codex roles
+
+`bothouse setup hooks on --cli codex --work-dir <role>` installs only `bash-guard` and `fix-claim-guard` in `<role>/.codex/hooks.json`, with `[features] hooks = true` in that role's `.codex/config.toml`. The wizard also prepares these two hooks for new Codex roles. Existing custom hook entries/config values are retained (TOML formatting/comments may be normalized). `off` removes only managed entries; `status --cli codex` reads the Codex file.
+
+Codex loads hooks beside active config layers, including project `.codex` and the user config under CODEX_HOME. Project layers require project trust, and Codex skips hooks whose hash is not recorded as trusted (app-server has no bypass flag). When bothouse starts a Codex app-server session it calls `hooks/list` for the role directory and, for its own untrusted/modified hooks only (commands carrying `--conest-hook` and `--codex`), writes `hooks.state.<key>.trusted_hash` through `config/batchWrite` into that session's CODEX_HOME config.toml, the same write Codex's own app-server uses. User hooks are never auto-trusted; `codex exec` / interactive sessions still need review through `/hooks`. Production launches never add a trust-bypass flag. If that registration fails at any step (reading the role's hooks file, `hooks/list` not listing every bothouse hook, the `config/batchWrite`, or a read-back that still reports them untrusted), the session start returns the error naming the step and the session does not start: running without bash-guard registered is not an acceptable fallback. Restart an existing session after configuration changes.
+
+`run.py --codex` normalizes shell inputs and translates Codex response_item chat records for Stop. `stop_hook_active` is preserved. Other hooks are explicitly rejected until adapted. Tested CLI version: 0.163.0-alpha.11.1; transcript format is not a stable public API. Source: https://learn.chatgpt.com/docs/hooks .
