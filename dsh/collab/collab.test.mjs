@@ -8,9 +8,10 @@ import { CloudWebGateway, CAPABILITIES, progressCard, PROGRESS_PREFIX, roomKey }
 import { DshMembers, finalText, describeReason, friendlyFailure } from './dsh-member.mjs';
 import { resolveConfig } from './plugin.mjs';
 import { Roster } from './roster.mjs';
-import { promptText } from './dsh-member.mjs';
+import { promptText, teamModeRules } from './dsh-member.mjs';
 import { Tasks, CHECK_AFTER_S } from './tasks.mjs';
 import { tasksRoute } from './plugin.mjs';
+import { TeamExit } from './team-exit.mjs';
 
 const quiet = { warn() {}, info() {} };
 const tick = () => new Promise(r => setImmediate(r));
@@ -60,6 +61,38 @@ test('store: client keys dedupe, pages are oldest-first, jobs are created and fi
   assert.equal(s.finishJob(job.id, 'done', 1), true);
   assert.equal(s.finishJob(job.id, 'failed'), false);
   assert.deepEqual(s.openJobs(), []);
+  assert.equal(s.dispatchMode(1), 'mixed');
+  assert.equal(s.setDispatchMode(1, 'team'), 'team');
+  assert.equal(s.dispatchMode(1), 'team');
+  assert.throws(() => s.setDispatchMode(1, 'bad'), /dispatch mode/);
+});
+
+test('dispatch mode: a workspace inherits its chat channel setting (PR #138 review 6)', () => {
+  const s = new Store(':memory:');
+  s.ensureRoom(1, 'general');
+  const ws = s.createWorkspace(1);
+  assert.equal(s.dispatchMode(ws.id), 'mixed');
+  s.setDispatchMode(1, 'solo');
+  assert.equal(s.dispatchMode(ws.id), 'solo');
+  s.setDispatchMode(ws.id, 'team');
+  assert.equal(s.dispatchMode(1), 'team', 'setting a workspace sets its chat channel');
+});
+
+test('team exit: forwards asks and returns answers to the recorded workspace', async () => {
+  const hub = makeHub();
+  const ws = hub.store.createWorkspace(1);
+  hub.setMember({ id: 'ds', name: 'DeepSeek', kind: 'dsh', online: true });
+  new TeamExit(hub);
+  hub.post(ws.id, { authorKind: 'role', author: 'ds', name: 'DeepSeek', text: '[ask]\n需要一个答案' });
+  await tick();
+  const forwarded = hub.store.page(1, undefined, 10).find(m => m.author_kind === 'system');
+  assert.ok(forwarded);
+  assert.match(forwarded.text, /ask-[0-9a-f]{8}/);
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: `${forwarded.text.match(/ask-[0-9a-f]{8}/)[0]} 答案是 42` });
+  await tick();
+  const answer = hub.store.page(ws.id, undefined, 10).find(m => m.author_kind === 'user');
+  assert.match(answer.text, /答案是 42/);
+  assert.match(answer.text, /@ds/);
 });
 
 test('mentions: own mention removed, others rewritten, fences ignored, bare name calls', () => {
@@ -615,6 +648,31 @@ test('prompt states the member identity, model and persona', () => {
   assert.match(text, /不是你/);
   assert.match(text, /你的人设：\n你是严谨的审稿人/);
   assert.match(text, /【橘】我是 Claude$/);
+});
+
+test('team rules: a prompt carries only the room mode section (PR #138 review 4, 5)', () => {
+  const room = { name: 'general' }, member = { name: 'DeepSeek' };
+  const solo = promptText(room, member, [], '', 'solo');
+  const team = promptText(room, member, [], '', 'team');
+  const mixed = promptText(room, member, []);
+  for (const text of [solo, team, mixed]) {
+    assert.match(text, /\[团队模式规矩/);
+    assert.match(text, /默认达到 3 件就算忙/);
+    assert.match(text, /拿不准的设定，不要自己定：在工作区用 \[ask\] 转到聊天频道问用户/);
+    assert.match(text, /主角色拿不准也一样/);
+    assert.match(text, /写的人不验收自己的活/);
+    assert.doesNotMatch(text, /^## /m);
+  }
+  assert.match(solo, /单模型多进程/);
+  assert.doesNotMatch(solo, /先当面派给成员|完全团队|混合/);
+  assert.match(team, /完全团队/);
+  assert.match(team, /成员空着时先当面派给成员/);
+  assert.match(team, /reason 字段/);
+  assert.doesNotMatch(team, /单模型多进程|混合/);
+  assert.match(mixed, /混合。按这件活谁更合适选人/);
+  assert.match(mixed, /成员空着时先当面派给成员/);
+  assert.match(mixed, /为什么选这个人/);
+  assert.equal(teamModeRules('bogus'), teamModeRules('mixed'));
 });
 
 test('cloud-web: a bot may not take a name another member already uses', () => {
@@ -1707,4 +1765,24 @@ test('cloud-web: team_workspace create on the real store (A #134) makes 工作�
   ju2.frame({ type: 'team_workspace', ref_id: 'w6', op: 'list', reply_ctx: 'room-9' });
   await tick();
   assert.equal(ju2.of('team_workspace_ack').at(-1).error, 'room-missing');
+});
+
+test('tasks: assign with reason shows reason in the record (team mode C)', () => {
+  const { hub, tasks } = makeTasks();
+  const t = tasks.assign({ roomId: 1, title: '写测试', owner: 'ds', actor: 'lead', reason: '按文字功底选定' });
+  assert.equal(t.reason, '按文字功底选定');
+  const record = hub.store.message(t.assign_msg_id);
+  assert.ok(record);
+  assert.match(record.text, /理由：按文字功底选定/);
+});
+
+test('dispatch mode mixed: @ a member does not post an automated reason note (PR #138 review 8)', async () => {
+  const hub = makeHub();
+  const dsh = fakeDsh();
+  dsh.attach(hub, [{ id: 'ds', name: 'DeepSeek' }]);
+  assert.equal(hub.store.dispatchMode(1), 'mixed');
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '@DeepSeek 帮忙写个小脚本' });
+  await settle();
+  const notes = hub.store.page(1, undefined, 20).filter(m => m.text.includes('混合派活') || m.text.includes('原因：'));
+  assert.equal(notes.length, 0, 'no automated reason note is posted in mixed mode');
 });

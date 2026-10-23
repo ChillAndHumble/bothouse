@@ -6,6 +6,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const MAX_TEXT = 128 * 1024;
+// Per chat channel dispatch mode (user 2026-10-24 01:25: 单模型多进程 / 完全团队 / 混合,
+// 「默认混合模型」); the same names as the bridge's dispatch_mode config.
+export const DISPATCH_MODES = ['solo', 'team', 'mixed'];
+export const DEFAULT_DISPATCH_MODE = 'mixed';
 // v7 is #133 (reply_to), v8 is #139 team mode A, v9 is #139 team mode B tasks; columns are
 // added by ensureSchema() on every open (checked with PRAGMA table_info), so either merge
 // or release order ends with every column; user_version only records the newest schema known.
@@ -114,6 +118,10 @@ export class Store {
       this.migrateWorkspaceIds();
       // v9: the tasks table (#139 team mode B), ensured idempotently like the columns above.
       this.ensureTasks();
+      this.db.exec(`CREATE TABLE IF NOT EXISTS room_settings (
+        room_id INTEGER PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
+        dispatch_mode TEXT NOT NULL DEFAULT '${DEFAULT_DISPATCH_MODE}'
+          CHECK (dispatch_mode IN (${DISPATCH_MODES.map(m => `'${m}'`).join(', ')})))`);
       if (version < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     });
   }
@@ -141,11 +149,12 @@ export class Store {
         created_at REAL NOT NULL,
         updated_at REAL NOT NULL,
         returned_at REAL,
-        remind_msg_id INTEGER)`);
+        remind_msg_id INTEGER,
+        reason TEXT)`);
     } else {
       const cols = new Set(this.db.prepare('PRAGMA table_info(tasks)').all().map(c => c.name));
       for (const [name, type] of [['parent_task', 'INTEGER'], ['next_check_at', 'REAL'], ['result_msg_id', 'INTEGER'],
-        ['assign_msg_id', 'INTEGER'], ['note', 'TEXT'], ['returned_at', 'REAL'], ['remind_msg_id', 'INTEGER']]) {
+        ['assign_msg_id', 'INTEGER'], ['note', 'TEXT'], ['returned_at', 'REAL'], ['remind_msg_id', 'INTEGER'], ['reason', 'TEXT']]) {
         if (!cols.has(name)) this.db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
       }
     }
@@ -241,7 +250,9 @@ export class Store {
   }
   /** Create a chat channel; its first workspace is made on the first createWorkspace() call. */
   createRoom(name) {
-    return this.transaction(() => this.q.createRoom.get(name));
+    const room = this.transaction(() => this.q.createRoom.get(name));
+    this.ensureRoomSettings(room.id);
+    return room;
   }
   /**
    * Create the next workspace 工作区<n+1> under a chat channel, n being the highest
@@ -256,6 +267,32 @@ export class Store {
       const n = Math.max(0, ...this.q.children.all(parent).map(w => Number(re.exec(w.name)?.[1] ?? 0)));
       return this.q.createWorkspace.get(`${WORKSPACE_PREFIX}${n + 1}`, parent);
     });
+  }
+
+  ensureRoomSettings(roomId) {
+    this.db.prepare('INSERT OR IGNORE INTO room_settings (room_id) VALUES (?)').run(roomId);
+  }
+
+  /** The chat channel whose setting a room uses: a workspace's parent (needs rooms.parent_id), else itself. */
+  settingsRoom(roomId) {
+    if (!this.db.prepare('PRAGMA table_info(rooms)').all().some(c => c.name === 'parent_id')) return roomId;
+    const parent = this.db.prepare('SELECT parent_id FROM rooms WHERE id = ?').get(roomId)?.parent_id;
+    return parent == null || parent === roomId ? roomId : parent;
+  }
+
+  /** Dispatch mode of a room; a workspace inherits its chat channel's (PR #138 review 6). */
+  dispatchMode(roomId) {
+    roomId = this.settingsRoom(roomId);
+    this.ensureRoomSettings(roomId);
+    return this.db.prepare('SELECT dispatch_mode FROM room_settings WHERE room_id = ?').get(roomId).dispatch_mode;
+  }
+
+  setDispatchMode(roomId, mode) {
+    if (!DISPATCH_MODES.includes(mode)) throw new CollabError('invalid', `dispatch mode must be ${DISPATCH_MODES.join(', ')}`);
+    roomId = this.settingsRoom(roomId); // set on a workspace = set on its chat channel
+    this.ensureRoomSettings(roomId);
+    this.db.prepare('UPDATE room_settings SET dispatch_mode = ? WHERE room_id = ?').run(mode, roomId);
+    return mode;
   }
 
   /** Active DSH members, config seeds and UI-created alike. */
