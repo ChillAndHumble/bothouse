@@ -13,7 +13,7 @@ LESSONS_K = 3  # 第一轮推几条：沿用 match_wiki 的 k=3 推页条数（�
 TRIAL_START = (date.fromisoformat(os.environ["HOOK_LESSONS_TRIAL_START"])
                if os.environ.get("HOOK_LESSONS_TRIAL_START") else None)
 TRIAL_DAYS = 7  # 来源：用户同意的方案「先试一周」
-ASKED = Path(__file__).resolve().parent / "lessons-asked"  # 最后一次做「每天一次」检查的日期（审稿第 4 处：只多存一个日期戳）
+ASKED = Path(__file__).resolve().parent / "state" / "lessons-asked"  # 最后一次做「每天一次」检查的日期（审稿第 4 处：只多存一个日期戳）
 # 纠正关键词（我加的设定，用户没给词表；正例取自教训表原话，反例取自 resume-session 索引，见交付里的命中率）
 CORRECTION = re.compile(
     r"^\W*(不是[，,。！!\s]|不对|不要$|别再)|[，,？?]\s*不是|不是(说|应该|之前|让你|都)|不是[^。？?，,]{0,12}了[吗么]|不是不要|不让你"
@@ -120,8 +120,8 @@ def _trial_report(entries, today):
 def lessons_items(text, first_turn, state=None, root=None, bridge=False, today=None):
     """要附加的段落 [(标题, 正文)]：
     1) first_turn：次数最多的 LESSONS_K 条，每条一句规则加一句原话；
-    2) 用户本人这句是纠正：先认规则、查本会话犯没犯过、犯过先认错（preferences-process.md:23「同一类错误再犯时
-       先认错并对照上次改了什么」），能对上的那条附上；
+    2) 用户本人这句是纠正：先认规则、查本会话犯没犯过、犯过先认错（规则：同一类错误再犯时
+       先认错并对照上次改了什么），能对上的那条附上；
     3) 每天第一句用户本人的话：表里有「未答复」就让助手在「要你做的」问一句；试行满一周那天顺带报一次复犯对比。"""
     entries = lessons(root)
     said = _user_said(query(text), bridge) if entries else []
@@ -135,7 +135,7 @@ def lessons_items(text, first_turn, state=None, root=None, bridge=False, today=N
     if CORRECTION.search(said_text):
         hit = _best(entries, said_text)
         out.append(("纠正提示", "用户这句像是在纠正你。先认出犯的是哪条规则，查本会话是否犯过同类；犯过就先认错，"
-                    "并对照上次改了什么（preferences-process：同一类错误再犯时先认错并对照上次改了什么）。"
+                    "并对照上次改了什么（规则：同一类错误再犯时先认错并对照上次改了什么）。"
                     + (f"教训表里可能对上的一条：{_one(hit)}" if hit else "")))
     today = today or date.today()
     state = Path(state or ASKED)

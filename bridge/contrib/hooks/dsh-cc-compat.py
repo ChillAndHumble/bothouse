@@ -205,6 +205,40 @@ def wants_busy(name, inp):
     return name == "job_output" and inp.get("wait") is True
 
 
+def add_fields(payload, name, sub, read):
+    """PreToolUse/PostToolUse 补字段 dsh_turn / dsh_busy / context_tokens（见文件说明第 3 条）。
+    name 是 DSH 的原工具名（小写），read() 返回会话记录的行；run.py 的 DSH 路径也调这里。"""
+    event = payload.get("hook_event_name")
+    need_busy = event == "PreToolUse" and wants_busy(name, payload.get("tool_input"))
+    need_turn = event == "PreToolUse" and name in ("bash", "job_output")
+    need_ctx = event == "PostToolUse" and sub
+    if need_busy or need_turn or need_ctx:
+        try:  # 读不到/解不开：不加字段，原 hook 按没有这些信息处理（不做本轮计数）
+            # 3 秒：同 header()，PreToolUse/PostToolUse 的 hook 超时是 10 秒；最大的线上记录实测 0.14 秒
+            lines = read()
+            if need_turn:
+                info = turn_calls(lines)
+                cid = payload.get("tool_use_id")
+                # DSH 攒 200ms 才落盘一批事件（dsh-session-persistence-jsonl/lib/index.js:190-193 enqueueLive），
+                # 本次调用的 tool/call 可能还没写进去；最多再读两次、每次等 0.25 秒（比 200ms 批次多一点）
+                for _ in range(2):
+                    if not cid or has_call(info, cid):
+                        break
+                    time.sleep(0.25)
+                    lines = read()
+                    info = turn_calls(lines)
+                info["sub"] = sub
+                payload["dsh_turn"] = info
+            if need_busy:
+                payload["dsh_busy"] = busy(lines)
+            if need_ctx:
+                n = last_ctx_tokens(lines)
+                if n is not None:
+                    payload["context_tokens"] = n
+        except BaseException:
+            pass
+
+
 def load_state():
     try:
         return json.load(open(STOP_STATE))
@@ -244,35 +278,8 @@ def main():
     sub = bool(head.get("delegationDepth"))
     if sub and "agent_id" not in payload:
         payload["agent_id"] = sid
-    event = payload.get("hook_event_name")
-    need_busy = event == "PreToolUse" and wants_busy(name, payload.get("tool_input"))
-    need_turn = event == "PreToolUse" and name in ("bash", "job_output")
-    need_ctx = event == "PostToolUse" and sub
-    if path and (need_busy or need_turn or need_ctx):
-        try:  # 读不到/解不开：不加字段，原 hook 按没有这些信息处理（不做本轮计数）
-            # 3 秒：同 header()，PreToolUse/PostToolUse 的 hook 超时是 10 秒；最大的线上记录实测 0.14 秒
-            lines = export_mod().dsh_lines(path, timeout=3)
-            if need_turn:
-                info = turn_calls(lines)
-                cid = payload.get("tool_use_id")
-                # DSH 攒 200ms 才落盘一批事件（dsh-session-persistence-jsonl/lib/index.js:190-193 enqueueLive），
-                # 本次调用的 tool/call 可能还没写进去；最多再读两次、每次等 0.25 秒（比 200ms 批次多一点）
-                for _ in range(2):
-                    if not cid or has_call(info, cid):
-                        break
-                    time.sleep(0.25)
-                    lines = export_mod().dsh_lines(path, timeout=3)
-                    info = turn_calls(lines)
-                info["sub"] = sub
-                payload["dsh_turn"] = info
-            if need_busy:
-                payload["dsh_busy"] = busy(lines)
-            if need_ctx:
-                n = last_ctx_tokens(lines)
-                if n is not None:
-                    payload["context_tokens"] = n
-        except BaseException:
-            pass
+    if path:
+        add_fields(payload, name, sub, lambda: export_mod().dsh_lines(path, timeout=3))
 
     tmp = None
     turn = None

@@ -384,9 +384,9 @@ def main():
             spec = importlib.util.spec_from_file_location("dsh_compat", os.path.join(HERE, "dsh-cc-compat.py"))
             compat = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(compat)
-            lines = read_lines(path)
-            payload["dsh_busy"] = compat.busy(lines)
-            payload["dsh_turn"] = dict(compat.turn_calls(lines), sub=sub)
+            # same gate and retry as the standalone adapter: the log is read only for bash / job_output
+            # (dsh_turn) and dsh_busy only for a sleep / wait=true; unreadable log = no fields, hook still runs
+            compat.add_fields(payload, tool, sub, lambda: read_lines(path))
 
     tmp, turn, sid = None, None, payload.get("session_id") or ""
     if stop and path:
@@ -422,4 +422,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:  # a broken log or adapter must not turn into a non-zero hook exit: pass
+        sys.stderr.write(f"bothouse hook run.py: {type(e).__name__}: {e}, passing\n")
+        sys.exit(0)

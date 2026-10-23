@@ -9,7 +9,13 @@
    常驻服务加 `# long-running-ok` 放行。
 5. 只提示不拦：一条命令整页 cat wiki 下 2 页以上 .md（含 for 循环 cat、*.md 通配）。wiki 目录同 bothouse 的 gate：
    环境变量 GATE_WIKI，默认 ~/wiki；设成 off 或目录不存在就不提示。作者的慢例是一次 cat 十几页。
-   提示走 PreToolUse 的 additionalContext，命令照常执行。"""
+   提示走 PreToolUse 的 additionalContext，命令照常执行。
+6. 前台干等：gh run watch、gh … --watch、前台 sleep ≥60 秒、until/while … sleep … done 轮询循环（等完成通知，
+   不要占着前台；超过 5 分钟缓存全部重写）。run_in_background=true 的不拦，单个 sleep <60 秒不拦。
+   DSH：载荷带 dsh_busy（本会话还有子 agent/后台任务在跑）时 job_output wait=true 也拦；DSH 的前台 sleep 一律拦。
+8. 仅 DSH 提速（本轮的工具调用来自 dsh-cc-compat.py 加的 dsh_turn）：同一轮第二次轮询同一对象拦；
+   一串只读查询里第 4 个「一步只跑一条只读查询」的步拦（合并过的步放行），本轮重复的只读命令拦；
+   前台联网长命令（git clone/fetch/pull、npm/pip/brew install）拦，改后台。子 agent 会话和外出轮豁免。"""
 import json, os, re, shlex, sys
 
 PROXY_URL = os.environ.get("HOOK_PROXY", "").strip()  # 例：http://127.0.0.1:7890；空 = 不查下载
@@ -434,7 +440,7 @@ def main():
     turn = d.get("dsh_turn") if d.get("dsh") else None
     if d.get("tool_name") == "job_output":
         if inp.get("wait") is True and busy:
-            deny(BUSY_MSG.format(items="、".join(busy)))
+            deny(BUSY_MSG.format(items="、".join(busy)) + "\n被拦：job_output wait=true。不带 wait 读一次当前输出可以。")
         if turn and inp.get("wait") is True:
             check_job_poll(str(inp.get("job_id") or ""), turn, d.get("tool_use_id"))
         return

@@ -292,6 +292,46 @@ class Hooks(unittest.TestCase):
                        "tool_input": {"command": command}, "transcript_path": ""}
             self.assertEqual(self.denied(self.run_hook("bash-guard", payload)), blocked)
 
+    def test_dsh_log_read_only_when_needed(self):
+        # run.py reuses dsh-cc-compat.add_fields: the log is read for bash/job_output only, dsh_busy for sleep/wait only
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("compat", os.path.join(self.hooks, "dsh-cc-compat.py"))
+        compat = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(compat)
+        lines = ['{"type":"turn/start","data":{"turn":1}}']
+        for name, inp, reads, busy in (("edit", {"path": "x"}, 0, False), ("read", {"path": "x"}, 0, False),
+                                       ("bash", {"command": "ls"}, 1, False), ("bash", {"command": "sleep 5"}, 1, True),
+                                       ("job_output", {"job_id": "j", "wait": True}, 1, True),
+                                       ("job_output", {"job_id": "j"}, 1, False)):
+            calls = []
+            p = {"hook_event_name": "PreToolUse", "tool_input": inp}
+            compat.add_fields(p, name, False, lambda: calls.append(1) or lines)
+            self.assertEqual(len(calls), reads, name)
+            self.assertEqual("dsh_busy" in p, busy, (name, inp))
+        # the current call not in the log yet (DSH writes in 200ms batches): read up to twice more
+        calls = []
+        compat.add_fields({"hook_event_name": "PreToolUse", "tool_use_id": "c9", "tool_input": {"command": "ls"}},
+                          "bash", False, lambda: calls.append(1) or lines)
+        self.assertEqual(len(calls), 3)
+        p = {"hook_event_name": "PreToolUse", "tool_input": {"command": "sleep 5"}}
+        compat.add_fields(p, "bash", False, lambda: 1 / 0)
+        self.assertNotIn("dsh_busy", p)
+        self.assertNotIn("dsh_turn", p)
+
+    def test_dsh_broken_log_passes(self):
+        # a record busy()/turn_calls() cannot parse: no extra fields, the hook still runs, exit 0
+        self.session("broken1", [{"type": "turn/start", "data": {"turn": 1}}, {"type": "job/registered", "data": [1]},
+                                 {"type": "assistant/message", "data": [1]}])
+        for cmd, blocked in (("sleep 5", True), ("ls", False), ("pkill -f x", True)):
+            r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "bash-guard"],
+                               input=json.dumps({"hook_event_name": "PreToolUse", "session_id": "broken1",
+                                                 "transcript_path": "", "tool_name": "bash",
+                                                 "tool_input": {"command": cmd}}),
+                               capture_output=True, text=True, env=self.env, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertEqual(self.denied(r.stdout.strip()), blocked, (cmd, r.stdout))
+
     def test_lessons_without_wiki_search_hit(self):
         wiki = os.path.join(self.tmp, "lessons-wiki")
         os.makedirs(wiki, exist_ok=True)
