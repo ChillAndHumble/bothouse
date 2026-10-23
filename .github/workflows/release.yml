@@ -175,43 +175,20 @@ jobs:
           (cd dist && sha256sum bothouse-* > SHA256SUMS)
           pre=()
           case "$TAG" in *-*) pre=(--prerelease) ;; esac
-          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          ## Improvements
-
-          - The app, CLI, and setup wizard use the bothouse name.
-          - Native app downloads for macOS, Windows, and Linux, with SHA-256 verification.
-
-          ### Install
-
-          Download and open the file for your platform. On first launch, the browser setup wizard opens.
-          The macOS app is unsigned: right-click → Open the first time.
-
-          - **Mac (Apple Silicon and Intel):** `bothouse-mac.dmg` (universal Bothouse.app)
-          - **Windows (x64 and ARM64):** `bothouse-windows.exe`
-          - **Linux:** `bothouse-linux-x64` / `bothouse-linux-arm64` (`chmod +x`, then run)
-          - **Checksums:** `SHA256SUMS`
-
-          Terminal installation: `install.sh` / `install.ps1`; see the README.
-
-          <!-- lang:zh -->
-
-          ## 改进
-
-          - 应用、命令行和网页向导统一使用 bothouse。
-          - 提供 macOS、Windows、Linux 直接下载文件及 SHA-256 校验。
-
-          ### 安装
-
-          - **Mac（Apple 芯片和 Intel 通用）：** `bothouse-mac.dmg`，将 Bothouse.app 拖入 Applications 后双击。
-          - **Windows（x64 和 ARM64）：** `bothouse-windows.exe`，下载后双击。
-          - **Linux：** `bothouse-linux-x64` / `bothouse-linux-arm64`。
-
-          首次启动会打开浏览器安装向导。macOS 未签名，首次打开请「右键→打开」。
-          Linux 下载对应架构文件，`chmod +x` 后运行。校验见 `SHA256SUMS`。
-          命令行安装可用 `install.sh` / `install.ps1`，详见 README。
-          NOTES
+          # Notes come from docs/release-notes/<tag>.md at the tag (read through the API: this job has no checkout).
+          if ! gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$GITHUB_REPOSITORY/contents/docs/release-notes/$TAG.md?ref=$TAG" \
+              > "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::docs/release-notes/$TAG.md not found at $TAG; add it before tagging"
+            exit 1
+          fi
+          if grep -q 'TODO' "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::docs/release-notes/$TAG.md still has a TODO"
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
           else
             gh release create "$TAG" dist/* "${pre[@]}" --title "bothouse $TAG" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
