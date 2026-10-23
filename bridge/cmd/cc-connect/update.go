@@ -190,6 +190,20 @@ func runUpdate() {
 	}
 	fmt.Printf("New version available: %s → %s\n", version, label)
 
+	// bothouse is running: let it install the update itself, so the CLI gets the same
+	// self-check as the web button (restart, and put the old version back if the new one does not come up).
+	if sock := resolveSocketPath(""); fileExistsCmd(sock) {
+		if err := updateViaRunning(sock, latest); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+		if execPath, err := os.Executable(); err == nil {
+			syncNpmPackageVersion(core.BinaryFromBackupPath(execPath), strings.TrimPrefix(latest, "v"))
+		}
+		fmt.Printf("Updated to %s, bothouse is restarting. If the new version does not start, it goes back to %s by itself.\n", latest, version)
+		return
+	}
+
 	tmpFile, err := downloadUpdateAsset(downloadBase, latest)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
@@ -670,4 +684,30 @@ func syncNpmPackageVersion(execPath, newVer string) {
 	} else {
 		slog.Debug("update: synced npm package.json version", "old", oldVer, "new", newVer)
 	}
+}
+
+// updateViaRunning asks the running bothouse (local API socket, POST /update) to install tag
+// through its guarded update. Swappable in tests.
+var updateViaRunning = func(sockPath, tag string) error {
+	payload, _ := json.Marshal(map[string]string{"tag": tag})
+	resp, err := apiPost(sockPath, "/update", payload)
+	if err != nil {
+		return fmt.Errorf("contact running bothouse: %w", err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("running bothouse: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		return fmt.Errorf("running bothouse: bad reply %q", raw)
+	}
+	if body.Status != "restarting" {
+		return fmt.Errorf("running bothouse: %s", body.Error)
+	}
+	return nil
 }

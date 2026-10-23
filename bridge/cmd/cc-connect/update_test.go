@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -172,5 +176,38 @@ func TestSyncNpmPackageVersion_UpdatesWhenDifferent(t *testing.T) {
 	}
 	if pkg["version"] != "1.0.0" {
 		t.Errorf("version = %v, want 1.0.0 (updated)", pkg["version"])
+	}
+}
+
+// `bothouse update` with bothouse running hands the install to it (POST /update on the socket),
+// which goes through the same guarded update as the web button.
+func TestUpdateViaRunningPostsTag(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix socket")
+	}
+	dir, err := os.MkdirTemp("/tmp", "bhupd") // short path: unix socket names are capped near 104 bytes
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "api.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotPath, gotBody string
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotPath, gotBody = r.URL.Path, string(b)
+		w.Write([]byte(`{"status":"restarting","version":"v0.1.5"}`))
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+
+	if err := updateViaRunning(sock, "v0.1.5"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/update" || gotBody != `{"tag":"v0.1.5"}` {
+		t.Fatalf("got %s %s", gotPath, gotBody)
 	}
 }

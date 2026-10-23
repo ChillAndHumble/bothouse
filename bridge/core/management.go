@@ -218,6 +218,7 @@ func (m *ManagementServer) Start() {
 			slog.Error("management api server error", "error", err)
 		}
 	}()
+	activeMgmt.Store(m)
 	slog.Info("management api started", "port", m.port)
 }
 

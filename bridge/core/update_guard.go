@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,10 +10,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
-// Post-update self-check. After the web update replaces the binary and restarts, the old binary
+// Post-update self-check. After an update (web button, chat /upgrade, `bothouse update` while
+// running) replaces the binary and restarts, the old binary
 // (kept as the backup by replaceBinary) runs as a detached guard: it waits for the new process to
 // answer GET /api/v1/status with the new version. If that does not happen in time, it stops the
 // new process, puts the old binary back, restarts it, and leaves a note that the web page shows
@@ -59,6 +62,8 @@ type updateGuardSpec struct {
 	StateDir   string   `json:"state_dir"`
 	TimeoutSec int      `json:"timeout_sec"`
 	GraceSec   int      `json:"grace_sec"`
+	// Notify: chat that asked for the update (/upgrade); told in plain words when it is rolled back.
+	Notify *RestartRequest `json:"notify,omitempty"`
 }
 
 // UpdateResult is what the page reads back after a restart (GET /api/v1/update → last_result).
@@ -264,6 +269,14 @@ func runUpdateGuard(spec updateGuardSpec, ops guardOps) UpdateResult {
 		ops.kill(spec.PID) // unix: exec(2) kept the PID
 	}
 	_ = os.Remove(updateStatePath(spec.StateDir, updateNewPIDFile))
+	// The chat that asked for the update hears about it from the old binary once it is back up
+	// (it reads restart_notify at startup; a supervisor may restart it right after the kill above,
+	// so the note is written before the binary is swapped back).
+	if spec.Notify != nil && spec.StateDir != "" {
+		n := *spec.Notify
+		n.Text = fmt.Sprintf("新版 %s 没能启动，已退回 %s", spec.Want, spec.Old)
+		_ = SaveRestartNotify(spec.StateDir, n)
+	}
 
 	// Put the old binary back: new → <exe>.failed-<n> (a running .exe can be renamed on Windows),
 	// backup → exe.
@@ -293,6 +306,45 @@ func runUpdateGuard(spec updateGuardSpec, ops guardOps) UpdateResult {
 		writeUpdateResult(spec.StateDir, r)
 	}
 	return r
+}
+
+// activeMgmt is the running management server: the self-check asks its /status whether the new
+// version is up. Set by ManagementServer.Start.
+var activeMgmt atomic.Pointer[ManagementServer]
+
+// armUpdateGuard is the one self-check every update entry goes through — the web button, chat
+// /upgrade and `bothouse update` — after the binary was replaced and before the restart: the old
+// binary watches the new one and puts itself back if it does not come up. notify: the chat to
+// tell about a rollback (nil for web/CLI; the page reads the result file). If the guard cannot
+// be started, the replacement is undone and an error is returned: never restart unguarded into
+// a version that might not come up.
+func armUpdateGuard(m *ManagementServer, want string, notify *RestartRequest) error {
+	if m == nil {
+		slog.Warn("update: management api not running, restarting without self-check")
+		return nil
+	}
+	spec := m.guardSpec(want)
+	spec.Notify = notify
+	if spec.Backup == "" {
+		slog.Warn("update: no backup path, restarting without self-check")
+		return nil
+	}
+	if err := startUpdateGuard(spec); err != nil {
+		slog.Error("update: start self-check failed, undoing update", "error", err)
+		if uerr := undoReplace(spec); uerr != nil {
+			slog.Error("update: undo failed", "error", uerr)
+		}
+		return errors.Join(errUpdateRestart, err)
+	}
+	return nil
+}
+
+// requestRestart hands the restart to main (non-blocking: one pending restart is enough).
+func requestRestart(req RestartRequest) {
+	select {
+	case RestartCh <- req:
+	default:
+	}
 }
 
 // lastBinaryBackup is set by replaceBinary (under updateMu) so the web update knows where the

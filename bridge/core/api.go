@@ -100,6 +100,7 @@ func NewAPIServer(dataDir string) (*APIServer, error) {
 	s.mux.HandleFunc("/input/", s.handleInputLookup)
 	s.mux.HandleFunc("/model/info", s.handleModelInfo) // maomao fork: agents switch their own model
 	s.mux.HandleFunc("/model/set", s.handleModelSet)
+	s.mux.HandleFunc("/update", handleSocketUpdate) // `bothouse update` while bothouse is running
 	s.mux.HandleFunc("/cron/add", s.handleCronAdd)
 	s.mux.HandleFunc("/cron/list", s.handleCronList)
 	s.mux.HandleFunc("/cron/info", s.handleCronInfo)

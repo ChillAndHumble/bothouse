@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -223,5 +224,111 @@ func TestHandleUpdate_ShowsRollback(t *testing.T) {
 	_, d = callMgmt(t, (&ManagementServer{}).handleUpdate, http.MethodGet)
 	if _, ok := d["last_result"]; ok {
 		t.Fatal("ack did not clear")
+	}
+}
+
+// armFixture stubs everything an update entry touches and records the guard it starts.
+// Never starts a real guard, never touches the test binary.
+func armFixture(t *testing.T, startErr error) (updateGuardSpec, *[]updateGuardSpec) {
+	t.Helper()
+	spec := guardFixture(t)
+	withUpdateStubs(t, "v0.1.4", &ReleaseInfo{TagName: "v0.1.5"}, nil, nil)
+	oldStart, oldBackup, oldExe, oldMgmt := startUpdateGuard, lastBinaryBackup, updateExePath, activeMgmt.Load()
+	t.Cleanup(func() {
+		startUpdateGuard, lastBinaryBackup, updateExePath = oldStart, oldBackup, oldExe
+		activeMgmt.Store(oldMgmt)
+		for len(RestartCh) > 0 {
+			<-RestartCh
+		}
+	})
+	lastBinaryBackup = spec.Backup
+	updateExePath = func() string { return spec.Exe }
+	activeMgmt.Store(&ManagementServer{port: 9820})
+	got := &[]updateGuardSpec{}
+	startUpdateGuard = func(s updateGuardSpec) error { *got = append(*got, s); return startErr }
+	return spec, got
+}
+
+func takeRestart(t *testing.T) RestartRequest {
+	t.Helper()
+	select {
+	case r := <-RestartCh:
+		return r
+	default:
+		t.Fatal("no restart requested")
+		return RestartRequest{}
+	}
+}
+
+func TestUpdateEntry_WebArmsGuard(t *testing.T) {
+	_, got := armFixture(t, nil)
+	if _, d := callMgmt(t, (&ManagementServer{port: 9820}).handleUpdateApply, http.MethodPost); d["status"] != "restarting" {
+		t.Fatalf("got %v", d)
+	}
+	if len(*got) != 1 || (*got)[0].Want != "v0.1.5" || (*got)[0].Notify != nil {
+		t.Fatalf("guard %+v", *got)
+	}
+	takeRestart(t)
+}
+
+func TestUpdateEntry_ChatUpgradeArmsGuardWithNotify(t *testing.T) {
+	_, got := armFixture(t, nil)
+	p := &stubPlatformEngine{n: "discord"}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.cmdUpgradeConfirm(p, &Message{SessionKey: "discord:c1:u1", ReplyCtx: "rc"})
+	if len(*got) != 1 || (*got)[0].Want != "v0.1.5" || (*got)[0].StatusURL != "http://127.0.0.1:9820/api/v1/status" {
+		t.Fatalf("guard %+v", *got)
+	}
+	if n := (*got)[0].Notify; n == nil || n.SessionKey != "discord:c1:u1" || n.Platform != "discord" {
+		t.Fatalf("notify %+v", (*got)[0].Notify)
+	}
+	if r := takeRestart(t); r.SessionKey != "discord:c1:u1" {
+		t.Fatalf("restart %+v", r)
+	}
+}
+
+func TestUpdateEntry_ChatUpgradeGuardFailsUndoesAndSays(t *testing.T) {
+	spec, _ := armFixture(t, errors.New("fork failed"))
+	p := &stubPlatformEngine{n: "discord"}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.cmdUpgradeConfirm(p, &Message{SessionKey: "discord:c1:u1", ReplyCtx: "rc"})
+	if readFile(t, spec.Exe) != "OLD" {
+		t.Fatal("update not undone")
+	}
+	sent := strings.Join(p.getSent(), "\n")
+	if !strings.Contains(sent, "已退回 v0.1.4") {
+		t.Fatalf("chat not told: %q", sent)
+	}
+	if len(RestartCh) != 0 {
+		t.Fatal("restarted although the self-check could not start")
+	}
+}
+
+func TestUpdateEntry_SocketUpdateArmsGuard(t *testing.T) {
+	_, got := armFixture(t, nil)
+	rec := httptest.NewRecorder()
+	handleSocketUpdate(rec, httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(`{"tag":"v0.1.5"}`)))
+	if !strings.Contains(rec.Body.String(), `"restarting"`) {
+		t.Fatalf("reply %s", rec.Body.String())
+	}
+	if len(*got) != 1 || (*got)[0].Want != "v0.1.5" {
+		t.Fatalf("guard %+v", *got)
+	}
+	takeRestart(t)
+}
+
+// A rolled-back chat update leaves the plain-words note for the old binary to send.
+func TestUpdateGuard_RollbackTellsChat(t *testing.T) {
+	spec := guardFixture(t)
+	spec.Notify = &RestartRequest{SessionKey: "discord:c1:u1", Platform: "discord"}
+	clk := &fakeClock{t: time.Unix(0, 0)}
+	runUpdateGuard(spec, guardOps{now: clk.now, sleep: clk.sleep,
+		probe: func(updateGuardSpec) string { return "" },
+		kill:  func(int) {},
+		start: func(string, []string) error { return nil },
+	})
+	n := ConsumeRestartNotify(spec.StateDir)
+	if n == nil || n.SessionKey != "discord:c1:u1" || n.Text != "新版 v0.1.5 没能启动，已退回 v0.1.4" {
+		t.Fatalf("notify %+v", n)
 	}
 }

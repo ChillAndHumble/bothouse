@@ -103,19 +103,18 @@ func TestUpgradePathKeepsUserData(t *testing.T) {
 	bh := filepath.Join(home, ".bothouse")
 	dsh := filepath.Join(bh, "dsh")
 	user := map[string]string{
-		"config.toml":                          "[[projects]]\nname = \"maomao\"\n[projects.agent.options]\napi_key = \"sk-FAKE-0000\"\n",
-		"config/minimax.json":                  `{"api_key":"FAKE-MINIMAX"}`,
-		"personas/orange.md":                   "我是橘\n",
-		"wiki/maomao/MEMORY.md":                "- 记得用户喜欢橘色\n",
-		"sessions/maomao.json":                 `{"sessions":[{"id":"s1"}]}`,
-		"projects/maomao.state.json":           `{"model":"x"}`,
-		"library/packs/mine/pack.json":         `{"name":"我的"}`,
-		"library/packs/mine/a.png":             "\x89PNG-fake",
-		"library/state.json":                   `{"selected":"mine"}`,
-		"dsh/maomao.env":                       "DEEPSEEK_API_KEY=FAKE-DSH\n",
-		"dsh/maomao.patch.yml":                 "- id: x\n  config: {key: FAKE}\n",
-		"dsh/collab/cordis.patch.yml":          "# user edited\n- id: locale\n  config: {preference: zh, apiKey: FAKE}\n",
-		"dsh/collab/node_modules/dep/index.js": "old dep\n",
+		"config.toml":                  "[[projects]]\nname = \"maomao\"\n[projects.agent.options]\napi_key = \"sk-FAKE-0000\"\n",
+		"config/minimax.json":          `{"api_key":"FAKE-MINIMAX"}`,
+		"personas/orange.md":           "我是橘\n",
+		"wiki/maomao/MEMORY.md":        "- 记得用户喜欢橘色\n",
+		"sessions/maomao.json":         `{"sessions":[{"id":"s1"}]}`,
+		"projects/maomao.state.json":   `{"model":"x"}`,
+		"library/packs/mine/pack.json": `{"name":"我的"}`,
+		"library/packs/mine/a.png":     "\x89PNG-fake",
+		"library/state.json":           `{"selected":"mine"}`,
+		"dsh/maomao.env":               "DEEPSEEK_API_KEY=FAKE-DSH\n",
+		"dsh/maomao.patch.yml":         "- id: x\n  config: {key: FAKE}\n",
+		"dsh/collab/cordis.patch.yml":  "# user edited\n- id: locale\n  config: {preference: zh, apiKey: FAKE}\n",
 	}
 	collab := filepath.Join(home, ".conest-collab", "collab.sqlite3")
 	write := func(p, s string) {
@@ -138,6 +137,21 @@ func TestUpgradePathKeepsUserData(t *testing.T) {
 	write(filepath.Join(dsh, ".version"), "v0.1.4")
 	write(filepath.Join(bh, "dsh/collab/cordis.patch.yml"), user["dsh/collab/cordis.patch.yml"])
 
+	write(filepath.Join(dsh, "collab", "node_modules", "dep", "index.js"), "old dep\n")
+	// The plugin's deps changed in the new bundle, so the refresh runs pnpm install. A fake pnpm
+	// (first on PATH) records the call and lays down node_modules, so this runs without pnpm (CI).
+	fakeBin := t.TempDir()
+	pnpmLog := filepath.Join(fakeBin, "pnpm.log")
+	if runtime.GOOS == "windows" {
+		write(filepath.Join(fakeBin, "pnpm.bat"), "@echo %* >> \""+pnpmLog+"\"\r\n@mkdir node_modules\\fake 2>nul\r\n")
+	} else {
+		write(filepath.Join(fakeBin, "pnpm"), "#!/bin/sh\necho \"$*\" >> '"+pnpmLog+"'\nmkdir -p node_modules/fake\n")
+		if err := os.Chmod(filepath.Join(fakeBin, "pnpm"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	// 1) update via the web API (binary swap stubbed — never touch the real executable)
 	withUpdateStubs(t, "v0.1.4", &ReleaseInfo{TagName: "v0.1.5"}, nil, nil)
 	if _, d := callMgmt(t, (&ManagementServer{}).handleUpdateApply, http.MethodPost); d["status"] != "restarting" {
@@ -157,6 +171,12 @@ func TestUpgradePathKeepsUserData(t *testing.T) {
 		if err != nil || string(got) != s {
 			t.Errorf("%s changed: %q, %v", rel, got, err)
 		}
+	}
+	if b, _ := os.ReadFile(pnpmLog); !strings.Contains(string(b), "install --frozen-lockfile") {
+		t.Errorf("deps not reinstalled: pnpm log %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dsh, "collab", "node_modules", "fake")); err != nil {
+		t.Errorf("new node_modules not swapped in: %v", err)
 	}
 	if got, _ := os.ReadFile(collab); string(got) != "SQLite format 3\x00fake-channels" {
 		t.Errorf("collab db changed: %q", got)

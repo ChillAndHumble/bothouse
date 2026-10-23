@@ -1,8 +1,8 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"os"
 	"sync"
@@ -134,26 +134,50 @@ func (m *ManagementServer) handleUpdateApply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	// Self-check: the old binary watches the new one and puts itself back if it does not come up.
-	spec := m.guardSpec(rel.TagName)
-	if spec.Backup == "" {
-		slog.Warn("update: no backup path, restarting without self-check")
-	} else if err := startUpdateGuard(spec); err != nil {
-		// Without a guard a broken new version would stay; undo the replacement instead.
-		slog.Error("update: start self-check failed, undoing update", "error", err)
-		if uerr := undoReplace(spec); uerr != nil {
-			slog.Error("update: undo failed", "error", uerr)
-		}
-		fail(http.StatusOK, errors.Join(errUpdateRestart, err).Error(), downloadPage(rel), "restart")
+	if err := armUpdateGuard(m, rel.TagName, nil); err != nil {
+		fail(http.StatusOK, err.Error(), downloadPage(rel), "restart")
 		return
 	}
 	mgmtJSON(w, http.StatusOK, map[string]any{"status": "restarting", "version": rel.TagName})
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
-	select {
-	case RestartCh <- RestartRequest{}:
-	default:
+	requestRestart(RestartRequest{})
+}
+
+// POST /update on the local socket: `bothouse update` asks the running bothouse to install tag
+// (the CLI picked it, honouring --pre), so the CLI goes through the same replace → self-check →
+// restart as the web button instead of swapping the file under a running process.
+func handleSocketUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
 	}
+	var req struct {
+		Tag string `json:"tag"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Tag == "" {
+		http.Error(w, "tag is required", http.StatusBadRequest)
+		return
+	}
+	if !updateMu.TryLock() {
+		http.Error(w, "update already in progress", http.StatusConflict)
+		return
+	}
+	defer updateMu.Unlock()
+	if err := selfUpdateFn(req.Tag, false); err != nil {
+		apiJSON(w, http.StatusOK, map[string]string{"status": "failed", "error": err.Error(), "reason": updateFailReason(err)})
+		return
+	}
+	if err := armUpdateGuard(activeMgmt.Load(), req.Tag, nil); err != nil {
+		apiJSON(w, http.StatusOK, map[string]string{"status": "failed", "error": err.Error(), "reason": "restart"})
+		return
+	}
+	apiJSON(w, http.StatusOK, map[string]string{"status": "restarting", "version": req.Tag})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	requestRestart(RestartRequest{})
 }
 
 // undoReplace puts the backup back when the self-check could not be started.
