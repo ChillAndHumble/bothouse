@@ -74,6 +74,15 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.run_hook("bash-guard", p), "")
         self.assertTrue(self.denied(self.run_hook("bash-guard", p, dict(self.env, HOOK_PROXY="http://127.0.0.1:7890"))))
 
+    def test_generic_switch_without_claude_directory(self):
+        for cli in ("kimi", "qoder", "iflow"):
+            role = os.path.join(self.tmp, "role-" + cli)
+            os.makedirs(role)
+            p = subprocess.run([sys.executable, "-I", RUN, "--role", role, "off", "bash-guard"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertTrue(os.path.isfile(os.path.join(role, ".bothouse", "conest-hooks.json")))
+            self.assertFalse(os.path.exists(os.path.join(role, ".claude")))
+
     # ---- Gemini CLI payloads (https://geminicli.com/docs/hooks/reference) ----
     def gemini(self, event, **kw):
         p = {"session_id": "g1", "transcript_path": "/tmp/gemini-session.json", "cwd": self.tmp,
@@ -123,6 +132,54 @@ class Hooks(unittest.TestCase):
             self.assertEqual(json.loads(run.gemini_output(out, ev)), {"hookSpecificOutput": {"additionalContext": "hint"}})
         self.assertEqual(run.gemini_output(out, "BeforeTool"), "")
         self.assertNotIn("subagent", run.GEMINI_NAMES)
+
+    # ---- Qoder CLI payloads (https://docs.qoder.com/cli/hooks): Claude Code's shape, no translation ----
+    def qoder(self, event, **kw):
+        p = {"session_id": "q1", "transcript_path": "", "cwd": self.tmp, "hook_event_name": event,
+             "permission_mode": "default"}
+        p.update(kw)
+        return p
+
+    def test_qoder_pretooluse_denies(self):
+        out = self.run_hook("bash-guard", self.qoder("PreToolUse", tool_name="Bash",
+                                                    tool_input={"command": "sleep 120"}))
+        self.assertTrue(self.denied(out), out)  # passed straight through, Claude Code's own decision field
+
+    def test_qoder_pretooluse_allows(self):
+        out = self.run_hook("bash-guard", self.qoder("PreToolUse", tool_name="Bash",
+                                                    tool_input={"command": "ls -la"}))
+        self.assertEqual(out, "")
+
+    # ---- iFlow CLI payloads (hooks doc: env vars + the same JSON on stdin) ----
+    def iflow(self, event, **kw):
+        p = {"session_id": "i1", "cwd": self.tmp}
+        p.update(kw)
+        return p
+
+    def iflow_env(self, event, **kw):
+        e = dict(self.env, IFLOW_HOOK_EVENT_NAME=event, IFLOW_SESSION_ID="i1", IFLOW_CWD=self.tmp)
+        e.update({k: v for k, v in kw.items() if k.startswith("IFLOW_")})
+        return e
+
+    def test_iflow_pretooluse_denies(self):
+        # its doc's tool name is run_shell_command ("Common Tool Name Reference"), args in IFLOW_TOOL_ARGS
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "bash-guard"],
+                           input=json.dumps(self.iflow("PreToolUse")),
+                           capture_output=True, text=True, timeout=30, cwd=self.tmp,
+                           env=self.iflow_env("PreToolUse", IFLOW_TOOL_NAME="run_shell_command",
+                                              IFLOW_TOOL_ARGS=json.dumps({"command": "sleep 120"})))
+        self.assertEqual(r.returncode, 2, r.stderr)  # iFlow blocks on a non-zero exit code only
+        self.assertIn("sleep", r.stderr)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_iflow_pretooluse_allows(self):
+        # the same fields may also arrive in the stdin JSON (the doc's examples read data["tool_input"])
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "bash-guard"],
+                           input=json.dumps(self.iflow("PreToolUse", tool_name="run_shell_command",
+                                                       tool_input={"command": "ls -la"})),
+                           capture_output=True, text=True, timeout=30, cwd=self.tmp,
+                           env=self.iflow_env("PreToolUse"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, ""), r.stderr)
 
     # ---- dispatch-review-guard ----
     def test_dispatch_review_both_clis(self):
@@ -222,7 +279,7 @@ class Hooks(unittest.TestCase):
         r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "off", "nope"], capture_output=True,
                            text=True, env=self.env, cwd=sub)
         self.assertNotEqual(r.returncode, 0)
-        with open(os.path.join(role, ".claude", "conest-hooks.json")) as f:  # the file a person can edit too
+        with open(os.path.join(role, ".bothouse", "conest-hooks.json")) as f:  # the file a person can edit too
             self.assertEqual(json.load(f), {"off": sorted(set(st["off"]))})
         # bash-guard lets the switch command itself through
         self.assertEqual(self.run_hook("bash-guard", {"hook_event_name": "PreToolUse", "tool_name": "bash",
@@ -250,7 +307,7 @@ class Hooks(unittest.TestCase):
                            capture_output=True, text=True, env=env, cwd=elsewhere, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["role_dir"], role)
-        with open(os.path.join(role, ".claude", "conest-hooks.json")) as f:
+        with open(os.path.join(role, ".bothouse", "conest-hooks.json")) as f:
             self.assertEqual(json.load(f), {"off": ["bash-guard"]})
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "repo", ".claude", "conest-hooks.json")))
         kill = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "pkill -f x"}}

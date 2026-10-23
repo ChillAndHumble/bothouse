@@ -256,6 +256,13 @@ func newAppServerSession(ctx context.Context, url, workDir, model, effort, mode,
 		return nil, err
 	}
 
+	// The bothouse hooks (bash-guard, fix-claim-guard) only run once Codex has their trusted_hash. A session
+	// that cannot register trust would run unguarded, so it must not start at all.
+	if err := s.trustBothouseHooks(); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("codex app-server: register bothouse hook trust: %w", err)
+	}
+
 	if err := s.ensureThread(resumeID); err != nil {
 		_ = s.Close()
 		return nil, err
