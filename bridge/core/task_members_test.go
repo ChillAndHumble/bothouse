@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -41,6 +42,75 @@ func TestTaskBatchesExplicitContinuationRebindsRun(t *testing.T) {
 	}
 	if task, _ := p.Task(grant.TaskID); len(task.Members) != 2 || task.State != TaskStateInProgress {
 		t.Fatal("continuation lost members or state")
+	}
+}
+
+// A batch card released by an earlier lead turn must stay closable by a later
+// lead turn via --task, otherwise it stays listed as running forever.
+func TestTaskBatchesLaterLeadTurnClosesReleasedCard(t *testing.T) {
+	platform := newProgressPlatform()
+	p, err := NewPublicProgress(t.TempDir(), "fish", []Platform{platform})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := p.begin(platform, "room", LangEnglish, nil)
+	grant, err := p.AssignMember(TaskMemberAssignment{Project: "fish", SessionKey: "room", Run: run, BatchID: "A", MemberID: "w", Name: "W", Title: "Work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.finish(run, "result")
+	member := progressToken(t, grant.ReportCommand)
+	for seq, kind := range []string{"update", "result"} {
+		if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: member, Seq: int64(seq + 1), Kind: kind, Summary: kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := p.begin(platform, "elsewhere", LangEnglish, nil)
+	if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "elsewhere", Run: other, TaskID: grant.TaskID, Seq: 1, Kind: "result", Summary: "x"}); err == nil {
+		t.Fatal("another session closed the card")
+	}
+	next := p.begin(platform, "room", LangEnglish, nil)
+	if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: next, TaskID: grant.TaskID, Seq: 1, Kind: "result", Summary: "all done"}); err != nil {
+		t.Fatal("later lead turn cannot close released batch card:", err)
+	}
+	p.finish(next, "result")
+	task, _ := p.Task(grant.TaskID)
+	p.mu.Lock()
+	_, listed := p.listed[grant.TaskID]
+	p.mu.Unlock()
+	if task.State != TaskStateResultReady || listed {
+		t.Fatalf("state=%s listed=%v, want result_ready and unlisted", task.State, listed)
+	}
+}
+
+// Assigning a member to the resume candidate by id before the first lead report
+// must keep the RESUME_NOTE sequence usable for the lead's own progress.
+func TestTaskBatchesAssignByIDKeepsResumeSequence(t *testing.T) {
+	platform := newProgressPlatform()
+	p, err := NewPublicProgress(t.TempDir(), "fish", []Platform{platform})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := p.begin(platform, "room", LangEnglish, nil)
+	id, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: run, Seq: 1, Kind: "start", Title: "T", Summary: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.finish(run, "result")
+	next := p.begin(platform, "room", LangEnglish, nil)
+	cid, seq, ok := p.runStart(next)
+	if !ok || cid != id {
+		t.Fatalf("resume candidate %s %v, want %s", cid, ok, id)
+	}
+	if _, err := p.AssignMember(TaskMemberAssignment{Project: "fish", SessionKey: "room", Run: next, TaskID: cid, MemberID: "w", Name: "W", Title: "Work"}); err != nil {
+		t.Fatal("assign:", err)
+	}
+	if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: next, Seq: seq, Kind: "update", Summary: "continue"}); err != nil {
+		t.Fatal("RESUME_NOTE report after assign --id:", err)
+	}
+	p.finish(next, "result")
+	if task, _ := p.Task(id); task.State != TaskStateResultReady {
+		t.Fatalf("state=%s, want result_ready", task.State)
 	}
 }
 
@@ -274,9 +344,6 @@ func TestTaskMembersIndependentReportsOneCard(t *testing.T) {
 	}
 	p.finish(run, "result")
 	p.Flush(context.Background())
-	if _, err := p.Accept(id, "human"); err == nil {
-		t.Fatal("accepted unfinished members")
-	}
 	if _, err := p.Report(report(workerToken, 3, "result")); err != nil {
 		t.Fatal("member could not finish after lead turn", err)
 	}
@@ -351,5 +418,51 @@ func TestTaskMembersRestartAndCancellation(t *testing.T) {
 				t.Fatal("revoked capability accepted")
 			}
 		})
+	}
+}
+
+// Regression for #89 review: the lead's turn ending normally and its session
+// later being marked stopped (idle timeout, recycle, /stop) must not orphan
+// members, and a member that never reports an end must not block acceptance.
+func TestTaskMembersSurviveStoppedLead(t *testing.T) {
+	platform := newProgressPlatform()
+	p, err := NewPublicProgress(t.TempDir(), "fish", []Platform{platform})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stopped atomic.Bool
+	run := p.begin(platform, "room", LangChinese, stopped.Load)
+	id, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: run, Seq: 1, Kind: "start", Title: "task", Summary: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assign := func(member string) string {
+		g, err := p.AssignMember(TaskMemberAssignment{Project: "fish", SessionKey: "room", Run: run, TaskID: id, MemberID: member, Name: member, Title: "t"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return progressToken(t, g.ReportCommand)
+	}
+	done, silent := assign("done"), assign("silent")
+	for _, tok := range []string{done, silent} {
+		if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: tok, Seq: 1, Kind: "update", Summary: "go"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p.finish(run, "result")
+	stopped.Store(true)
+	if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: done, Seq: 2, Kind: "result", Summary: "ok"}); err != nil {
+		t.Fatal("member report rejected after lead stopped:", err)
+	}
+	if _, err := p.Accept(id, "human"); err != nil {
+		t.Fatal("card with a silent member could not be accepted:", err)
+	}
+	p.Flush(context.Background())
+	members := platform.task(id).Members
+	if members[0].Status != "completed" || members[1].Status != "interrupted" || members[1].EndedAt.IsZero() {
+		t.Fatalf("member states = %s/%s, want completed/interrupted", members[0].Status, members[1].Status)
+	}
+	if _, err := p.Report(PublicProgressRequest{Project: "fish", SessionKey: "room", Run: silent, Seq: 2, Kind: "update", Summary: "late"}); err == nil {
+		t.Fatal("interrupted member grant still accepted reports")
 	}
 }
