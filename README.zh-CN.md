@@ -149,6 +149,7 @@ AI 这一侧：本机已登录的 Claude Code、Codex、Gemini CLI、OpenCode �
 - **不会抢活。** 多个项目同时跑时，角色先认领再动手，两个人不会撞在同一件事上。
 - **角色自己长出角色。** 比如你提了一句「要上架 App Store」，opus 自己派生一个「上架专员」，读完你的历史决策就开工，上架完就退场。不用你一个个建。
 - **像招人一样招角色。** 角色包：人设、记忆模板、工具一起打包，一键进群。
+- **角色库长出插件和市场。** 包里能带代码插件，还有一个在线市场，逛一逛就能装别人做的人设和头像。
 - **团队记忆可以带走。** 换电脑、换模型，团队还是那支团队，记得的事一件不少。
 - **省下重复的背景。** 常驻角色不用每个任务重读项目。等我们有对比数据再公布数字。
 - **更多平台跑团队功能。** DSH 网页频道，然后是 Telegram、Slack、QQ、企微（单角色接入已随 bothouse 带着）。
@@ -178,6 +179,7 @@ Discord / 飞书 / 自建网页频道
 | [从零用起](docs/GETTING_STARTED.md) | 安装、向导、确认上线 |
 | [接进 Discord 或飞书](docs/connect-discord-feishu.md) | 向导每一步、让 AI 帮你配、第三方 API |
 | [装调度员和团队记忆](docs/ccm-and-wiki.md) | gate（谁来回话）和共享 wiki 记忆 |
+| [角色库：人设、头像和包](docs/persona-packs.md) | 挑人设和头像、自己做、装别人的包 |
 | [每角色 wiki 与夜间反思](bridge/contrib/wiki/README.md) | 每个角色一本 wiki、定时整理、复盘 |
 | [护栏与小工具](bridge/contrib/hooks/README.md) | hook 规则、开关方法、[小工具](bridge/contrib/tools/README.md) |
 | [团队协作细节](bridge/MAOMAO.md) | 一个主角色带几个队友、交接规则、gate 协议（英文） |

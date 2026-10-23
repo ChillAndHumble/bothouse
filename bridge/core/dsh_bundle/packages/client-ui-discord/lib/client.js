@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
  factory: (require) => {
  var module = { exports: {} };
  var exports = module.exports;
-(function(){var s=document.createElement('style');s.setAttribute('data-dsh-plugin',"dsh-experimental-client-ui-discord");s.textContent=".qGOlGq_page {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  padding-top: var(--dsh-frame-top-clearance, 0px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  grid-template-columns: 220px minmax(0, 1fr) 240px;\n  font-size: 14px;\n  line-height: 1.5;\n  display: grid;\n}\n\n.qGOlGq_notice {\n  max-width: 480px;\n  color: var(--dsw-alias-label-secondary);\n  text-align: center;\n  grid-column: 1 / -1;\n  place-self: center;\n  padding: 24px;\n}\n\n.qGOlGq_rooms, .qGOlGq_members {\n  background: var(--dsw-alias-bg-layer-2);\n  min-height: 0;\n  padding: 8px 8px 16px;\n  overflow-y: auto;\n}\n\n.qGOlGq_groupTitle {\n  color: var(--dsw-alias-label-tertiary);\n  letter-spacing: .02em;\n  margin: 12px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.qGOlGq_room {\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.qGOlGq_room:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_room:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_roomActive {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_hash {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 16px;\n}\n\n.qGOlGq_chat {\n  flex-direction: column;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n}\n\n.qGOlGq_chatHead {\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  align-items: center;\n  gap: 6px;\n  height: 44px;\n  padding: 0 16px;\n  font-weight: 600;\n  display: flex;\n}\n\n.qGOlGq_log {\n  flex: 1;\n  min-height: 0;\n  padding: 8px 0 12px;\n  overflow-y: auto;\n}\n\n.qGOlGq_empty {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 24px 16px;\n}\n\n.qGOlGq_message {\n  grid-template-columns: 36px minmax(0, 1fr);\n  gap: 12px;\n  padding: 6px 16px;\n  display: grid;\n}\n\n.qGOlGq_message:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_system .qGOlGq_text {\n  color: var(--dsw-alias-label-tertiary);\n  font-style: italic;\n}\n\n.qGOlGq_avatar {\n  corner-shape: round;\n  color: #fff;\n  border-radius: 50%;\n  place-items: center;\n  width: 36px;\n  height: 36px;\n  font-weight: 700;\n  display: grid;\n}\n\n.qGOlGq_avatarSmall {\n  width: 28px;\n  height: 28px;\n  font-size: 12px;\n}\n\n.qGOlGq_messageBody {\n  min-width: 0;\n}\n\n.qGOlGq_messageHead {\n  align-items: baseline;\n  gap: 6px;\n  display: flex;\n}\n\n.qGOlGq_author {\n  font-weight: 600;\n}\n\n.qGOlGq_time {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n.qGOlGq_tag {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-primary-inverted);\n  background: var(--dsw-alias-state-business-primary);\n  white-space: nowrap;\n  padding: 0 4px;\n  font-size: 10px;\n  font-weight: 600;\n}\n\n.qGOlGq_text {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.qGOlGq_card {\n  border-left: 4px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-2);\n  margin-top: 4px;\n  padding: 6px 10px;\n}\n\n.qGOlGq_card[data-state=\"failed\"] {\n  border-left-color: var(--dsw-alias-state-error-primary);\n}\n\n.qGOlGq_cardTitle {\n  font-size: 13px;\n  font-weight: 600;\n}\n\n.qGOlGq_working {\n  min-height: 20px;\n  color: var(--dsw-alias-label-tertiary);\n  padding: 0 16px;\n  font-size: 12px;\n}\n\n.qGOlGq_composer {\n  padding: 0 16px 16px;\n  position: relative;\n}\n\n.qGOlGq_composerRow {\n  align-items: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.qGOlGq_mentionButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 40px;\n  height: 40px;\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  cursor: pointer;\n  flex: none;\n  font-size: 18px;\n  font-weight: 600;\n}\n\n.qGOlGq_mentionButton:hover:not(:disabled) {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_mentionButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_mentionPopup {\n  z-index: 2;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-base);\n  max-height: 320px;\n  box-shadow: var(--dsw-elevation-panel, 0 8px 24px #0000003d);\n  flex-direction: column;\n  padding: 6px;\n  display: flex;\n  position: absolute;\n  bottom: calc(100% - 8px);\n  left: 16px;\n  right: 16px;\n}\n\n.qGOlGq_mentionPopup > [role=\"listbox\"] {\n  min-height: 0;\n  overflow-y: auto;\n}\n\n.qGOlGq_mentionTitle {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 4px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.qGOlGq_mentionItem {\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  align-items: center;\n  gap: 10px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.qGOlGq_mentionActive {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_mentionName {\n  font-weight: 600;\n}\n\n.qGOlGq_mentionMeta {\n  color: var(--dsw-alias-label-tertiary);\n  margin-left: auto;\n  font-size: 12px;\n}\n\n.qGOlGq_mentionHint {\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-tertiary);\n  padding: 6px 8px 2px;\n  font-size: 11px;\n}\n\n.qGOlGq_sendError {\n  color: var(--dsw-alias-state-error-primary);\n  margin-bottom: 6px;\n  font-size: 12px;\n}\n\n.qGOlGq_input {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 100%;\n  max-height: 40vh;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  resize: none;\n  field-sizing: content;\n  padding: 10px 14px;\n}\n\n.qGOlGq_input:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_member {\n  border-radius: var(--dsw-radius-sm);\n  min-width: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  flex: 1;\n  align-items: center;\n  gap: 10px;\n  padding: 5px 8px;\n  display: flex;\n}\n\n.qGOlGq_member:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_member:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_offline {\n  opacity: .5;\n}\n\n.qGOlGq_memberAvatar {\n  position: relative;\n}\n\n.qGOlGq_presence {\n  border: 2px solid var(--dsw-alias-bg-layer-2);\n  corner-shape: round;\n  background: #23a55a;\n  border-radius: 50%;\n  width: 10px;\n  height: 10px;\n  position: absolute;\n  bottom: -2px;\n  right: -2px;\n}\n\n.qGOlGq_offline .qGOlGq_presence {\n  background: var(--dsw-alias-label-tertiary);\n}\n\n.qGOlGq_memberText {\n  flex-direction: column;\n  min-width: 0;\n  display: flex;\n}\n\n.qGOlGq_memberName {\n  align-items: center;\n  gap: 6px;\n  display: flex;\n}\n\n.qGOlGq_memberStatus {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n@media (width <= 900px) {\n  .qGOlGq_page {\n    grid-template-columns: minmax(0, 1fr);\n  }\n\n  .qGOlGq_rooms, .qGOlGq_members {\n    display: none;\n  }\n}\n\n.qGOlGq_groupHead {\n  justify-content: space-between;\n  align-items: center;\n  padding-right: 4px;\n  display: flex;\n}\n\n.qGOlGq_iconButton {\n  border-radius: var(--dsw-radius-sm);\n  width: 22px;\n  height: 22px;\n  color: var(--dsw-alias-label-tertiary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  font-size: 16px;\n  line-height: 1;\n}\n\n.qGOlGq_iconButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_roomInput, .qGOlGq_fieldInput {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  font: inherit;\n  padding: 6px 8px;\n}\n\n.qGOlGq_roomInput {\n  margin: 2px 0 6px;\n}\n\n.qGOlGq_roomInput:focus-visible, .qGOlGq_fieldInput:focus-visible, .qGOlGq_iconButton:focus-visible, .qGOlGq_linkButton:focus-visible, .qGOlGq_addMemberButton:focus-visible, .qGOlGq_primaryButton:focus-visible, .qGOlGq_secondaryButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_addMemberButton {\n  border: 1px dashed var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  margin: 4px 0;\n  padding: 7px 8px;\n}\n\n.qGOlGq_addMemberButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_memberRow {\n  border-radius: var(--dsw-radius-sm);\n  align-items: center;\n  display: flex;\n  position: relative;\n}\n\n.qGOlGq_memberRow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_memberRow .qGOlGq_member:hover {\n  background: none;\n}\n\n.qGOlGq_memberModel {\n  color: var(--dsw-alias-label-tertiary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  font-size: 11px;\n  overflow: hidden;\n}\n\n.qGOlGq_memberActions {\n  color: var(--dsw-alias-label-tertiary);\n  opacity: 0;\n  flex: none;\n  gap: 4px;\n  padding-right: 6px;\n  font-size: 12px;\n  display: flex;\n}\n\n.qGOlGq_memberRow:hover .qGOlGq_memberActions, .qGOlGq_memberRow:focus-within .qGOlGq_memberActions {\n  opacity: 1;\n}\n\n.qGOlGq_linkButton {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  padding: 2px 4px;\n  font-size: 12px;\n}\n\n.qGOlGq_linkButton:hover {\n  color: var(--dsw-alias-label-primary);\n  text-decoration: underline;\n}\n\n.qGOlGq_dialogBackdrop {\n  z-index: 10;\n  background: #00000073;\n  place-items: center;\n  padding: 16px;\n  display: grid;\n  position: fixed;\n  inset: 0;\n}\n\n.qGOlGq_dialog {\n  border-radius: var(--dsw-radius-lg);\n  width: min(460px, 100%);\n  max-height: calc(100vh - 32px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-elevation-panel, 0 12px 32px #0000004d);\n  flex-direction: column;\n  gap: 12px;\n  padding: 20px;\n  display: flex;\n  overflow-y: auto;\n}\n\n.qGOlGq_dialogTitle {\n  margin: 0;\n  font-size: 16px;\n}\n\n.qGOlGq_field {\n  color: var(--dsw-alias-label-secondary);\n  flex-direction: column;\n  gap: 4px;\n  font-size: 12px;\n  display: flex;\n}\n\n.qGOlGq_field textarea {\n  resize: vertical;\n}\n\n.qGOlGq_choiceRow {\n  flex-wrap: wrap;\n  gap: 12px;\n  display: flex;\n}\n\n.qGOlGq_choice {\n  color: var(--dsw-alias-label-primary, inherit);\n  cursor: pointer;\n  align-items: center;\n  gap: 4px;\n  font-size: 13px;\n  display: inline-flex;\n}\n\n.qGOlGq_dialogActions {\n  justify-content: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.qGOlGq_primaryButton, .qGOlGq_secondaryButton {\n  border-radius: var(--dsw-radius-sm);\n  font: inherit;\n  cursor: pointer;\n  padding: 7px 14px;\n}\n\n.qGOlGq_primaryButton {\n  color: #fff;\n  background: var(--dsw-alias-state-business-primary);\n  border: 0;\n}\n\n.qGOlGq_primaryButton:disabled {\n  cursor: not-allowed;\n  opacity: .5;\n}\n\n.qGOlGq_secondaryButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  background: none;\n}\n\n.qGOlGq_memberFailed .qGOlGq_memberStatus {\n  color: var(--dsw-alias-state-error-primary, #ed4245);\n}\n\n.qGOlGq_memberFailed .qGOlGq_presence {\n  background: #ed4245;\n}\n\n.qGOlGq_mobileButton, .qGOlGq_drawerBackdrop {\n  display: none;\n}\n\n@media (width <= 900px) {\n  .qGOlGq_page {\n    position: relative;\n    overflow: hidden;\n  }\n\n  .qGOlGq_mobileButton {\n    min-width: 40px;\n    min-height: 40px;\n    color: inherit;\n    font: inherit;\n    cursor: pointer;\n    background: none;\n    border: 0;\n    border-radius: 6px;\n    justify-content: center;\n    align-items: center;\n    display: inline-flex;\n  }\n\n  .qGOlGq_mobileButton:last-child {\n    margin-left: auto;\n  }\n\n  .qGOlGq_drawerBackdrop {\n    z-index: 4;\n    background: #00000073;\n    border: 0;\n    display: block;\n    position: absolute;\n    inset: 0;\n  }\n\n  .qGOlGq_rooms.qGOlGq_drawerOpen, .qGOlGq_members.qGOlGq_drawerOpen {\n    z-index: 5;\n    box-sizing: border-box;\n    width: min(280px, 85%);\n    display: block;\n    position: absolute;\n    top: 0;\n    bottom: 0;\n    box-shadow: 0 0 24px #0000004d;\n  }\n\n  .qGOlGq_rooms.qGOlGq_drawerOpen {\n    left: 0;\n  }\n\n  .qGOlGq_members.qGOlGq_drawerOpen {\n    right: 0;\n  }\n\n  .qGOlGq_memberActions {\n    opacity: 1;\n  }\n\n  .qGOlGq_messageHead {\n    flex-wrap: wrap;\n  }\n}\n";document.head.appendChild(s)})();
+(function(){var s=document.createElement('style');s.setAttribute('data-dsh-plugin',"dsh-experimental-client-ui-discord");s.textContent=".XhoPZq_page {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  padding-top: var(--dsh-frame-top-clearance, 0px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  grid-template-columns: 220px minmax(0, 1fr) 240px;\n  font-size: 14px;\n  line-height: 1.5;\n  display: grid;\n}\n\n.XhoPZq_notice {\n  max-width: 480px;\n  color: var(--dsw-alias-label-secondary);\n  text-align: center;\n  grid-column: 1 / -1;\n  place-self: center;\n  padding: 24px;\n}\n\n.XhoPZq_rooms, .XhoPZq_members {\n  background: var(--dsw-alias-bg-layer-2);\n  min-height: 0;\n  padding: 8px 8px 16px;\n  overflow-y: auto;\n}\n\n.XhoPZq_groupTitle {\n  color: var(--dsw-alias-label-tertiary);\n  letter-spacing: .02em;\n  margin: 12px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.XhoPZq_room {\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.XhoPZq_room:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_room:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.XhoPZq_roomActive {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_hash {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 16px;\n}\n\n.XhoPZq_chat {\n  flex-direction: column;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n}\n\n.XhoPZq_chatHead {\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  align-items: center;\n  gap: 6px;\n  height: 44px;\n  padding: 0 16px;\n  font-weight: 600;\n  display: flex;\n}\n\n.XhoPZq_log {\n  flex: 1;\n  min-height: 0;\n  padding: 8px 0 12px;\n  overflow-y: auto;\n}\n\n.XhoPZq_empty {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 24px 16px;\n}\n\n.XhoPZq_message {\n  grid-template-columns: 36px minmax(0, 1fr);\n  gap: 12px;\n  padding: 6px 16px;\n  display: grid;\n}\n\n.XhoPZq_message:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_system .XhoPZq_text {\n  color: var(--dsw-alias-label-tertiary);\n  font-style: italic;\n}\n\n.XhoPZq_avatar {\n  corner-shape: round;\n  color: #fff;\n  border-radius: 50%;\n  place-items: center;\n  width: 36px;\n  height: 36px;\n  font-weight: 700;\n  display: grid;\n  position: relative;\n}\n\n.XhoPZq_avatarImage {\n  object-fit: cover;\n  border-radius: 50%;\n  width: 100%;\n  height: 100%;\n  position: absolute;\n  inset: 0;\n}\n\n.XhoPZq_avatarSmall {\n  width: 28px;\n  height: 28px;\n  font-size: 12px;\n}\n\n.XhoPZq_messageBody {\n  min-width: 0;\n}\n\n.XhoPZq_messageHead {\n  align-items: baseline;\n  gap: 6px;\n  display: flex;\n}\n\n.XhoPZq_author {\n  font-weight: 600;\n}\n\n.XhoPZq_time {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n.XhoPZq_tag {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-primary-inverted);\n  background: var(--dsw-alias-state-business-primary);\n  white-space: nowrap;\n  padding: 0 4px;\n  font-size: 10px;\n  font-weight: 600;\n}\n\n.XhoPZq_text {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.XhoPZq_card {\n  border-left: 4px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-2);\n  margin-top: 4px;\n  padding: 6px 10px;\n}\n\n.XhoPZq_card[data-state=\"failed\"] {\n  border-left-color: var(--dsw-alias-state-error-primary);\n}\n\n.XhoPZq_cardTitle {\n  font-size: 13px;\n  font-weight: 600;\n}\n\n.XhoPZq_working {\n  min-height: 20px;\n  color: var(--dsw-alias-label-tertiary);\n  padding: 0 16px;\n  font-size: 12px;\n}\n\n.XhoPZq_composer {\n  padding: 0 16px 16px;\n  position: relative;\n}\n\n.XhoPZq_composerRow {\n  align-items: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.XhoPZq_mentionButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 40px;\n  height: 40px;\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  cursor: pointer;\n  flex: none;\n  font-size: 18px;\n  font-weight: 600;\n}\n\n.XhoPZq_mentionButton:hover:not(:disabled) {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_mentionButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.XhoPZq_mentionPopup {\n  z-index: 2;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-base);\n  max-height: 320px;\n  box-shadow: var(--dsw-elevation-panel, 0 8px 24px #0000003d);\n  flex-direction: column;\n  padding: 6px;\n  display: flex;\n  position: absolute;\n  bottom: calc(100% - 8px);\n  left: 16px;\n  right: 16px;\n}\n\n.XhoPZq_mentionPopup > [role=\"listbox\"] {\n  min-height: 0;\n  overflow-y: auto;\n}\n\n.XhoPZq_mentionTitle {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 4px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.XhoPZq_mentionItem {\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  align-items: center;\n  gap: 10px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.XhoPZq_mentionActive {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_mentionName {\n  font-weight: 600;\n}\n\n.XhoPZq_mentionMeta {\n  color: var(--dsw-alias-label-tertiary);\n  margin-left: auto;\n  font-size: 12px;\n}\n\n.XhoPZq_mentionHint {\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-tertiary);\n  padding: 6px 8px 2px;\n  font-size: 11px;\n}\n\n.XhoPZq_sendError {\n  color: var(--dsw-alias-state-error-primary);\n  margin-bottom: 6px;\n  font-size: 12px;\n}\n\n.XhoPZq_input {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 100%;\n  max-height: 40vh;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  resize: none;\n  field-sizing: content;\n  padding: 10px 14px;\n}\n\n.XhoPZq_input:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.XhoPZq_member {\n  border-radius: var(--dsw-radius-sm);\n  min-width: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  flex: 1;\n  align-items: center;\n  gap: 10px;\n  padding: 5px 8px;\n  display: flex;\n}\n\n.XhoPZq_member:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_member:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.XhoPZq_offline {\n  opacity: .5;\n}\n\n.XhoPZq_memberAvatar {\n  position: relative;\n}\n\n.XhoPZq_presence {\n  border: 2px solid var(--dsw-alias-bg-layer-2);\n  corner-shape: round;\n  background: #23a55a;\n  border-radius: 50%;\n  width: 10px;\n  height: 10px;\n  position: absolute;\n  bottom: -2px;\n  right: -2px;\n}\n\n.XhoPZq_offline .XhoPZq_presence {\n  background: var(--dsw-alias-label-tertiary);\n}\n\n.XhoPZq_memberText {\n  flex-direction: column;\n  min-width: 0;\n  display: flex;\n}\n\n.XhoPZq_memberName {\n  align-items: center;\n  gap: 6px;\n  display: flex;\n}\n\n.XhoPZq_memberStatus {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n@media (width <= 900px) {\n  .XhoPZq_page {\n    grid-template-columns: minmax(0, 1fr);\n  }\n\n  .XhoPZq_rooms, .XhoPZq_members {\n    display: none;\n  }\n}\n\n.XhoPZq_groupHead {\n  justify-content: space-between;\n  align-items: center;\n  padding-right: 4px;\n  display: flex;\n}\n\n.XhoPZq_iconButton {\n  border-radius: var(--dsw-radius-sm);\n  width: 22px;\n  height: 22px;\n  color: var(--dsw-alias-label-tertiary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  font-size: 16px;\n  line-height: 1;\n}\n\n.XhoPZq_iconButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_roomInput, .XhoPZq_fieldInput {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  font: inherit;\n  padding: 6px 8px;\n}\n\n.XhoPZq_roomInput {\n  margin: 2px 0 6px;\n}\n\n.XhoPZq_roomInput:focus-visible, .XhoPZq_fieldInput:focus-visible, .XhoPZq_iconButton:focus-visible, .XhoPZq_linkButton:focus-visible, .XhoPZq_addMemberButton:focus-visible, .XhoPZq_primaryButton:focus-visible, .XhoPZq_secondaryButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.XhoPZq_addMemberButton {\n  border: 1px dashed var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  margin: 4px 0;\n  padding: 7px 8px;\n}\n\n.XhoPZq_addMemberButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_memberRow {\n  border-radius: var(--dsw-radius-sm);\n  align-items: center;\n  display: flex;\n  position: relative;\n}\n\n.XhoPZq_memberRow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.XhoPZq_memberRow .XhoPZq_member:hover {\n  background: none;\n}\n\n.XhoPZq_memberModel {\n  color: var(--dsw-alias-label-tertiary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  font-size: 11px;\n  overflow: hidden;\n}\n\n.XhoPZq_memberActions {\n  color: var(--dsw-alias-label-tertiary);\n  opacity: 0;\n  flex: none;\n  gap: 4px;\n  padding-right: 6px;\n  font-size: 12px;\n  display: flex;\n}\n\n.XhoPZq_memberRow:hover .XhoPZq_memberActions, .XhoPZq_memberRow:focus-within .XhoPZq_memberActions {\n  opacity: 1;\n}\n\n.XhoPZq_linkButton {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  padding: 2px 4px;\n  font-size: 12px;\n}\n\n.XhoPZq_linkButton:hover {\n  color: var(--dsw-alias-label-primary);\n  text-decoration: underline;\n}\n\n.XhoPZq_dialogBackdrop {\n  z-index: 10;\n  background: #00000073;\n  place-items: center;\n  padding: 16px;\n  display: grid;\n  position: fixed;\n  inset: 0;\n}\n\n.XhoPZq_dialog {\n  border-radius: var(--dsw-radius-lg);\n  width: min(460px, 100%);\n  max-height: calc(100vh - 32px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-elevation-panel, 0 12px 32px #0000004d);\n  flex-direction: column;\n  gap: 12px;\n  padding: 20px;\n  display: flex;\n  overflow-y: auto;\n}\n\n.XhoPZq_dialogTitle {\n  margin: 0;\n  font-size: 16px;\n}\n\n.XhoPZq_field {\n  color: var(--dsw-alias-label-secondary);\n  flex-direction: column;\n  gap: 4px;\n  font-size: 12px;\n  display: flex;\n}\n\n.XhoPZq_field textarea {\n  resize: vertical;\n}\n\n.XhoPZq_choiceRow {\n  flex-wrap: wrap;\n  gap: 12px;\n  display: flex;\n}\n\n.XhoPZq_choice {\n  color: var(--dsw-alias-label-primary, inherit);\n  cursor: pointer;\n  align-items: center;\n  gap: 4px;\n  font-size: 13px;\n  display: inline-flex;\n}\n\n.XhoPZq_dialogActions {\n  justify-content: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.XhoPZq_primaryButton, .XhoPZq_secondaryButton {\n  border-radius: var(--dsw-radius-sm);\n  font: inherit;\n  cursor: pointer;\n  padding: 7px 14px;\n}\n\n.XhoPZq_primaryButton {\n  color: #fff;\n  background: var(--dsw-alias-state-business-primary);\n  border: 0;\n}\n\n.XhoPZq_primaryButton:disabled {\n  cursor: not-allowed;\n  opacity: .5;\n}\n\n.XhoPZq_secondaryButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  background: none;\n}\n\n.XhoPZq_memberFailed .XhoPZq_memberStatus {\n  color: var(--dsw-alias-state-error-primary, #ed4245);\n}\n\n.XhoPZq_memberFailed .XhoPZq_presence {\n  background: #ed4245;\n}\n\n.XhoPZq_mobileButton, .XhoPZq_drawerBackdrop {\n  display: none;\n}\n\n@media (width <= 900px) {\n  .XhoPZq_page {\n    position: relative;\n    overflow: hidden;\n  }\n\n  .XhoPZq_mobileButton {\n    min-width: 40px;\n    min-height: 40px;\n    color: inherit;\n    font: inherit;\n    cursor: pointer;\n    background: none;\n    border: 0;\n    border-radius: 6px;\n    justify-content: center;\n    align-items: center;\n    display: inline-flex;\n  }\n\n  .XhoPZq_mobileButton:last-child {\n    margin-left: auto;\n  }\n\n  .XhoPZq_drawerBackdrop {\n    z-index: 4;\n    background: #00000073;\n    border: 0;\n    display: block;\n    position: absolute;\n    inset: 0;\n  }\n\n  .XhoPZq_rooms.XhoPZq_drawerOpen, .XhoPZq_members.XhoPZq_drawerOpen {\n    z-index: 5;\n    box-sizing: border-box;\n    width: min(280px, 85%);\n    display: block;\n    position: absolute;\n    top: 0;\n    bottom: 0;\n    box-shadow: 0 0 24px #0000004d;\n  }\n\n  .XhoPZq_rooms.XhoPZq_drawerOpen {\n    left: 0;\n  }\n\n  .XhoPZq_members.XhoPZq_drawerOpen {\n    right: 0;\n  }\n\n  .XhoPZq_memberActions {\n    opacity: 1;\n  }\n\n  .XhoPZq_messageHead {\n    flex-wrap: wrap;\n  }\n}\n\n.XhoPZq_avatarPicker {\n  flex-wrap: wrap;\n  gap: 8px;\n  display: flex;\n}\n\n.XhoPZq_avatarOption {\n  cursor: pointer;\n  background: none;\n  border: 2px solid #0000;\n  border-radius: 50%;\n  padding: 2px;\n  display: grid;\n}\n\n.XhoPZq_avatarOption[aria-checked=\"true\"] {\n  border-color: var(--dsw-alias-accent, #5865f2);\n}\n";document.head.appendChild(s)})();
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let react_jsx_runtime = require("react/jsx-runtime");
@@ -369,80 +369,141 @@ function insertMention(text, caret, member) {
 		caret: caret + insert.length
 	};
 }
+// src/client/avatars.ts
+/**
+* Built-in member avatars served by the collab plugin at `collab/avatars/<slug>.png`:
+* the five original character portraits (user 2026-10-23: 「我还是保留原本那个」).
+*/
+const AVATARS = [
+	"orange",
+	"whale",
+	"dragon",
+	"rainbow",
+	"lanxi"
+];
+/**
+* Image source for a member avatar.
+* @param avatar - built-in slug, http(s) URL announced by a bot, or empty.
+* @returns a URL relative to the document base, the absolute URL, or undefined for the initial badge.
+*/
+function avatarSrc(avatar) {
+	if (avatar === void 0 || avatar === "") return void 0;
+	if (/^https?:\/\//.test(avatar)) return avatar;
+	return AVATARS.includes(avatar) ? `collab/avatars/${avatar}.png` : void 0;
+}
 // src/client/ChannelsPage.module.css
 var ChannelsPage_module_default = {
-	"addMemberButton": "qGOlGq_addMemberButton",
-	"author": "qGOlGq_author",
-	"avatar": "qGOlGq_avatar",
-	"avatarSmall": "qGOlGq_avatarSmall",
-	"card": "qGOlGq_card",
-	"cardTitle": "qGOlGq_cardTitle",
-	"chat": "qGOlGq_chat",
-	"chatHead": "qGOlGq_chatHead",
-	"choice": "qGOlGq_choice",
-	"choiceRow": "qGOlGq_choiceRow",
-	"composer": "qGOlGq_composer",
-	"composerRow": "qGOlGq_composerRow",
-	"dialog": "qGOlGq_dialog",
-	"dialogActions": "qGOlGq_dialogActions",
-	"dialogBackdrop": "qGOlGq_dialogBackdrop",
-	"dialogTitle": "qGOlGq_dialogTitle",
-	"drawerBackdrop": "qGOlGq_drawerBackdrop",
-	"drawerOpen": "qGOlGq_drawerOpen",
-	"empty": "qGOlGq_empty",
-	"field": "qGOlGq_field",
-	"fieldInput": "qGOlGq_fieldInput",
-	"groupHead": "qGOlGq_groupHead",
-	"groupTitle": "qGOlGq_groupTitle",
-	"hash": "qGOlGq_hash",
-	"iconButton": "qGOlGq_iconButton",
-	"input": "qGOlGq_input",
-	"linkButton": "qGOlGq_linkButton",
-	"log": "qGOlGq_log",
-	"member": "qGOlGq_member",
-	"memberActions": "qGOlGq_memberActions",
-	"memberAvatar": "qGOlGq_memberAvatar",
-	"memberFailed": "qGOlGq_memberFailed",
-	"memberModel": "qGOlGq_memberModel",
-	"memberName": "qGOlGq_memberName",
-	"memberRow": "qGOlGq_memberRow",
-	"members": "qGOlGq_members",
-	"memberStatus": "qGOlGq_memberStatus",
-	"memberText": "qGOlGq_memberText",
-	"mentionActive": "qGOlGq_mentionActive",
-	"mentionButton": "qGOlGq_mentionButton",
-	"mentionHint": "qGOlGq_mentionHint",
-	"mentionItem": "qGOlGq_mentionItem",
-	"mentionMeta": "qGOlGq_mentionMeta",
-	"mentionName": "qGOlGq_mentionName",
-	"mentionPopup": "qGOlGq_mentionPopup",
-	"mentionTitle": "qGOlGq_mentionTitle",
-	"message": "qGOlGq_message",
-	"messageBody": "qGOlGq_messageBody",
-	"messageHead": "qGOlGq_messageHead",
-	"mobileButton": "qGOlGq_mobileButton",
-	"notice": "qGOlGq_notice",
-	"offline": "qGOlGq_offline",
-	"page": "qGOlGq_page",
-	"presence": "qGOlGq_presence",
-	"primaryButton": "qGOlGq_primaryButton",
-	"room": "qGOlGq_room",
-	"roomActive": "qGOlGq_roomActive",
-	"roomInput": "qGOlGq_roomInput",
-	"rooms": "qGOlGq_rooms",
-	"secondaryButton": "qGOlGq_secondaryButton",
-	"sendError": "qGOlGq_sendError",
-	"system": "qGOlGq_system",
-	"tag": "qGOlGq_tag",
-	"text": "qGOlGq_text",
-	"time": "qGOlGq_time",
-	"working": "qGOlGq_working"
+	"addMemberButton": "XhoPZq_addMemberButton",
+	"author": "XhoPZq_author",
+	"avatar": "XhoPZq_avatar",
+	"avatarImage": "XhoPZq_avatarImage",
+	"avatarOption": "XhoPZq_avatarOption",
+	"avatarPicker": "XhoPZq_avatarPicker",
+	"avatarSmall": "XhoPZq_avatarSmall",
+	"card": "XhoPZq_card",
+	"cardTitle": "XhoPZq_cardTitle",
+	"chat": "XhoPZq_chat",
+	"chatHead": "XhoPZq_chatHead",
+	"choice": "XhoPZq_choice",
+	"choiceRow": "XhoPZq_choiceRow",
+	"composer": "XhoPZq_composer",
+	"composerRow": "XhoPZq_composerRow",
+	"dialog": "XhoPZq_dialog",
+	"dialogActions": "XhoPZq_dialogActions",
+	"dialogBackdrop": "XhoPZq_dialogBackdrop",
+	"dialogTitle": "XhoPZq_dialogTitle",
+	"drawerBackdrop": "XhoPZq_drawerBackdrop",
+	"drawerOpen": "XhoPZq_drawerOpen",
+	"empty": "XhoPZq_empty",
+	"field": "XhoPZq_field",
+	"fieldInput": "XhoPZq_fieldInput",
+	"groupHead": "XhoPZq_groupHead",
+	"groupTitle": "XhoPZq_groupTitle",
+	"hash": "XhoPZq_hash",
+	"iconButton": "XhoPZq_iconButton",
+	"input": "XhoPZq_input",
+	"linkButton": "XhoPZq_linkButton",
+	"log": "XhoPZq_log",
+	"member": "XhoPZq_member",
+	"memberActions": "XhoPZq_memberActions",
+	"memberAvatar": "XhoPZq_memberAvatar",
+	"memberFailed": "XhoPZq_memberFailed",
+	"memberModel": "XhoPZq_memberModel",
+	"memberName": "XhoPZq_memberName",
+	"memberRow": "XhoPZq_memberRow",
+	"members": "XhoPZq_members",
+	"memberStatus": "XhoPZq_memberStatus",
+	"memberText": "XhoPZq_memberText",
+	"mentionActive": "XhoPZq_mentionActive",
+	"mentionButton": "XhoPZq_mentionButton",
+	"mentionHint": "XhoPZq_mentionHint",
+	"mentionItem": "XhoPZq_mentionItem",
+	"mentionMeta": "XhoPZq_mentionMeta",
+	"mentionName": "XhoPZq_mentionName",
+	"mentionPopup": "XhoPZq_mentionPopup",
+	"mentionTitle": "XhoPZq_mentionTitle",
+	"message": "XhoPZq_message",
+	"messageBody": "XhoPZq_messageBody",
+	"messageHead": "XhoPZq_messageHead",
+	"mobileButton": "XhoPZq_mobileButton",
+	"notice": "XhoPZq_notice",
+	"offline": "XhoPZq_offline",
+	"page": "XhoPZq_page",
+	"presence": "XhoPZq_presence",
+	"primaryButton": "XhoPZq_primaryButton",
+	"room": "XhoPZq_room",
+	"roomActive": "XhoPZq_roomActive",
+	"roomInput": "XhoPZq_roomInput",
+	"rooms": "XhoPZq_rooms",
+	"secondaryButton": "XhoPZq_secondaryButton",
+	"sendError": "XhoPZq_sendError",
+	"system": "XhoPZq_system",
+	"tag": "XhoPZq_tag",
+	"text": "XhoPZq_text",
+	"time": "XhoPZq_time",
+	"working": "XhoPZq_working"
 };
+// src/client/Avatar.tsx
+/** Member portrait: a built-in or bot-announced image over a colored initial badge. */
+const PALETTE = [
+	"#5865f2",
+	"#eb459e",
+	"#3ba55c",
+	"#faa61a",
+	"#ed4245",
+	"#00a8fc",
+	"#9b59b6",
+	"#e67e22"
+];
+function color(id) {
+	let h = 7;
+	for (const c of id) h = h * 31 + c.charCodeAt(0) >>> 0;
+	return PALETTE[h % PALETTE.length];
+}
+/** Member portrait, or a colored initial badge when there is none or the image fails to load. */
+function Avatar({ id, name, avatar, small }) {
+	const src = avatarSrc(avatar);
+	const [broken, setBroken] = (0, react.useState)(void 0);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+		className: small === true ? `${ChannelsPage_module_default.avatar} ${ChannelsPage_module_default.avatarSmall}` : ChannelsPage_module_default.avatar,
+		style: { background: color(id) },
+		"aria-hidden": true,
+		children: [(name || id).slice(0, 1), src !== void 0 && broken !== src && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+			className: ChannelsPage_module_default.avatarImage,
+			src,
+			alt: "",
+			onError: () => {
+				setBroken(src);
+			}
+		})]
+	});
+}
 // src/client/MemberDialog.tsx
 /**
 * Add/edit dialog for one channel member: name, persona, and either a DSH
 * model (grouped by provider route, as the host lists them) or, when adding, a
-* CLI agent installed on this machine (Claude Code, Codex, Gemini). Submission goes through the
+* CLI agent installed on this machine (Claude Code, Codex, Gemini), plus one of the built-in
+* avatars or none (initial badge). Submission goes through the
 * injected action; the host's refusal (name taken, model unavailable) is shown
 * inline and the form keeps its values.
 */
@@ -474,9 +535,10 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 	const [routes, setRoutes] = (0, react.useState)(void 0);
 	const [error, setError] = (0, react.useState)(void 0);
 	const [busy, setBusy] = (0, react.useState)(false);
-	const [type, setType] = (0, react.useState)("dsh");
+	const [type, setType] = (0, react.useState)(member?.cli !== void 0 ? "cli" : "dsh");
 	const [clis, setClis] = (0, react.useState)(void 0);
-	const [cli, setCli] = (0, react.useState)("");
+	const [cli, setCli] = (0, react.useState)(member?.cli ?? "");
+	const [avatar, setAvatar] = (0, react.useState)(member?.avatar !== void 0 && AVATARS.includes(member.avatar) ? member.avatar : "");
 	(0, react.useEffect)(() => {
 		let live = true;
 		listModels().then((list) => {
@@ -518,10 +580,12 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 		onSubmit(type === "cli" ? {
 			name: name.trim(),
 			persona,
+			avatar,
 			cli
 		} : {
 			name: name.trim(),
 			persona,
+			avatar,
 			model: provider !== void 0 && model !== void 0 ? {
 				provider,
 				model
@@ -563,6 +627,32 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 						onChange: (event) => {
 							setName(event.target.value);
 						}
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: ChannelsPage_module_default.field,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						id: "member-avatar-label",
+						children: t("memberAvatar")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: ChannelsPage_module_default.avatarPicker,
+						role: "radiogroup",
+						"aria-labelledby": "member-avatar-label",
+						children: ["", ...AVATARS].map((slug) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							role: "radio",
+							"aria-checked": avatar === slug,
+							className: ChannelsPage_module_default.avatarOption,
+							title: slug === "" ? t("memberAvatarNone") : slug,
+							onClick: () => {
+								setAvatar(slug);
+							},
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
+								id: member?.id ?? (name.trim() || "new"),
+								name: name.trim() || "?",
+								avatar: slug
+							})
+						}, slug === "" ? "none" : slug))
 					})]
 				}),
 				member === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -683,29 +773,6 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 * list, in a Discord-style three-column layout. All data arrives through the
 * injected `useChannels` hook; posting goes through the injected actions.
 */
-const PALETTE = [
-	"#5865f2",
-	"#eb459e",
-	"#3ba55c",
-	"#faa61a",
-	"#ed4245",
-	"#00a8fc",
-	"#9b59b6",
-	"#e67e22"
-];
-function color(id) {
-	let h = 7;
-	for (const c of id) h = h * 31 + c.charCodeAt(0) >>> 0;
-	return PALETTE[h % PALETTE.length];
-}
-function Avatar({ id, name, small }) {
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-		className: small === true ? `${ChannelsPage_module_default.avatar} ${ChannelsPage_module_default.avatarSmall}` : ChannelsPage_module_default.avatar,
-		style: { background: color(id) },
-		"aria-hidden": true,
-		children: (name || id).slice(0, 1)
-	});
-}
 const CLI_TAG = {
 	claude: "kindClaude",
 	codex: "kindCodex",
@@ -735,7 +802,8 @@ function MessageRow({ message, member, t, onConfigure }) {
 		className: message.author_kind === "system" ? `${ChannelsPage_module_default.message} ${ChannelsPage_module_default.system}` : ChannelsPage_module_default.message,
 		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
 			id: message.author,
-			name: message.name
+			name: message.name,
+			avatar: member?.avatar
 		}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 			className: ChannelsPage_module_default.messageBody,
 			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -800,6 +868,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }) {
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
 					id: m.id,
 					name: m.name,
+					avatar: m.avatar,
 					small: true
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: m.error ? `${ChannelsPage_module_default.presence} ${ChannelsPage_module_default.errorPresence}` : ChannelsPage_module_default.presence })]
 			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
@@ -1184,6 +1253,7 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
 														id: m.id,
 														name: m.name,
+														avatar: m.avatar,
 														small: true
 													}), m.online && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: m.error ? `${ChannelsPage_module_default.presence} ${ChannelsPage_module_default.errorPresence}` : ChannelsPage_module_default.presence })]
 												}),
@@ -1384,6 +1454,8 @@ const zh = {
 	memberCliLoading: "正在检测本机 CLI…",
 	memberCliMissing: "未检测到",
 	memberPersona: "人设（可选）：它是谁、负责什么、说话风格",
+	memberAvatar: "头像",
+	memberAvatarNone: "不用头像（显示首字）",
 	save: "保存",
 	cancel: "取消",
 	configMember: "来自配置文件，网页里不能修改",
@@ -1443,6 +1515,8 @@ const en = {
 	memberCliLoading: "Detecting CLIs on this machine…",
 	memberCliMissing: "not found",
 	memberPersona: "Persona (optional): who it is, what it does, how it talks",
+	memberAvatar: "Avatar",
+	memberAvatarNone: "No avatar (show initial)",
 	save: "Save",
 	cancel: "Cancel",
 	configMember: "From the config file; not editable here",
@@ -1484,11 +1558,7 @@ function apply(ctx) {
 			name: "main",
 			key: PANEL_ID,
 			locale: NS,
-			inject: injected,
-			children: { "settings.section": {
-				kind: "list",
-				scope: "root"
-			} }
+			inject: injected
 		}, ChannelsPage);
 		if (location.hash === `#${PANEL_ID}`) ctx.layout.selectPanel(PANEL_ID);
 		return dispose;

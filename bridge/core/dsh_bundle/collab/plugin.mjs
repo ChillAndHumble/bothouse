@@ -14,6 +14,7 @@ import { CloudWebGateway, WS_PATH } from './cloudweb.mjs';
 import { DshMembers } from './dsh-member.mjs';
 import { Roster } from './roster.mjs';
 import { createCliMember } from './cli-member.mjs';
+import { avatarImage, checkAvatar } from './avatars.mjs';
 import { handler as clisHandler } from './clis.mjs';
 
 export const name = 'conest-collab';
@@ -46,6 +47,7 @@ export function resolveConfig(config, env = process.env) {
       throw Error(`conest-collab: dshMembers ${m.id} model must be { provider, model }`);
     }
     if (m.persona !== undefined && typeof m.persona !== 'string') throw Error(`conest-collab: dshMembers ${m.id} persona must be text`);
+    try { checkAvatar(m.avatar); } catch (error) { throw Error(`conest-collab: dshMembers ${m.id} ${error.message}`); }
     ids.add(m.id);
   }
   const maxRelay = c.maxRelay ?? 6;
@@ -138,6 +140,13 @@ export async function apply(ctx, rawConfig) {
       return json(res, 200, { me: OWNER, rooms: store.rooms(), members: hub.memberView(), thinking: Object.fromEntries([...hub.thinking].map(([k, v]) => [k, [...v]])) });
     }
     if (path === '/collab/api/events' && req.method === 'GET') return events(req, res);
+    const av = /^\/collab\/avatars\/([a-z0-9_-]+)\.png$/.exec(path);
+    if (av !== null && req.method === 'GET') {
+      const png = avatarImage(av[1]);
+      if (png === undefined) return json(res, 404, { error: 'avatar not found' });
+      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' });
+      return res.end(png);
+    }
     const m = /^\/collab\/api\/rooms\/(\d+)\/messages$/.exec(path);
     if (m !== null && req.method === 'GET') {
       const roomId = Number(m[1]);
