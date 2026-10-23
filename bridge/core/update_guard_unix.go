@@ -14,7 +14,9 @@ func detachCmd(cmd *exec.Cmd) {
 }
 
 // restartOld replaces this process with the old binary, same arguments (same PID, so a
-// supervisor keeps tracking it).
-var restartOld = func(exe string) error {
-	return syscall.Exec(exe, append([]string{exe}, os.Args[1:]...), os.Environ())
+// supervisor such as systemd keeps tracking it).
+var restartOld = func(exe string, args []string) error { return execOld(syscall.Exec, exe, args) }
+
+func execOld(execve func(string, []string, []string) error, exe string, args []string) error {
+	return execve(exe, append([]string{exe}, args...), os.Environ())
 }

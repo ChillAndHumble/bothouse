@@ -66,8 +66,6 @@ type updateGuardSpec struct {
 	StateDir   string   `json:"state_dir"`
 	TimeoutSec int      `json:"timeout_sec"`
 	GraceSec   int      `json:"grace_sec"`
-	// GuardPID: the guard process, written to update-pending.json once it started.
-	GuardPID int `json:"guard_pid,omitempty"`
 	// Notify: chat that asked for the update (/upgrade); told in plain words when it is rolled back.
 	Notify *RestartRequest `json:"notify,omitempty"`
 }
@@ -122,46 +120,10 @@ func NoteUpdateStart(dir string) {
 	if dir == "" {
 		return
 	}
-	b, err := os.ReadFile(updateStatePath(dir, updatePendingFile))
-	if err != nil {
-		return
-	}
-	if recoverOrphanedUpdate(dir, b, restartOld) {
+	if _, err := os.Stat(updateStatePath(dir, updatePendingFile)); err != nil {
 		return
 	}
 	_ = os.WriteFile(updateStatePath(dir, updateNewPIDFile), []byte(fmt.Sprint(os.Getpid())), 0o644)
-}
-
-// recoverOrphanedUpdate covers the guard being killed before it could roll back: under systemd
-// (default KillMode=control-group, bridge/daemon/systemd.go) the new version crashing makes
-// systemd kill the whole cgroup, guard included, then restart the new binary. That restart lands
-// here: an update is pending, we are the version that was tried, and its guard is gone — so this
-// start counts as the failed one. Swap the old binary back and hand over to it (restart). Works
-// with any systemd version (no systemd-run / KillMode needed) and any other supervisor.
-// Returns true when it rolled back (restart is then expected not to return).
-func recoverOrphanedUpdate(dir string, pending []byte, restart func(exe string) error) bool {
-	var spec updateGuardSpec
-	if restart == nil || json.Unmarshal(pending, &spec) != nil || spec.GuardPID <= 0 || spec.Backup == "" {
-		return false
-	}
-	if !sameVersion(CurrentVersion, spec.Want) || processAlive(spec.GuardPID) {
-		return false
-	}
-	slog.Warn("update: self-check was killed before the new version came up, going back", "want", spec.Want, "old", spec.Old)
-	_ = os.Remove(updateStatePath(dir, updatePendingFile))
-	if spec.Notify != nil {
-		n := *spec.Notify
-		n.Text = fmt.Sprintf("新版 %s 没能启动，已退回 %s", spec.Want, spec.Old)
-		_ = SaveRestartNotify(dir, n)
-	}
-	if _, ok := swapBackOld(spec); !ok {
-		return false
-	}
-	if err := restart(spec.Exe); err != nil {
-		slog.Error("update: start old binary failed", "error", err)
-		os.Exit(1) // a supervisor restarts us, now as the old binary
-	}
-	return true
 }
 
 // startUpdateGuard launches the backup (old) binary as the guard. Swappable in tests.
@@ -178,17 +140,17 @@ var startUpdateGuard = func(spec updateGuardSpec) error {
 			return err
 		}
 	}
+	// The marker next to the binary lets the new version roll itself back at its next start,
+	// even when the guard is gone (update_marker.go).
+	if err := writeUpdateMarker(spec, 0); err != nil {
+		return err
+	}
 	cmd := exec.Command(spec.Backup, UpdateGuardArg)
 	cmd.Env = append(os.Environ(), updateGuardEnv+"="+string(b))
 	detachCmd(cmd)
 	if err := cmd.Start(); err != nil {
+		removeUpdateMarker(spec.Exe)
 		return err
-	}
-	if spec.StateDir != "" {
-		spec.GuardPID = cmd.Process.Pid
-		if b2, err := json.Marshal(spec); err == nil {
-			_ = os.WriteFile(updateStatePath(spec.StateDir, updatePendingFile), b2, 0o600)
-		}
 	}
 	return cmd.Process.Release()
 }
@@ -342,10 +304,17 @@ func runUpdateGuard(spec updateGuardSpec, ops guardOps) UpdateResult {
 		r := UpdateResult{Status: "ok", From: spec.Old, To: spec.Want}
 		writeUpdateResult(spec.StateDir, r)
 		_ = os.Remove(updateStatePath(spec.StateDir, updateNewPIDFile))
+		removeUpdateMarker(spec.Exe) // self-check passed: later starts of the new version are normal
 		slog.Info("update guard: new version is serving", "version", spec.Want)
 		return r
 	}
 
+	if !updateMarkerExists(spec.Exe) {
+		// The new version already rolled itself back at a restart (recoverPendingUpdate) and is
+		// running as the old binary now: nothing left to swap, and nothing to kill.
+		slog.Info("update guard: already rolled back at startup", "want", spec.Want)
+		return UpdateResult{Status: "rolled_back", From: spec.Old, To: spec.Want}
+	}
 	slog.Warn("update guard: new version did not come up, rolling back", "want", spec.Want, "old", spec.Old)
 	// The chat that asked for the update hears about it from the old binary once it is back up
 	// (it reads restart_notify at startup), so the note is written before anything is swapped.
@@ -357,7 +326,9 @@ func runUpdateGuard(spec updateGuardSpec, ops guardOps) UpdateResult {
 	// Put the old binary back first, then stop the new process: under systemd (default
 	// KillMode=control-group) stopping the main process also kills this guard, so the files must
 	// already be swapped by then and the supervisor's restart picks up the old binary.
-	if r, ok := swapBackOld(spec); !ok {
+	r, ok := swapBackOld(spec)
+	removeUpdateMarker(spec.Exe) // swapped back (or cannot be): the startup check has nothing to do
+	if !ok {
 		return r
 	}
 	// Stop the new process (it may be hung rather than dead).
@@ -370,7 +341,6 @@ func runUpdateGuard(spec updateGuardSpec, ops guardOps) UpdateResult {
 		ops.kill(spec.PID) // unix: exec(2) kept the PID
 	}
 	_ = os.Remove(updateStatePath(spec.StateDir, updateNewPIDFile))
-	r := UpdateResult{Status: "rolled_back", From: spec.Old, To: spec.Want}
 
 	// A supervisor (launchd KeepAlive, the Windows service script) may bring it back by itself;
 	// otherwise start the old binary with the same arguments.

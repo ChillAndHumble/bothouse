@@ -239,6 +239,10 @@ var topLevelCommandHandlers = map[string]func([]string){
 }
 
 func main() {
+	// First of all: a new version that did not pass its update self-check last start goes back to
+	// the old binary here, before anything that can make startup exit (flags, config, lock).
+	core.RecoverPendingUpdate(version)
+
 	// Agy hooks require stdout to contain only the final JSON decision. Handle
 	// this internal command before update checks, logging, or normal CLI setup.
 	if len(os.Args) > 1 && os.Args[1] == "_agy-permission-hook" {
