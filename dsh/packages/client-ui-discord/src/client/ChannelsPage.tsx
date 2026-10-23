@@ -17,7 +17,6 @@ import css from './ChannelsPage.module.css'
 /** Injected share: the channel snapshot source and its actions. */
 export interface ChannelsInjected extends ChannelActions {
   readonly hooks: { readonly channels: HostObservable<ChannelSnapshot> }
-  openModelSettings(): void
 }
 
 /** Full props of the channels main panel. */
@@ -35,9 +34,9 @@ function KindTag({ kind, cli, t }: { kind: ChannelMember['kind'] | undefined; cl
 }
 
 function MessageRow({ message, member, t, onConfigure }: { message: ChannelMessage; member: ChannelMember | undefined; t: T; onConfigure: () => void }) {
-  let card: { title?: string; state?: string; action?: string; action?: string } | undefined
+  let card: { title?: string; state?: string; action?: string } | undefined
   if (message.card !== null) {
-    try { card = JSON.parse(message.card) as { title?: string; state?: string; action?: string; action?: string } } catch (error) { void error /* unreadable card metadata: render the text alone */ }
+    try { card = JSON.parse(message.card) as { title?: string; state?: string; action?: string } } catch (error) { void error /* unreadable card metadata: render the text alone */ }
   }
   return (
     <div className={message.author_kind === 'system' ? `${css.message} ${css.system}` : css.message}>
@@ -315,7 +314,7 @@ export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listMo
         >
           {state.messages.length === 0
             ? <div className={css.empty}>{t('empty')}</div>
-            : state.messages.map(m => <MessageRow key={m.id} message={m} member={byId.get(m.author)} t={t} openModelSettings={openModelSettings} onConfigure={() => { setModelsOpen(true) }} />)}
+            : state.messages.map(m => <MessageRow key={m.id} message={m} member={byId.get(m.author)} t={t} onConfigure={() => { setModelsOpen(true) }} />)}
         </div>
         <div className={css.working} aria-live="polite">{busyNames.length > 0 ? t('workingList', { names: busyNames.join('、') }) : ''}</div>
         <div className={css.composer}>
