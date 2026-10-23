@@ -21,7 +21,7 @@ for (const f of readdirSync(join(collabSrc, 'avatars'))) {
 }
 
 const run = (cmd) => execSync(cmd, { cwd: uiSrc, stdio: 'inherit' })
-run('npx -y pnpm@10 install --ignore-workspace')
+run('npx -y pnpm@10 install --ignore-workspace --config.confirmModulesPurge=false')
 run('npx -y pnpm@10 run bundle')
 // DSH loads a package's browser half under the package name; the UI is built as its own package, so re-key it.
 const uiPkg = JSON.parse(readFileSync(join(uiSrc, 'package.json'), 'utf8'))
