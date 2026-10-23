@@ -207,6 +207,10 @@ var topLevelCommandHandlers = map[string]func([]string){
 		fmt.Print(ccconnect.ConfigExampleTOML)
 	},
 	"config": runConfig,
+	// Post-update self-check, started by the web update from the old (backup) binary.
+	core.UpdateGuardArg: func(_ []string) {
+		os.Exit(core.RunUpdateGuard())
+	},
 	"update": func(_ []string) {
 		runUpdate()
 	},
@@ -366,6 +370,8 @@ func main() {
 
 	// the self-hosted platform the setup wizard started on this machine (<data_dir>/hub/hub.json):
 	// start it again if it is not running (after a reboot); the cloud_web bots reconnect on their own
+	core.UpdateStateDir = cfg.DataDir
+	core.NoteUpdateStart(cfg.DataDir) // a waiting update self-check needs our PID
 	go core.EnsureLocalHub(context.Background(), cfg.DataDir)
 
 	engines := make([]*core.Engine, 0, len(cfg.Projects))
