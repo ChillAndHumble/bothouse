@@ -722,6 +722,7 @@ test('member errors explain setup failures and publish error presence', () => {
   assert.equal(hub.memberView().find(m => m.id === 'ds').error, 'missing key');
   hub.setError('ds', undefined);
   assert.equal(hub.memberView().find(m => m.id === 'ds').error, undefined);
+});
 
 test('store: a v4 database gains the avatar column and keeps its members', async () => {
   const { mkdtempSync } = await import('node:fs');
