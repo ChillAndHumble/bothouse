@@ -681,7 +681,7 @@ test('roster: wizard roles are imported once, existing names skipped', async () 
   const { tmpdir } = await import('node:os');
   const dir = mkdtempSync(join(tmpdir(), 'collab-wiz-'));
   const file = join(dir, 'wizard-members.json');
-  writeFileSync(file, JSON.stringify({ members: [{ name: '橘', cli: 'claude', persona: '大姐头' }, { name: 'DeepSeek' }, { name: '鲸鱼娘' }] }));
+  writeFileSync(file, JSON.stringify({ members: [{ name: '橘', cli: 'claude', persona: '大姐头', avatar: 'orange' }, { name: 'DeepSeek' }, { name: '鲸鱼娘' }] }));
   const hub = makeHub();
   const members = fakeDsh().attach(hub, []);
   const roster = new Roster(hub, members, fakeLlm());
@@ -690,6 +690,7 @@ test('roster: wizard roles are imported once, existing names skipped', async () 
   const ju = hub.memberView().find(m => m.name === '橘');
   assert.equal(members.config.get(ju.id).cli, 'claude');
   assert.equal(members.config.get(ju.id).persona, '大姐头');
+  assert.equal(members.config.get(ju.id).avatar, 'orange');
   assert.equal(existsSync(file), false);
   assert.equal(existsSync(join(dir, 'wizard-members.imported.json')), true);
   assert.deepEqual(await roster.importWizard(file), []);

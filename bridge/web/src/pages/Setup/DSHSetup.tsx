@@ -4,6 +4,8 @@ import {
   configureDSH, getCLIs, getDSHStatus, getPersonas, installDSHPlugin, openDSHWeb,
   type DSHMember, type DSHStatus, type LocalCLI, type PersonaPreset,
 } from '@/api/wizard';
+import { PersonaLibrary, useLibrary } from '@/components/library';
+import { fmt, libraryTexts, type LibraryPersona } from '@/pages/Setup/texts';
 
 /** install.sh `== step:` markers, in order (dsh/install.sh). */
 const INSTALL_STEPS = ['download', 'deps', 'plugin'] as const;
@@ -23,7 +25,7 @@ function sameSiteURL(raw: string): string {
   return u.toString();
 }
 
-type Role = { key: number; name: string; runner: string; persona: string };
+type Role = { key: number; name: string; runner: string; persona: string; personaSlug?: string; avatar?: string };
 
 const TEXT = {
   zh: {
@@ -36,6 +38,7 @@ const TEXT = {
     rolesTitle: '谁住进 #general', rolesNote: '每个角色用本机已登录的 CLI 回话，或者用 DeepSeek 模型（要 API Key）。',
     name: '名字（@ 时用）', runner: '用什么回话', deepseek: 'DeepSeek 模型（要 API Key）',
     loggedIn: '已登录', notLoggedIn: '未登录', persona: '人设', addRole: '再加一个角色', remove: '删掉',
+    cliLoginHint: '先在终端运行 {cli} 登录一次。',
     key: 'DeepSeek API Key', keyHas: '已经保存过 Key，不换可以留空', keyHelp: '在 platform.deepseek.com 的 API Keys 页创建。',
     save: '保存，下一步', noRole: '至少留一个角色。',
     openTitle: '一切就绪', openNote: '点下面的按钮，DSH 会在新标签页打开 #general，角色已经在成员列表里。第一次打开会有一页预览版说明，点「继续」就好。',
@@ -52,6 +55,7 @@ const TEXT = {
     rolesTitle: '#general に住むキャラ', rolesNote: 'キャラはログイン済みのローカル CLI か、DeepSeek モデル（API Key が必要）で返事します。',
     name: '名前（@ で使う）', runner: '返事に使うもの', deepseek: 'DeepSeek モデル（API Key が必要）',
     loggedIn: 'ログイン済み', notLoggedIn: '未ログイン', persona: 'ペルソナ', addRole: 'キャラを追加', remove: '削除',
+    cliLoginHint: '先にターミナルで {cli} を実行してログインしてください。',
     key: 'DeepSeek API Key', keyHas: 'Key は保存済み。変えないなら空欄で OK', keyHelp: 'platform.deepseek.com の API Keys ページで作成します。',
     save: '保存して次へ', noRole: 'キャラを 1 人以上残してください。',
     openTitle: '準備完了', openNote: 'ボタンを押すと DSH が新しいタブで #general を開きます。初回はプレビュー版の説明が出るので「続行」を押してください。',
@@ -68,6 +72,7 @@ const TEXT = {
     rolesTitle: 'Who lives in #general', rolesNote: 'Each role replies through a signed-in local CLI, or the DeepSeek model (needs an API key).',
     name: 'Name (used with @)', runner: 'Replies with', deepseek: 'DeepSeek model (needs API key)',
     loggedIn: 'signed in', notLoggedIn: 'not signed in', persona: 'Persona', addRole: 'Add another role', remove: 'Remove',
+    cliLoginHint: 'Run {cli} once in a terminal to sign in.',
     key: 'DeepSeek API key', keyHas: 'A key is already saved; leave empty to keep it', keyHelp: 'Create one on the API Keys page of platform.deepseek.com.',
     save: 'Save and continue', noRole: 'Keep at least one role.',
     openTitle: 'All set', openNote: 'The button opens #general in DSH in a new tab, with your roles in the member list. The first time DSH shows a preview notice; press Continue.',
@@ -79,6 +84,8 @@ const TEXT = {
 export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () => void }) {
   const l = lang.toLowerCase();
   const t = l.startsWith('zh') ? TEXT.zh : l.startsWith('ja') ? TEXT.ja : TEXT.en;
+  const { lib, error: libError, reload: reloadLib } = useLibrary(lang);
+  const LT = libraryTexts(lang);
   const [status, setStatus] = useState<DSHStatus | null>(null);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -106,12 +113,39 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
   const runners = clis.filter((c) => c.supported && CLI_OF[c.agent_type]);
   const defaultRunner = () => (runners.find((c) => c.login === 'logged_in') || runners[0])?.agent_type || DEEPSEEK;
   const newRole = (taken: string[]): Role => {
+    const lp = lib?.personas.find((x) => !taken.includes(x.name) && !x.hidden);
+    if (lp) {
+      return {
+        key: nextKey.current++,
+        name: lp.name,
+        runner: defaultRunner(),
+        persona: lp.text,
+        personaSlug: lp.slug,
+        avatar: lp.avatar || '',
+      };
+    }
     const p = presets.find((x) => !taken.includes(x.name));
-    return { key: nextKey.current++, name: p?.name || '', runner: defaultRunner(), persona: p?.text || '' };
+    return {
+      key: nextKey.current++,
+      name: p?.name || '',
+      runner: defaultRunner(),
+      persona: p?.text || '',
+      personaSlug: p?.id || '',
+      avatar: p?.avatar || '',
+    };
   };
   // Enter the roles step with one role filled from the first persona preset.
   const goRoles = () => { setRoles((rs) => (rs.length ? rs : [newRole([])])); setStep(2); };
   const patch = (key: number, p: Partial<Role>) => setRoles((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
+
+  useEffect(() => {
+    if (lib && roles.length === 1 && !roles[0].avatar) {
+      const p = lib.personas.find((x) => x.name === roles[0].name) || lib.personas[0];
+      if (p) {
+        setRoles([{ ...roles[0], name: p.name, persona: p.text, personaSlug: p.slug, avatar: p.avatar || '' }]);
+      }
+    }
+  }, [lib]);
 
   const install = () => run(async () => {
     setLog([]); setInstallDone(false); setInstallStep('download');
@@ -131,7 +165,10 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
   const save = () => run(async () => {
     if (roles.length === 0) throw new Error(t.noRole);
     const members: DSHMember[] = roles.map((r) => ({
-      name: r.name.trim(), persona: r.persona, ...(r.runner === DEEPSEEK ? {} : { cli: CLI_OF[r.runner] }),
+      name: r.name.trim(),
+      persona: r.persona,
+      avatar: r.avatar || undefined,
+      ...(r.runner === DEEPSEEK ? {} : { cli: CLI_OF[r.runner] }),
     }));
     await configureDSH({ deepseek_api_key: needsKey ? apiKey.trim() : undefined, members });
     setStep(3);
@@ -187,25 +224,42 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
 
       {step === 2 && <>
         <div><h3 className="font-semibold">{t.rolesTitle}</h3><p className="text-sm text-gray-500">{t.rolesNote}</p></div>
-        {roles.map((r, idx) => <div key={r.key} className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3" data-testid={`dsh-role-${idx}`}>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Input label={t.name} value={r.name} onChange={(e) => patch(r.key, { name: e.target.value })} data-testid={`dsh-role-name-${idx}`} />
-            <label className="block text-sm">
-              <span className="block mb-1 text-gray-700 dark:text-gray-300">{t.runner}</span>
-              <select className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
-                value={r.runner} onChange={(e) => patch(r.key, { runner: e.target.value })} data-testid={`dsh-role-runner-${idx}`}>
-                {runners.map((c) => <option key={c.agent_type} value={c.agent_type}>{cliLabel(c)}</option>)}
-                <option value={DEEPSEEK}>{t.deepseek}</option>
-              </select>
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {presets.map((p) => <Button key={p.id} size="sm" variant="secondary" data-testid={`dsh-preset-${idx}-${p.id}`}
-              onClick={() => patch(r.key, { name: p.name, persona: p.text })}>{p.name}</Button>)}
-          </div>
-          <Textarea rows={4} value={r.persona} placeholder={t.persona} onChange={(e) => patch(r.key, { persona: e.target.value })} data-testid={`dsh-role-persona-${idx}`} />
-          {roles.length > 1 && <Button size="sm" variant="secondary" onClick={() => setRoles((rs) => rs.filter((x) => x.key !== r.key))}>{t.remove}</Button>}
-        </div>)}
+        {roles.map((r, idx) => {
+          const selectedCli = clis.find((c) => c.agent_type === r.runner);
+          const notLoggedIn = selectedCli && selectedCli.login === 'not_logged_in';
+          return (
+            <div key={r.key} className="space-y-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3" data-testid={`dsh-role-${idx}`}>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input label={t.name} value={r.name} onChange={(e) => patch(r.key, { name: e.target.value })} data-testid={`dsh-role-name-${idx}`} />
+                <label className="block text-sm">
+                  <span className="block mb-1 text-gray-700 dark:text-gray-300">{t.runner}</span>
+                  <select className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800"
+                    value={r.runner} onChange={(e) => patch(r.key, { runner: e.target.value })} data-testid={`dsh-role-runner-${idx}`}>
+                    {runners.map((c) => <option key={c.agent_type} value={c.agent_type}>{cliLabel(c)}</option>)}
+                    <option value={DEEPSEEK}>{t.deepseek}</option>
+                  </select>
+                  {notLoggedIn && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1" data-testid={`dsh-cli-login-hint-${idx}`}>
+                      {fmt(t.cliLoginHint, { cli: selectedCli.agent_type })}
+                    </p>
+                  )}
+                </label>
+              </div>
+
+              {lib ? (
+                <PersonaLibrary lib={lib} lang={lang} T={LT} reload={reloadLib} selected={r.personaSlug}
+                  onPick={(p: LibraryPersona | null) => patch(r.key, p
+                    ? { name: p.name, persona: p.text, personaSlug: p.slug, avatar: p.avatar || '' }
+                    : { personaSlug: '', avatar: '' })} />
+              ) : (
+                <p className="text-xs text-gray-500">{libError ? fmt(LT.loadFailed, { error: libError }) : LT.loading}</p>
+              )}
+
+              <Textarea rows={4} value={r.persona} placeholder={t.persona} onChange={(e) => patch(r.key, { persona: e.target.value })} data-testid={`dsh-role-persona-${idx}`} />
+              {roles.length > 1 && <Button size="sm" variant="secondary" onClick={() => setRoles((rs) => rs.filter((x) => x.key !== r.key))}>{t.remove}</Button>}
+            </div>
+          );
+        })}
         <Button variant="secondary" onClick={() => setRoles((rs) => [...rs, newRole(rs.map((x) => x.name))])} data-testid="dsh-add-role">{t.addRole}</Button>
         {needsKey && <div className="space-y-1">
           <Input label={t.key} type="password" autoComplete="off" value={apiKey} placeholder={status?.has_deepseek_key ? t.keyHas : 'sk-…'}

@@ -64,7 +64,8 @@ export class Roster {
       const name = String(m?.name ?? '').trim();
       if (this.hub.memberList().some(x => x.name.toLowerCase() === name.toLowerCase())) continue;
       try {
-        await this.create({ name, persona: m?.persona ?? '', ...(m?.cli ? { cli: m.cli } : {}) });
+        const avatar = m?.avatar && ['orange', 'whale', 'dragon', 'rainbow', 'lanxi'].includes(m.avatar) ? m.avatar : undefined;
+        await this.create({ name, persona: m?.persona ?? '', ...(m?.cli ? { cli: m.cli } : {}), ...(avatar ? { avatar } : {}) });
         added.push(name);
       } catch (error) {
         logger?.warn?.('conest-collab: wizard member %s not added: %s', name, error?.message ?? error);
