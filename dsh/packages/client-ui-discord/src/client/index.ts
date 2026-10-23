@@ -48,12 +48,18 @@ export function apply(ctx: ClientContext): void {
     updateMember: channels.actions.updateMember,
     removeMember: channels.actions.removeMember,
   })
-  ctx.slots.inject('main', () => ctx.slots.register({
-    name: 'main',
-    key: PANEL_ID,
-    locale: NS,
-    inject: injected,
-  }, ChannelsPage))
+  ctx.slots.inject('main', () => {
+    const dispose = ctx.slots.register({
+      name: 'main',
+      key: PANEL_ID,
+      locale: NS,
+      inject: injected,
+    }, ChannelsPage)
+    // Deep link: the setup wizard opens `…#channels` (bridge core/setup_dsh_configure.go dshChannelsHash).
+    // ui-layout provides ctx.layout before it declares the `main` slot, so it is live here.
+    if (location.hash === `#${PANEL_ID}`) ctx.layout.selectPanel(PANEL_ID)
+    return dispose
+  })
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist',
     id: PANEL_ID,
