@@ -149,7 +149,7 @@ func without(list []string, s string) []string {
 // with name, intro and avatar, then the full text. No front matter = the whole file is the text.
 func ParsePersonaFile(b []byte) (name, intro, avatar, text string) {
 	s := strings.ReplaceAll(string(b), "\r\n", "\n")
-	s = strings.TrimPrefix(s, "﻿")
+	s = strings.TrimPrefix(s, "\ufeff")
 	if rest, ok := strings.CutPrefix(s, "---\n"); ok {
 		if head, body, ok := strings.Cut(rest, "\n---\n"); ok {
 			for _, line := range strings.Split(head, "\n") {
