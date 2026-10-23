@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
  factory: (require) => {
  var module = { exports: {} };
  var exports = module.exports;
-(function(){var s=document.createElement('style');s.setAttribute('data-dsh-plugin',"dsh-experimental-client-ui-discord");s.textContent=".hXkKqa_page {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  padding-top: var(--dsh-frame-top-clearance, 0px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  grid-template-columns: 220px minmax(0, 1fr) 240px;\n  font-size: 14px;\n  line-height: 1.5;\n  display: grid;\n}\n\n.hXkKqa_notice {\n  max-width: 480px;\n  color: var(--dsw-alias-label-secondary);\n  text-align: center;\n  grid-column: 1 / -1;\n  place-self: center;\n  padding: 24px;\n}\n\n.hXkKqa_rooms, .hXkKqa_members {\n  background: var(--dsw-alias-bg-layer-2);\n  min-height: 0;\n  padding: 8px 8px 16px;\n  overflow-y: auto;\n}\n\n.hXkKqa_groupTitle {\n  color: var(--dsw-alias-label-tertiary);\n  letter-spacing: .02em;\n  margin: 12px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.hXkKqa_room {\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.hXkKqa_room:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_room:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.hXkKqa_roomActive {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_hash {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 16px;\n}\n\n.hXkKqa_chat {\n  flex-direction: column;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n}\n\n.hXkKqa_chatHead {\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  align-items: center;\n  gap: 6px;\n  height: 44px;\n  padding: 0 16px;\n  font-weight: 600;\n  display: flex;\n}\n\n.hXkKqa_log {\n  flex: 1;\n  min-height: 0;\n  padding: 8px 0 12px;\n  overflow-y: auto;\n}\n\n.hXkKqa_empty {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 24px 16px;\n}\n\n.hXkKqa_message {\n  grid-template-columns: 36px minmax(0, 1fr);\n  gap: 12px;\n  padding: 6px 16px;\n  display: grid;\n}\n\n.hXkKqa_message:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_system .hXkKqa_text {\n  color: var(--dsw-alias-label-tertiary);\n  font-style: italic;\n}\n\n.hXkKqa_avatar {\n  corner-shape: round;\n  color: #fff;\n  border-radius: 50%;\n  place-items: center;\n  width: 36px;\n  height: 36px;\n  font-weight: 700;\n  display: grid;\n}\n\n.hXkKqa_avatarSmall {\n  width: 28px;\n  height: 28px;\n  font-size: 12px;\n}\n\n.hXkKqa_messageBody {\n  min-width: 0;\n}\n\n.hXkKqa_messageHead {\n  align-items: baseline;\n  gap: 6px;\n  display: flex;\n}\n\n.hXkKqa_author {\n  font-weight: 600;\n}\n\n.hXkKqa_time {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n.hXkKqa_tag {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-primary-inverted);\n  background: var(--dsw-alias-state-business-primary);\n  white-space: nowrap;\n  padding: 0 4px;\n  font-size: 10px;\n  font-weight: 600;\n}\n\n.hXkKqa_text {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.hXkKqa_card {\n  border-left: 4px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-2);\n  margin-top: 4px;\n  padding: 6px 10px;\n}\n\n.hXkKqa_card[data-state=\"failed\"] {\n  border-left-color: var(--dsw-alias-state-error-primary);\n}\n\n.hXkKqa_cardTitle {\n  font-size: 13px;\n  font-weight: 600;\n}\n\n.hXkKqa_working {\n  min-height: 20px;\n  color: var(--dsw-alias-label-tertiary);\n  padding: 0 16px;\n  font-size: 12px;\n}\n\n.hXkKqa_composer {\n  padding: 0 16px 16px;\n  position: relative;\n}\n\n.hXkKqa_composerRow {\n  align-items: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.hXkKqa_mentionButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 40px;\n  height: 40px;\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  cursor: pointer;\n  flex: none;\n  font-size: 18px;\n  font-weight: 600;\n}\n\n.hXkKqa_mentionButton:hover:not(:disabled) {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_mentionButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.hXkKqa_mentionPopup {\n  z-index: 2;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-base);\n  max-height: 320px;\n  box-shadow: var(--dsw-elevation-panel, 0 8px 24px #0000003d);\n  flex-direction: column;\n  padding: 6px;\n  display: flex;\n  position: absolute;\n  bottom: calc(100% - 8px);\n  left: 16px;\n  right: 16px;\n}\n\n.hXkKqa_mentionPopup > [role=\"listbox\"] {\n  min-height: 0;\n  overflow-y: auto;\n}\n\n.hXkKqa_mentionTitle {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 4px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.hXkKqa_mentionItem {\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  align-items: center;\n  gap: 10px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.hXkKqa_mentionActive {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_mentionName {\n  font-weight: 600;\n}\n\n.hXkKqa_mentionMeta {\n  color: var(--dsw-alias-label-tertiary);\n  margin-left: auto;\n  font-size: 12px;\n}\n\n.hXkKqa_mentionHint {\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-tertiary);\n  padding: 6px 8px 2px;\n  font-size: 11px;\n}\n\n.hXkKqa_sendError {\n  color: var(--dsw-alias-state-error-primary);\n  margin-bottom: 6px;\n  font-size: 12px;\n}\n\n.hXkKqa_input {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 100%;\n  max-height: 40vh;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  resize: none;\n  field-sizing: content;\n  padding: 10px 14px;\n}\n\n.hXkKqa_input:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.hXkKqa_member {\n  border-radius: var(--dsw-radius-sm);\n  min-width: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  flex: 1;\n  align-items: center;\n  gap: 10px;\n  padding: 5px 8px;\n  display: flex;\n}\n\n.hXkKqa_member:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_member:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.hXkKqa_offline {\n  opacity: .5;\n}\n\n.hXkKqa_memberAvatar {\n  position: relative;\n}\n\n.hXkKqa_presence {\n  border: 2px solid var(--dsw-alias-bg-layer-2);\n  corner-shape: round;\n  background: #23a55a;\n  border-radius: 50%;\n  width: 10px;\n  height: 10px;\n  position: absolute;\n  bottom: -2px;\n  right: -2px;\n}\n\n.hXkKqa_offline .hXkKqa_presence {\n  background: var(--dsw-alias-label-tertiary);\n}\n\n.hXkKqa_memberText {\n  flex-direction: column;\n  min-width: 0;\n  display: flex;\n}\n\n.hXkKqa_memberName {\n  align-items: center;\n  gap: 6px;\n  display: flex;\n}\n\n.hXkKqa_memberStatus {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n@media (width <= 900px) {\n  .hXkKqa_page {\n    grid-template-columns: minmax(0, 1fr);\n  }\n\n  .hXkKqa_rooms, .hXkKqa_members {\n    display: none;\n  }\n}\n\n.hXkKqa_groupHead {\n  justify-content: space-between;\n  align-items: center;\n  padding-right: 4px;\n  display: flex;\n}\n\n.hXkKqa_iconButton {\n  border-radius: var(--dsw-radius-sm);\n  width: 22px;\n  height: 22px;\n  color: var(--dsw-alias-label-tertiary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  font-size: 16px;\n  line-height: 1;\n}\n\n.hXkKqa_iconButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_roomInput, .hXkKqa_fieldInput {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  font: inherit;\n  padding: 6px 8px;\n}\n\n.hXkKqa_roomInput {\n  margin: 2px 0 6px;\n}\n\n.hXkKqa_roomInput:focus-visible, .hXkKqa_fieldInput:focus-visible, .hXkKqa_iconButton:focus-visible, .hXkKqa_linkButton:focus-visible, .hXkKqa_addMemberButton:focus-visible, .hXkKqa_primaryButton:focus-visible, .hXkKqa_secondaryButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.hXkKqa_addMemberButton {\n  border: 1px dashed var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  margin: 4px 0;\n  padding: 7px 8px;\n}\n\n.hXkKqa_addMemberButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_memberRow {\n  border-radius: var(--dsw-radius-sm);\n  align-items: center;\n  display: flex;\n  position: relative;\n}\n\n.hXkKqa_memberRow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.hXkKqa_memberRow .hXkKqa_member:hover {\n  background: none;\n}\n\n.hXkKqa_memberModel {\n  color: var(--dsw-alias-label-tertiary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  font-size: 11px;\n  overflow: hidden;\n}\n\n.hXkKqa_memberActions {\n  color: var(--dsw-alias-label-tertiary);\n  opacity: 0;\n  flex: none;\n  gap: 4px;\n  padding-right: 6px;\n  font-size: 12px;\n  display: flex;\n}\n\n.hXkKqa_memberRow:hover .hXkKqa_memberActions, .hXkKqa_memberRow:focus-within .hXkKqa_memberActions {\n  opacity: 1;\n}\n\n.hXkKqa_linkButton {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  padding: 2px 4px;\n  font-size: 12px;\n}\n\n.hXkKqa_linkButton:hover {\n  color: var(--dsw-alias-label-primary);\n  text-decoration: underline;\n}\n\n.hXkKqa_dialogBackdrop {\n  z-index: 10;\n  background: #00000073;\n  place-items: center;\n  padding: 16px;\n  display: grid;\n  position: fixed;\n  inset: 0;\n}\n\n.hXkKqa_dialog {\n  border-radius: var(--dsw-radius-lg);\n  width: min(460px, 100%);\n  max-height: calc(100vh - 32px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-elevation-panel, 0 12px 32px #0000004d);\n  flex-direction: column;\n  gap: 12px;\n  padding: 20px;\n  display: flex;\n  overflow-y: auto;\n}\n\n.hXkKqa_dialogTitle {\n  margin: 0;\n  font-size: 16px;\n}\n\n.hXkKqa_field {\n  color: var(--dsw-alias-label-secondary);\n  flex-direction: column;\n  gap: 4px;\n  font-size: 12px;\n  display: flex;\n}\n\n.hXkKqa_field textarea {\n  resize: vertical;\n}\n\n.hXkKqa_choiceRow {\n  flex-wrap: wrap;\n  gap: 12px;\n  display: flex;\n}\n\n.hXkKqa_choice {\n  color: var(--dsw-alias-label-primary, inherit);\n  cursor: pointer;\n  align-items: center;\n  gap: 4px;\n  font-size: 13px;\n  display: inline-flex;\n}\n\n.hXkKqa_dialogActions {\n  justify-content: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.hXkKqa_primaryButton, .hXkKqa_secondaryButton {\n  border-radius: var(--dsw-radius-sm);\n  font: inherit;\n  cursor: pointer;\n  padding: 7px 14px;\n}\n\n.hXkKqa_primaryButton {\n  color: #fff;\n  background: var(--dsw-alias-state-business-primary);\n  border: 0;\n}\n\n.hXkKqa_primaryButton:disabled {\n  cursor: not-allowed;\n  opacity: .5;\n}\n\n.hXkKqa_secondaryButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  background: none;\n}\n";document.head.appendChild(s)})();
+(function(){var s=document.createElement('style');s.setAttribute('data-dsh-plugin',"dsh-experimental-client-ui-discord");s.textContent=".LVAO-q_page {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  padding-top: var(--dsh-frame-top-clearance, 0px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  grid-template-columns: 220px minmax(0, 1fr) 240px;\n  font-size: 14px;\n  line-height: 1.5;\n  display: grid;\n}\n\n.LVAO-q_notice {\n  max-width: 480px;\n  color: var(--dsw-alias-label-secondary);\n  text-align: center;\n  grid-column: 1 / -1;\n  place-self: center;\n  padding: 24px;\n}\n\n.LVAO-q_rooms, .LVAO-q_members {\n  background: var(--dsw-alias-bg-layer-2);\n  min-height: 0;\n  padding: 8px 8px 16px;\n  overflow-y: auto;\n}\n\n.LVAO-q_groupTitle {\n  color: var(--dsw-alias-label-tertiary);\n  letter-spacing: .02em;\n  margin: 12px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.LVAO-q_room {\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.LVAO-q_room:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_room:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.LVAO-q_roomActive {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_hash {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 16px;\n}\n\n.LVAO-q_chat {\n  flex-direction: column;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n}\n\n.LVAO-q_chatHead {\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  align-items: center;\n  gap: 6px;\n  height: 44px;\n  padding: 0 16px;\n  font-weight: 600;\n  display: flex;\n}\n\n.LVAO-q_log {\n  flex: 1;\n  min-height: 0;\n  padding: 8px 0 12px;\n  overflow-y: auto;\n}\n\n.LVAO-q_empty {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 24px 16px;\n}\n\n.LVAO-q_message {\n  grid-template-columns: 36px minmax(0, 1fr);\n  gap: 12px;\n  padding: 6px 16px;\n  display: grid;\n}\n\n.LVAO-q_message:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_system .LVAO-q_text {\n  color: var(--dsw-alias-label-tertiary);\n  font-style: italic;\n}\n\n.LVAO-q_avatar {\n  corner-shape: round;\n  color: #fff;\n  border-radius: 50%;\n  place-items: center;\n  width: 36px;\n  height: 36px;\n  font-weight: 700;\n  display: grid;\n  position: relative;\n}\n\n.LVAO-q_avatarImage {\n  object-fit: cover;\n  border-radius: 50%;\n  width: 100%;\n  height: 100%;\n  position: absolute;\n  inset: 0;\n}\n\n.LVAO-q_avatarSmall {\n  width: 28px;\n  height: 28px;\n  font-size: 12px;\n}\n\n.LVAO-q_messageBody {\n  min-width: 0;\n}\n\n.LVAO-q_messageHead {\n  align-items: baseline;\n  gap: 6px;\n  display: flex;\n}\n\n.LVAO-q_author {\n  font-weight: 600;\n}\n\n.LVAO-q_time {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n.LVAO-q_tag {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-primary-inverted);\n  background: var(--dsw-alias-state-business-primary);\n  white-space: nowrap;\n  padding: 0 4px;\n  font-size: 10px;\n  font-weight: 600;\n}\n\n.LVAO-q_text {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.LVAO-q_card {\n  border-left: 4px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-2);\n  margin-top: 4px;\n  padding: 6px 10px;\n}\n\n.LVAO-q_card[data-state=\"failed\"] {\n  border-left-color: var(--dsw-alias-state-error-primary);\n}\n\n.LVAO-q_cardTitle {\n  font-size: 13px;\n  font-weight: 600;\n}\n\n.LVAO-q_working {\n  min-height: 20px;\n  color: var(--dsw-alias-label-tertiary);\n  padding: 0 16px;\n  font-size: 12px;\n}\n\n.LVAO-q_composer {\n  padding: 0 16px 16px;\n  position: relative;\n}\n\n.LVAO-q_composerRow {\n  align-items: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.LVAO-q_mentionButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 40px;\n  height: 40px;\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  cursor: pointer;\n  flex: none;\n  font-size: 18px;\n  font-weight: 600;\n}\n\n.LVAO-q_mentionButton:hover:not(:disabled) {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_mentionButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.LVAO-q_mentionPopup {\n  z-index: 2;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-base);\n  max-height: 320px;\n  box-shadow: var(--dsw-elevation-panel, 0 8px 24px #0000003d);\n  flex-direction: column;\n  padding: 6px;\n  display: flex;\n  position: absolute;\n  bottom: calc(100% - 8px);\n  left: 16px;\n  right: 16px;\n}\n\n.LVAO-q_mentionPopup > [role=\"listbox\"] {\n  min-height: 0;\n  overflow-y: auto;\n}\n\n.LVAO-q_mentionTitle {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 4px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.LVAO-q_mentionItem {\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  align-items: center;\n  gap: 10px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.LVAO-q_mentionActive {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_mentionName {\n  font-weight: 600;\n}\n\n.LVAO-q_mentionMeta {\n  color: var(--dsw-alias-label-tertiary);\n  margin-left: auto;\n  font-size: 12px;\n}\n\n.LVAO-q_mentionHint {\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-tertiary);\n  padding: 6px 8px 2px;\n  font-size: 11px;\n}\n\n.LVAO-q_sendError {\n  color: var(--dsw-alias-state-error-primary);\n  margin-bottom: 6px;\n  font-size: 12px;\n}\n\n.LVAO-q_input {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 100%;\n  max-height: 40vh;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  resize: none;\n  field-sizing: content;\n  padding: 10px 14px;\n}\n\n.LVAO-q_input:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.LVAO-q_member {\n  border-radius: var(--dsw-radius-sm);\n  min-width: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  flex: 1;\n  align-items: center;\n  gap: 10px;\n  padding: 5px 8px;\n  display: flex;\n}\n\n.LVAO-q_member:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_member:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.LVAO-q_offline {\n  opacity: .5;\n}\n\n.LVAO-q_memberAvatar {\n  position: relative;\n}\n\n.LVAO-q_presence {\n  border: 2px solid var(--dsw-alias-bg-layer-2);\n  corner-shape: round;\n  background: #23a55a;\n  border-radius: 50%;\n  width: 10px;\n  height: 10px;\n  position: absolute;\n  bottom: -2px;\n  right: -2px;\n}\n\n.LVAO-q_offline .LVAO-q_presence {\n  background: var(--dsw-alias-label-tertiary);\n}\n\n.LVAO-q_memberText {\n  flex-direction: column;\n  min-width: 0;\n  display: flex;\n}\n\n.LVAO-q_memberName {\n  align-items: center;\n  gap: 6px;\n  display: flex;\n}\n\n.LVAO-q_memberStatus {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n@media (width <= 900px) {\n  .LVAO-q_page {\n    grid-template-columns: minmax(0, 1fr);\n  }\n\n  .LVAO-q_rooms, .LVAO-q_members {\n    display: none;\n  }\n}\n\n.LVAO-q_groupHead {\n  justify-content: space-between;\n  align-items: center;\n  padding-right: 4px;\n  display: flex;\n}\n\n.LVAO-q_iconButton {\n  border-radius: var(--dsw-radius-sm);\n  width: 22px;\n  height: 22px;\n  color: var(--dsw-alias-label-tertiary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  font-size: 16px;\n  line-height: 1;\n}\n\n.LVAO-q_iconButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_roomInput, .LVAO-q_fieldInput {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  font: inherit;\n  padding: 6px 8px;\n}\n\n.LVAO-q_roomInput {\n  margin: 2px 0 6px;\n}\n\n.LVAO-q_roomInput:focus-visible, .LVAO-q_fieldInput:focus-visible, .LVAO-q_iconButton:focus-visible, .LVAO-q_linkButton:focus-visible, .LVAO-q_addMemberButton:focus-visible, .LVAO-q_primaryButton:focus-visible, .LVAO-q_secondaryButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.LVAO-q_addMemberButton {\n  border: 1px dashed var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  margin: 4px 0;\n  padding: 7px 8px;\n}\n\n.LVAO-q_addMemberButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_memberRow {\n  border-radius: var(--dsw-radius-sm);\n  align-items: center;\n  display: flex;\n  position: relative;\n}\n\n.LVAO-q_memberRow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.LVAO-q_memberRow .LVAO-q_member:hover {\n  background: none;\n}\n\n.LVAO-q_memberModel {\n  color: var(--dsw-alias-label-tertiary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  font-size: 11px;\n  overflow: hidden;\n}\n\n.LVAO-q_memberActions {\n  color: var(--dsw-alias-label-tertiary);\n  opacity: 0;\n  flex: none;\n  gap: 4px;\n  padding-right: 6px;\n  font-size: 12px;\n  display: flex;\n}\n\n.LVAO-q_memberRow:hover .LVAO-q_memberActions, .LVAO-q_memberRow:focus-within .LVAO-q_memberActions {\n  opacity: 1;\n}\n\n.LVAO-q_linkButton {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  padding: 2px 4px;\n  font-size: 12px;\n}\n\n.LVAO-q_linkButton:hover {\n  color: var(--dsw-alias-label-primary);\n  text-decoration: underline;\n}\n\n.LVAO-q_dialogBackdrop {\n  z-index: 10;\n  background: #00000073;\n  place-items: center;\n  padding: 16px;\n  display: grid;\n  position: fixed;\n  inset: 0;\n}\n\n.LVAO-q_dialog {\n  border-radius: var(--dsw-radius-lg);\n  width: min(460px, 100%);\n  max-height: calc(100vh - 32px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-elevation-panel, 0 12px 32px #0000004d);\n  flex-direction: column;\n  gap: 12px;\n  padding: 20px;\n  display: flex;\n  overflow-y: auto;\n}\n\n.LVAO-q_dialogTitle {\n  margin: 0;\n  font-size: 16px;\n}\n\n.LVAO-q_field {\n  color: var(--dsw-alias-label-secondary);\n  flex-direction: column;\n  gap: 4px;\n  font-size: 12px;\n  display: flex;\n}\n\n.LVAO-q_field textarea {\n  resize: vertical;\n}\n\n.LVAO-q_choiceRow {\n  flex-wrap: wrap;\n  gap: 12px;\n  display: flex;\n}\n\n.LVAO-q_choice {\n  color: var(--dsw-alias-label-primary, inherit);\n  cursor: pointer;\n  align-items: center;\n  gap: 4px;\n  font-size: 13px;\n  display: inline-flex;\n}\n\n.LVAO-q_dialogActions {\n  justify-content: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.LVAO-q_primaryButton, .LVAO-q_secondaryButton {\n  border-radius: var(--dsw-radius-sm);\n  font: inherit;\n  cursor: pointer;\n  padding: 7px 14px;\n}\n\n.LVAO-q_primaryButton {\n  color: #fff;\n  background: var(--dsw-alias-state-business-primary);\n  border: 0;\n}\n\n.LVAO-q_primaryButton:disabled {\n  cursor: not-allowed;\n  opacity: .5;\n}\n\n.LVAO-q_secondaryButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  background: none;\n}\n\n.LVAO-q_avatarPicker {\n  flex-wrap: wrap;\n  gap: 8px;\n  display: flex;\n}\n\n.LVAO-q_avatarOption {\n  cursor: pointer;\n  background: none;\n  border: 2px solid #0000;\n  border-radius: 50%;\n  padding: 2px;\n  display: grid;\n}\n\n.LVAO-q_avatarOption[aria-checked=\"true\"] {\n  border-color: var(--dsw-alias-accent, #5865f2);\n}\n";document.head.appendChild(s)})();
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let react_jsx_runtime = require("react/jsx-runtime");
@@ -369,76 +369,137 @@ function insertMention(text, caret, member) {
 		caret: caret + insert.length
 	};
 }
+// src/client/avatars.ts
+/**
+* Built-in member avatars served by the collab plugin at `collab/avatars/<slug>.png`:
+* the five original character portraits (user 2026-10-23: 「我还是保留原本那个」).
+*/
+const AVATARS = [
+	"orange",
+	"whale",
+	"dragon",
+	"rainbow",
+	"lanxi"
+];
+/**
+* Image source for a member avatar.
+* @param avatar - built-in slug, http(s) URL announced by a bot, or empty.
+* @returns a URL relative to the document base, the absolute URL, or undefined for the initial badge.
+*/
+function avatarSrc(avatar) {
+	if (avatar === void 0 || avatar === "") return void 0;
+	if (/^https?:\/\//.test(avatar)) return avatar;
+	return AVATARS.includes(avatar) ? `collab/avatars/${avatar}.png` : void 0;
+}
 // src/client/ChannelsPage.module.css
 var ChannelsPage_module_default = {
-	"addMemberButton": "hXkKqa_addMemberButton",
-	"author": "hXkKqa_author",
-	"avatar": "hXkKqa_avatar",
-	"avatarSmall": "hXkKqa_avatarSmall",
-	"card": "hXkKqa_card",
-	"cardTitle": "hXkKqa_cardTitle",
-	"chat": "hXkKqa_chat",
-	"chatHead": "hXkKqa_chatHead",
-	"choice": "hXkKqa_choice",
-	"choiceRow": "hXkKqa_choiceRow",
-	"composer": "hXkKqa_composer",
-	"composerRow": "hXkKqa_composerRow",
-	"dialog": "hXkKqa_dialog",
-	"dialogActions": "hXkKqa_dialogActions",
-	"dialogBackdrop": "hXkKqa_dialogBackdrop",
-	"dialogTitle": "hXkKqa_dialogTitle",
-	"empty": "hXkKqa_empty",
-	"field": "hXkKqa_field",
-	"fieldInput": "hXkKqa_fieldInput",
-	"groupHead": "hXkKqa_groupHead",
-	"groupTitle": "hXkKqa_groupTitle",
-	"hash": "hXkKqa_hash",
-	"iconButton": "hXkKqa_iconButton",
-	"input": "hXkKqa_input",
-	"linkButton": "hXkKqa_linkButton",
-	"log": "hXkKqa_log",
-	"member": "hXkKqa_member",
-	"memberActions": "hXkKqa_memberActions",
-	"memberAvatar": "hXkKqa_memberAvatar",
-	"memberModel": "hXkKqa_memberModel",
-	"memberName": "hXkKqa_memberName",
-	"memberRow": "hXkKqa_memberRow",
-	"members": "hXkKqa_members",
-	"memberStatus": "hXkKqa_memberStatus",
-	"memberText": "hXkKqa_memberText",
-	"mentionActive": "hXkKqa_mentionActive",
-	"mentionButton": "hXkKqa_mentionButton",
-	"mentionHint": "hXkKqa_mentionHint",
-	"mentionItem": "hXkKqa_mentionItem",
-	"mentionMeta": "hXkKqa_mentionMeta",
-	"mentionName": "hXkKqa_mentionName",
-	"mentionPopup": "hXkKqa_mentionPopup",
-	"mentionTitle": "hXkKqa_mentionTitle",
-	"message": "hXkKqa_message",
-	"messageBody": "hXkKqa_messageBody",
-	"messageHead": "hXkKqa_messageHead",
-	"notice": "hXkKqa_notice",
-	"offline": "hXkKqa_offline",
-	"page": "hXkKqa_page",
-	"presence": "hXkKqa_presence",
-	"primaryButton": "hXkKqa_primaryButton",
-	"room": "hXkKqa_room",
-	"roomActive": "hXkKqa_roomActive",
-	"roomInput": "hXkKqa_roomInput",
-	"rooms": "hXkKqa_rooms",
-	"secondaryButton": "hXkKqa_secondaryButton",
-	"sendError": "hXkKqa_sendError",
-	"system": "hXkKqa_system",
-	"tag": "hXkKqa_tag",
-	"text": "hXkKqa_text",
-	"time": "hXkKqa_time",
-	"working": "hXkKqa_working"
+	"addMemberButton": "LVAO-q_addMemberButton",
+	"author": "LVAO-q_author",
+	"avatar": "LVAO-q_avatar",
+	"avatarImage": "LVAO-q_avatarImage",
+	"avatarOption": "LVAO-q_avatarOption",
+	"avatarPicker": "LVAO-q_avatarPicker",
+	"avatarSmall": "LVAO-q_avatarSmall",
+	"card": "LVAO-q_card",
+	"cardTitle": "LVAO-q_cardTitle",
+	"chat": "LVAO-q_chat",
+	"chatHead": "LVAO-q_chatHead",
+	"choice": "LVAO-q_choice",
+	"choiceRow": "LVAO-q_choiceRow",
+	"composer": "LVAO-q_composer",
+	"composerRow": "LVAO-q_composerRow",
+	"dialog": "LVAO-q_dialog",
+	"dialogActions": "LVAO-q_dialogActions",
+	"dialogBackdrop": "LVAO-q_dialogBackdrop",
+	"dialogTitle": "LVAO-q_dialogTitle",
+	"empty": "LVAO-q_empty",
+	"field": "LVAO-q_field",
+	"fieldInput": "LVAO-q_fieldInput",
+	"groupHead": "LVAO-q_groupHead",
+	"groupTitle": "LVAO-q_groupTitle",
+	"hash": "LVAO-q_hash",
+	"iconButton": "LVAO-q_iconButton",
+	"input": "LVAO-q_input",
+	"linkButton": "LVAO-q_linkButton",
+	"log": "LVAO-q_log",
+	"member": "LVAO-q_member",
+	"memberActions": "LVAO-q_memberActions",
+	"memberAvatar": "LVAO-q_memberAvatar",
+	"memberModel": "LVAO-q_memberModel",
+	"memberName": "LVAO-q_memberName",
+	"memberRow": "LVAO-q_memberRow",
+	"members": "LVAO-q_members",
+	"memberStatus": "LVAO-q_memberStatus",
+	"memberText": "LVAO-q_memberText",
+	"mentionActive": "LVAO-q_mentionActive",
+	"mentionButton": "LVAO-q_mentionButton",
+	"mentionHint": "LVAO-q_mentionHint",
+	"mentionItem": "LVAO-q_mentionItem",
+	"mentionMeta": "LVAO-q_mentionMeta",
+	"mentionName": "LVAO-q_mentionName",
+	"mentionPopup": "LVAO-q_mentionPopup",
+	"mentionTitle": "LVAO-q_mentionTitle",
+	"message": "LVAO-q_message",
+	"messageBody": "LVAO-q_messageBody",
+	"messageHead": "LVAO-q_messageHead",
+	"notice": "LVAO-q_notice",
+	"offline": "LVAO-q_offline",
+	"page": "LVAO-q_page",
+	"presence": "LVAO-q_presence",
+	"primaryButton": "LVAO-q_primaryButton",
+	"room": "LVAO-q_room",
+	"roomActive": "LVAO-q_roomActive",
+	"roomInput": "LVAO-q_roomInput",
+	"rooms": "LVAO-q_rooms",
+	"secondaryButton": "LVAO-q_secondaryButton",
+	"sendError": "LVAO-q_sendError",
+	"system": "LVAO-q_system",
+	"tag": "LVAO-q_tag",
+	"text": "LVAO-q_text",
+	"time": "LVAO-q_time",
+	"working": "LVAO-q_working"
 };
+// src/client/Avatar.tsx
+/** Member portrait: a built-in or bot-announced image over a colored initial badge. */
+const PALETTE = [
+	"#5865f2",
+	"#eb459e",
+	"#3ba55c",
+	"#faa61a",
+	"#ed4245",
+	"#00a8fc",
+	"#9b59b6",
+	"#e67e22"
+];
+function color(id) {
+	let h = 7;
+	for (const c of id) h = h * 31 + c.charCodeAt(0) >>> 0;
+	return PALETTE[h % PALETTE.length];
+}
+/** Member portrait, or a colored initial badge when there is none or the image fails to load. */
+function Avatar({ id, name, avatar, small }) {
+	const src = avatarSrc(avatar);
+	const [broken, setBroken] = (0, react.useState)(void 0);
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+		className: small === true ? `${ChannelsPage_module_default.avatar} ${ChannelsPage_module_default.avatarSmall}` : ChannelsPage_module_default.avatar,
+		style: { background: color(id) },
+		"aria-hidden": true,
+		children: [(name || id).slice(0, 1), src !== void 0 && broken !== src && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+			className: ChannelsPage_module_default.avatarImage,
+			src,
+			alt: "",
+			onError: () => {
+				setBroken(src);
+			}
+		})]
+	});
+}
 // src/client/MemberDialog.tsx
 /**
 * Add/edit dialog for one channel member: name, persona, and either a DSH
 * model (grouped by provider route, as the host lists them) or, when adding, a
-* CLI agent installed on this machine (Claude Code, Codex, Gemini). Submission goes through the
+* CLI agent installed on this machine (Claude Code, Codex, Gemini), plus one of the built-in
+* avatars or none (initial badge). Submission goes through the
 * injected action; the host's refusal (name taken, model unavailable) is shown
 * inline and the form keeps its values.
 */
@@ -470,9 +531,10 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 	const [routes, setRoutes] = (0, react.useState)(void 0);
 	const [error, setError] = (0, react.useState)(void 0);
 	const [busy, setBusy] = (0, react.useState)(false);
-	const [type, setType] = (0, react.useState)("dsh");
+	const [type, setType] = (0, react.useState)(member?.cli !== void 0 ? "cli" : "dsh");
 	const [clis, setClis] = (0, react.useState)(void 0);
-	const [cli, setCli] = (0, react.useState)("");
+	const [cli, setCli] = (0, react.useState)(member?.cli ?? "");
+	const [avatar, setAvatar] = (0, react.useState)(member?.avatar !== void 0 && AVATARS.includes(member.avatar) ? member.avatar : "");
 	(0, react.useEffect)(() => {
 		let live = true;
 		listModels().then((list) => {
@@ -514,10 +576,12 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 		onSubmit(type === "cli" ? {
 			name: name.trim(),
 			persona,
+			avatar,
 			cli
 		} : {
 			name: name.trim(),
 			persona,
+			avatar,
 			model: provider !== void 0 && model !== void 0 ? {
 				provider,
 				model
@@ -559,6 +623,32 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 						onChange: (event) => {
 							setName(event.target.value);
 						}
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: ChannelsPage_module_default.field,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						id: "member-avatar-label",
+						children: t("memberAvatar")
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: ChannelsPage_module_default.avatarPicker,
+						role: "radiogroup",
+						"aria-labelledby": "member-avatar-label",
+						children: ["", ...AVATARS].map((slug) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							role: "radio",
+							"aria-checked": avatar === slug,
+							className: ChannelsPage_module_default.avatarOption,
+							title: slug === "" ? t("memberAvatarNone") : slug,
+							onClick: () => {
+								setAvatar(slug);
+							},
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
+								id: member?.id ?? (name.trim() || "new"),
+								name: name.trim() || "?",
+								avatar: slug
+							})
+						}, slug === "" ? "none" : slug))
 					})]
 				}),
 				member === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -679,29 +769,6 @@ function MemberDialog({ member, listModels, listClis, onSubmit, onClose, t }) {
 * list, in a Discord-style three-column layout. All data arrives through the
 * injected `useChannels` hook; posting goes through the injected actions.
 */
-const PALETTE = [
-	"#5865f2",
-	"#eb459e",
-	"#3ba55c",
-	"#faa61a",
-	"#ed4245",
-	"#00a8fc",
-	"#9b59b6",
-	"#e67e22"
-];
-function color(id) {
-	let h = 7;
-	for (const c of id) h = h * 31 + c.charCodeAt(0) >>> 0;
-	return PALETTE[h % PALETTE.length];
-}
-function Avatar({ id, name, small }) {
-	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-		className: small === true ? `${ChannelsPage_module_default.avatar} ${ChannelsPage_module_default.avatarSmall}` : ChannelsPage_module_default.avatar,
-		style: { background: color(id) },
-		"aria-hidden": true,
-		children: (name || id).slice(0, 1)
-	});
-}
 const CLI_TAG = {
 	claude: "kindClaude",
 	codex: "kindCodex",
@@ -731,7 +798,8 @@ function MessageRow({ message, member, t }) {
 		className: message.author_kind === "system" ? `${ChannelsPage_module_default.message} ${ChannelsPage_module_default.system}` : ChannelsPage_module_default.message,
 		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
 			id: message.author,
-			name: message.name
+			name: message.name,
+			avatar: member?.avatar
 		}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 			className: ChannelsPage_module_default.messageBody,
 			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -787,6 +855,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }) {
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
 					id: m.id,
 					name: m.name,
+					avatar: m.avatar,
 					small: true
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: ChannelsPage_module_default.presence })]
 			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
@@ -1133,6 +1202,7 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Avatar, {
 														id: m.id,
 														name: m.name,
+														avatar: m.avatar,
 														small: true
 													}), m.online && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: ChannelsPage_module_default.presence })]
 												}),
@@ -1300,6 +1370,8 @@ const zh = {
 	memberCliLoading: "正在检测本机 CLI…",
 	memberCliMissing: "未检测到",
 	memberPersona: "人设（可选）：它是谁、负责什么、说话风格",
+	memberAvatar: "头像",
+	memberAvatarNone: "不用头像（显示首字）",
 	save: "保存",
 	cancel: "取消",
 	configMember: "来自配置文件，网页里不能修改",
@@ -1352,6 +1424,8 @@ const en = {
 	memberCliLoading: "Detecting CLIs on this machine…",
 	memberCliMissing: "not found",
 	memberPersona: "Persona (optional): who it is, what it does, how it talks",
+	memberAvatar: "Avatar",
+	memberAvatarNone: "No avatar (show initial)",
 	save: "Save",
 	cancel: "Cancel",
 	configMember: "From the config file; not editable here",

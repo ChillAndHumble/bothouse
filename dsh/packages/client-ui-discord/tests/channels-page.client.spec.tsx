@@ -153,9 +153,12 @@ describe('channels page', () => {
     fireEvent.change(screen.getByLabelText(zh.memberName), { target: { value: 'Coder' } })
     fireEvent.change(screen.getByLabelText(zh.memberModel), { target: { value: 'relay\u0000deepseek-v4.1-flash' } })
     fireEvent.change(screen.getByLabelText(zh.memberPersona), { target: { value: '写代码' } })
+    expect(dialog.querySelectorAll('[role="radiogroup"][aria-labelledby="member-avatar-label"] [role="radio"]')).toHaveLength(6)
+    fireEvent.click(dialog.querySelector('[role="radio"][title="whale"]') as Element)
+    expect(dialog.querySelector('[role="radio"][title="whale"] img')?.getAttribute('src')).toBe('collab/avatars/whale.png')
     expect(dialog.querySelector('optgroup[label="Broken（读取失败：no key）"]')).toBeTruthy()
     await act(async () => { fireEvent.submit(dialog) })
-    expect(p.addMember).toHaveBeenCalledWith({ name: 'Coder', persona: '写代码', model: { provider: 'relay', model: 'deepseek-v4.1-flash' } })
+    expect(p.addMember).toHaveBeenCalledWith({ name: 'Coder', persona: '写代码', avatar: 'whale', model: { provider: 'relay', model: 'deepseek-v4.1-flash' } })
     expect(screen.getByRole('alert').textContent).toContain('already used')
     expect((screen.getByLabelText(zh.memberName) as HTMLInputElement).value).toBe('Coder')
     await act(async () => { fireEvent.submit(dialog) })
@@ -181,5 +184,39 @@ describe('channels page', () => {
     confirm.mockRestore()
     fireEvent.click(screen.getByRole('button', { name: zh.editMember }))
     expect((screen.getByLabelText(zh.memberPersona) as HTMLTextAreaElement).value).toBe('写代码')
+  })
+
+  it('shows member portraits in the list and on messages, and falls back to the initial when the image fails', () => {
+    const state: ChannelSnapshot = {
+      ...ready, thinking: {},
+      members: [
+        { id: 'ju', name: '橘', kind: 'bot', online: true, avatar: 'orange' },
+        { id: 'far', name: 'Far', kind: 'bot', online: true, avatar: 'http://127.0.0.1:9820/api/v1/library/avatar-image/senpai' },
+      ],
+    }
+    const { container } = render(<ChannelsPage {...props(state)} />)
+    const srcs = [...container.querySelectorAll('img')].map(i => i.getAttribute('src'))
+    expect(srcs.filter(s => s === 'collab/avatars/orange.png').length).toBeGreaterThanOrEqual(2)
+    expect(srcs).toContain('http://127.0.0.1:9820/api/v1/library/avatar-image/senpai')
+    const img = container.querySelector('img[src="collab/avatars/orange.png"]') as HTMLImageElement
+    fireEvent.error(img)
+    expect(img.isConnected).toBe(false)
+  })
+
+  it('editing a CLI member keeps its CLI and sends the new avatar', async () => {
+    const state: ChannelSnapshot = {
+      ...ready, thinking: {},
+      members: [{ id: 'cc', name: 'CC', kind: 'dsh', online: true, cli: 'claude', persona: '本地', editable: true, avatar: 'dragon' }],
+    }
+    const p = props(state)
+    ;(p as unknown as { listClis: unknown }).listClis = vi.fn(async () => [{ cli: 'claude', path: '/bin/claude' }])
+    render(<ChannelsPage {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: zh.editMember }))
+    const dialog = await screen.findByRole('dialog')
+    await act(async () => {})
+    expect(dialog.querySelector('[role="radio"][title="dragon"]')?.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(dialog.querySelector('[role="radio"][title="lanxi"]') as Element)
+    await act(async () => { fireEvent.submit(dialog) })
+    expect(p.updateMember).toHaveBeenCalledWith('cc', { name: 'CC', persona: '本地', avatar: 'lanxi', cli: 'claude' })
   })
 })
