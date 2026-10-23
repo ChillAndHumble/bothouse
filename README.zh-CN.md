@@ -15,7 +15,7 @@ bothouse 是一个插件：装上它，这几个 AI 变成一支有性格的团�
 
 ## 快速上手
 
-从 [Releases](https://github.com/zuiho-kai/bothouse/releases) 下载 macOS 的 `bothouse-mac.dmg`（Apple 芯片和 Intel 通用，把 Bothouse.app 拖进 Applications 后双击）或 Windows 的 `bothouse-windows.exe`（x64 和 ARM64 Windows 均可运行，下载后双击），首次启动会在浏览器打开安装向导。macOS 暂未签名，首次打开请「右键→打开」。Linux 下载 `bothouse-linux-x64` 或 `bothouse-linux-arm64`，`chmod +x` 后运行；校验见 `SHA256SUMS`。也可运行下面的命令。仓库保持私有期间，请按[从零用起](docs/GETTING_STARTED.md)第 1 节使用已登录的 GitHub CLI 安装。
+从 [Releases](https://github.com/zuiho-kai/bothouse/releases) 下载 macOS 的 `bothouse-mac.dmg`（Apple 芯片和 Intel 通用，把 Bothouse.app 拖进 Applications 后双击）或 Windows 的 `bothouse-windows.exe`（x64 和 ARM64 Windows 均可运行，下载后双击），首次启动会在浏览器打开安装向导。macOS 暂未签名，首次打开请「右键→打开」。Linux 下载 `bothouse-linux-x64` 或 `bothouse-linux-arm64`，`chmod +x` 后运行；校验见 `SHA256SUMS`。也可运行下面的命令，装固定版本和校验方式见[从零用起](docs/GETTING_STARTED.md)第 1 节。
 
 ```sh
 # macOS / Linux
@@ -184,7 +184,6 @@ Discord / 飞书 / 自建网页频道
 | [角色库：人设、头像和包](docs/persona-packs.md) | 挑人设和头像、自己做、装别人的包 |
 | [每角色 wiki 与夜间反思](bridge/contrib/wiki/README.md) | 每个角色一本 wiki、定时整理、复盘 |
 | [护栏与小工具](bridge/contrib/hooks/README.md) | hook 规则、开关方法、[小工具](bridge/contrib/tools/README.md) |
-| [团队协作细节](bridge/MAOMAO.md) | 一个主角色带几个队友、交接规则、gate 协议（英文） |
 | [自建平台协议](bridge/docs/cloud-web.md) | 自建平台和插件之间的接口（英文） |
 | [架构](docs/ARCHITECTURE.md) | 模块职责和数据流 |
 

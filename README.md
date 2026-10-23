@@ -15,7 +15,7 @@ bothouse is a plugin. Install it, and those AIs become a team with personalities
 
 ## Quick start
 
-Download the `.dmg` (macOS) or `.exe` (Windows) from [Releases](https://github.com/zuiho-kai/bothouse/releases), or use the commands below. While the repository is private, use the authenticated GitHub CLI commands in section 1 of [Getting started](docs/GETTING_STARTED.md) (Chinese).
+Download the `.dmg` (macOS) or `.exe` (Windows) from [Releases](https://github.com/zuiho-kai/bothouse/releases), or use the commands below. Section 1 of [Getting started](docs/GETTING_STARTED.md) (Chinese) covers fixed versions and checksums.
 
 ```sh
 # macOS / Linux
@@ -185,7 +185,6 @@ Modules and data flow: [Architecture](docs/ARCHITECTURE.md) (Chinese).
 | [Persona library and packs](docs/persona-packs.md) | Pick personas and avatars, make your own, install packs (Chinese) |
 | [Per-role wiki and nightly review](bridge/contrib/wiki/README.md) | One wiki per role, scheduled distilling, the review (Chinese) |
 | [Guardrails and tools](bridge/contrib/hooks/README.md) | Hook rules, how to switch them off, [small tools](bridge/contrib/tools/README.md) |
-| [Teamwork details](bridge/MAOMAO.md) | Lead and subs, handoff rules, gate protocol |
 | [Self-hosted channel protocol](bridge/docs/cloud-web.md) | The interface between the channel and the plugin |
 | [Architecture](docs/ARCHITECTURE.md) | Modules and data flow (Chinese) |
 
