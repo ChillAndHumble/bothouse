@@ -6,10 +6,30 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export const MAX_TEXT = 128 * 1024;
-// v7 is #133 and v8 is #139 team mode A (both open PRs); this branch (#139 team
-// mode B) takes v9. Its tasks table is ensured on every open (PRAGMA-checked), so
-// the schema comes out the same whichever of these merges first.
+// v7 is #133 (reply_to), v8 is #139 team mode A, v9 is #139 team mode B tasks; columns are
+// added by ensureSchema() on every open (checked with PRAGMA table_info), so either merge
+// or release order ends with every column; user_version only records the newest schema known.
 const SCHEMA_VERSION = 9;
+/** Columns added after v1, as [table, column, definition]; ensureSchema() adds any missing one. */
+const COLUMNS = [
+  ['jobs', 'input_id', 'TEXT'], // v2: jobs remember the id of the input they admitted, to bind its consuming turn.
+  ['members', 'cli', 'TEXT'], // v4: a member may be a local CLI agent (claude | codex | gemini) instead of a model route.
+  ['members', 'avatar', 'TEXT'], // v5: a member may show an avatar (built-in slug); NULL means the initial badge.
+  // v6 (#121): a streamed reply is stored as a draft (shown, not fanned out) until commit
+  // clears the flag. Durable, so a restart between commit and finishJob never fans it out twice.
+  ['messages', 'draft', 'INTEGER NOT NULL DEFAULT 0'],
+  ['messages', 'reply_to', 'INTEGER'], // v7 (#133): the message a user reply quotes.
+  // v8 (#139 team mode A): a room is a chat channel or a workspace under one chat channel.
+  ['rooms', 'kind', "TEXT NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'workspace'))"],
+  ['rooms', 'parent_id', 'INTEGER REFERENCES rooms(id)'],
+];
+/** Workspace rooms are named 工作区<n> (setting added in #139 team mode A, not user-specified). */
+export const WORKSPACE_PREFIX = '工作区';
+// Workspaces take ids from their own range, starting at 1000000, so a configured chat
+// channel added later (users write small ids like 1, 2) can never collide with one.
+// PM-set floor, not user-specified; bot sessions are keyed room-<id> (cloudweb.mjs roomKey),
+// so a workspace id must never change once a bot has used it.
+export const WORKSPACE_ID_MIN = 1000000;
 
 export class Store {
   constructor(path) {
@@ -18,11 +38,14 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     const version = this.db.prepare('PRAGMA user_version').get().user_version;
     if (version > SCHEMA_VERSION) throw Error(`collab: store schema ${version} is newer than ${SCHEMA_VERSION}`);
-    if (version < SCHEMA_VERSION) this.migrate(version);
-    this.ensureTasks();
+    this.ensureSchema(version);
     this.q = {
-      room: this.db.prepare('SELECT id, name FROM rooms WHERE id = ?'),
-      rooms: this.db.prepare('SELECT id, name FROM rooms ORDER BY id'),
+      room: this.db.prepare('SELECT id, name, kind, parent_id FROM rooms WHERE id = ?'),
+      rooms: this.db.prepare('SELECT id, name, kind, parent_id FROM rooms ORDER BY id'),
+      children: this.db.prepare("SELECT id, name FROM rooms WHERE kind = 'workspace' AND parent_id = ? ORDER BY id"),
+      createWorkspace: this.db.prepare(`INSERT INTO rooms (id, name, kind, parent_id)
+        SELECT MAX(${WORKSPACE_ID_MIN}, COALESCE((SELECT MAX(id) + 1 FROM rooms WHERE id >= ${WORKSPACE_ID_MIN}), ${WORKSPACE_ID_MIN})),
+          ?, 'workspace', ? RETURNING id, name, kind, parent_id`),
       ensureRoom: this.db.prepare('INSERT INTO rooms (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name'),
       insert: this.db.prepare(`INSERT INTO messages (room_id, author_kind, author, name, text, created_at, from_turn, card, client_key, draft)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`),
@@ -48,7 +71,7 @@ export class Store {
       openJobs: this.db.prepare("SELECT * FROM jobs WHERE state IN ('pending', 'sent') ORDER BY id"),
       sent: this.db.prepare("UPDATE jobs SET state = 'sent', session_id = ?, seq_before = ?, input_id = ? WHERE id = ? AND state = 'pending' RETURNING *"),
       finish: this.db.prepare("UPDATE jobs SET state = ?, reply_id = ? WHERE id = ? AND state IN ('pending', 'sent') RETURNING *"),
-      createRoom: this.db.prepare('INSERT INTO rooms (name) VALUES (?) RETURNING id, name'),
+      createRoom: this.db.prepare("INSERT INTO rooms (name, kind) VALUES (?, 'chat') RETURNING id, name, kind, parent_id"),
       members: this.db.prepare('SELECT * FROM members WHERE removed = 0 ORDER BY created_at, id'),
       member: this.db.prepare('SELECT * FROM members WHERE id = ?'),
       seedMember: this.db.prepare(`INSERT INTO members (id, name, provider, model, cli, persona, avatar, source, created_at, removed)
@@ -63,14 +86,16 @@ export class Store {
     };
   }
 
-  migrate(from) {
-    if (from < 1) this.createV1();
-    // v2: jobs remember the id of the input they admitted, to bind its consuming turn.
-    if (from < 2) this.db.exec('ALTER TABLE jobs ADD COLUMN input_id TEXT');
-    // v3: DSH members live in the database; config rows are seeds the UI cannot edit.
-    // A removed member keeps its row (and id) so old messages and bindings stay attributable.
-    if (from < 3) {
-      this.db.exec(`CREATE TABLE members (
+  /**
+   * Bring any older database up to date. Idempotent and run on every open: tables and
+   * columns are created only when missing, so the version number never gates a column.
+   */
+  ensureSchema(version) {
+    this.transaction(() => {
+      if (version < 1) this.createV1();
+      // v3: DSH members live in the database; config rows are seeds the UI cannot edit.
+      // A removed member keeps its row (and id) so old messages and bindings stay attributable.
+      this.db.exec(`CREATE TABLE IF NOT EXISTS members (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         provider TEXT,
@@ -79,16 +104,16 @@ export class Store {
         source TEXT NOT NULL CHECK (source IN ('config', 'ui')),
         created_at REAL NOT NULL,
         removed INTEGER NOT NULL DEFAULT 0)`);
-    }
-    // v4: a member may be a local CLI agent (claude | codex | gemini) instead of a model route.
-    if (from < 4) this.db.exec('ALTER TABLE members ADD COLUMN cli TEXT');
-    // v5: a member may show an avatar (built-in slug); NULL means the initial badge.
-    if (from < 5) this.db.exec('ALTER TABLE members ADD COLUMN avatar TEXT');
-    // v6 (#121): a streamed reply is stored as a draft (shown, not fanned out) until
-    // commit clears the flag. Durable, so a restart between commit and finishJob
-    // never fans the same reply out twice.
-    if (from < 6) this.db.exec('ALTER TABLE messages ADD COLUMN draft INTEGER NOT NULL DEFAULT 0');
-    this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+      const has = new Map();
+      for (const [table, column, definition] of COLUMNS) {
+        if (!has.has(table)) has.set(table, new Set(this.db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)));
+        if (!has.get(table).has(column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+      this.migrateWorkspaceIds();
+      // v9: the tasks table (#139 team mode B), ensured idempotently like the columns above.
+      this.ensureTasks();
+      if (version < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    });
   }
 
   /**
@@ -125,8 +150,30 @@ export class Store {
     this.db.exec('CREATE INDEX IF NOT EXISTS tasks_room ON tasks (room_id, id)');
   }
 
+  /**
+   * Move workspaces still on the old shared sequence (id < WORKSPACE_ID_MIN) into the
+   * workspace range, repointing their messages, bindings and jobs. This exists only for
+   * unreleased dev databases from before the separate range: no bot session has used
+   * them yet, and it is the only place a room id is ever changed. Released databases
+   * never hit this (no workspace was ever shipped on the shared sequence).
+   */
+  migrateWorkspaceIds() {
+    const old = this.db.prepare(`SELECT id FROM rooms WHERE kind = 'workspace' AND id < ? ORDER BY id`).all(WORKSPACE_ID_MIN);
+    if (!old.length) return;
+    const next = this.db.prepare(`SELECT MAX(?, COALESCE((SELECT MAX(id) + 1 FROM rooms WHERE id >= ?), ?)) AS id`)
+      .get(WORKSPACE_ID_MIN, WORKSPACE_ID_MIN, WORKSPACE_ID_MIN).id;
+    for (const [i, { id }] of old.entries()) {
+      const to = next + i;
+      const cols = this.db.prepare('PRAGMA table_info(rooms)').all().map(c => c.name).filter(c => c !== 'id');
+      this.db.prepare(`INSERT INTO rooms (id, ${cols}) SELECT ?, ${cols} FROM rooms WHERE id = ?`).run(to, id);
+      for (const table of ['messages', 'bindings', 'jobs']) this.db.prepare(`UPDATE ${table} SET room_id = ? WHERE room_id = ?`).run(to, id);
+      this.db.prepare('UPDATE rooms SET parent_id = ? WHERE parent_id = ?').run(to, id);
+      this.db.prepare('DELETE FROM rooms WHERE id = ?').run(id);
+    }
+  }
+
   createV1() {
-    this.db.exec(`BEGIN;
+    this.db.exec(`
       CREATE TABLE rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
       CREATE TABLE messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,8 +204,7 @@ export class Store {
         seq_before INTEGER,
         reply_id INTEGER,
         created_at REAL NOT NULL,
-        UNIQUE (member_id, trigger_id));
-      COMMIT;`);
+        UNIQUE (member_id, trigger_id));`);
   }
 
   close() { this.db.close(); }
@@ -176,8 +222,39 @@ export class Store {
     }
   }
 
-  ensureRoom(id, name) { this.q.ensureRoom.run(id, name); }
-  createRoom(name) { return this.q.createRoom.get(name); }
+  /**
+   * Upsert a configured chat channel. Config ids are user-written small numbers; workspaces
+   * live at WORKSPACE_ID_MIN and up, so a config id can only be a workspace if the database
+   * predates that range or someone configured an id inside it. Refuse loudly instead of
+   * moving the workspace: bot sessions are keyed room-<id> and must never see it change.
+   */
+  ensureRoom(id, name) {
+    this.transaction(() => {
+      if (this.q.room.get(id)?.kind === 'workspace') {
+        throw new CollabError('workspace-id-conflict',
+          `config room id ${id} collides with workspace room ${id}; workspace ids start at ${WORKSPACE_ID_MIN} and cannot be reassigned`);
+      }
+      this.q.ensureRoom.run(id, name);
+    });
+  }
+  /** Create a chat channel; its first workspace is made on the first createWorkspace() call. */
+  createRoom(name) {
+    return this.transaction(() => this.q.createRoom.get(name));
+  }
+  /**
+   * Create the next workspace 工作区<n+1> under a chat channel, n being the highest
+   * existing 工作区<k>. Called on a workspace, it adds a sibling under the same chat channel.
+   */
+  createWorkspace(roomId) {
+    return this.transaction(() => {
+      const room = this.q.room.get(roomId);
+      if (room === undefined) throw new CollabError('room-missing', `room ${roomId} does not exist`);
+      const parent = room.kind === 'workspace' ? room.parent_id : room.id;
+      const re = new RegExp(`^${WORKSPACE_PREFIX}(\\d+)$`);
+      const n = Math.max(0, ...this.q.children.all(parent).map(w => Number(re.exec(w.name)?.[1] ?? 0)));
+      return this.q.createWorkspace.get(`${WORKSPACE_PREFIX}${n + 1}`, parent);
+    });
+  }
 
   /** Active DSH members, config seeds and UI-created alike. */
   members() { return this.q.members.all(); }
@@ -196,6 +273,11 @@ export class Store {
   removeMember(id) { return this.q.removeMember.get(id); }
   room(id) { return this.q.room.get(id); }
   rooms() { return this.q.rooms.all(); }
+  /** Rooms for clients: each carries kind, parent_id and its open task count. */
+  roomsView() {
+    // active: tasks in progress in this room; 0 until team mode B fills it from its tasks table (B 块填).
+    return this.rooms().map(r => ({ ...r, active: 0 }));
+  }
 
   /**
    * Append one message. A repeated non-null clientKey returns the stored row
