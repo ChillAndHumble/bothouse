@@ -271,6 +271,9 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	mux.HandleFunc(prefix+"/setup/jev/save", m.wrap(m.handleSetupJevSave))
 	mux.HandleFunc(prefix+"/setup/apply", m.wrap(m.handleSetupApply))
 
+	// Avatar / persona library (packs)
+	m.registerLibraryRoutes(mux, prefix)
+
 	// Global Providers
 	mux.HandleFunc(prefix+"/providers", m.wrap(m.handleGlobalProviders))
 	mux.HandleFunc(prefix+"/providers/", m.wrap(m.handleGlobalProviderRoutes))
