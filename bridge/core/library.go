@@ -420,8 +420,10 @@ func AvatarDataURI(b []byte) string {
 
 func ensureMinePack(dataDir string) (string, error) {
 	dir := libraryPackDir(dataDir, LibraryMinePack)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
+	for _, sub := range []string{"personas", "avatars"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			return "", err
+		}
 	}
 	mf := filepath.Join(dir, "manifest.json")
 	if _, err := os.Stat(mf); err != nil {
@@ -823,7 +825,11 @@ func PreviewPack(dataDir, lang string, zb []byte) (PackPreview, error) {
 	pv.Staging = randHex(libraryRandBytes)
 	dir := filepath.Join(libraryDir(dataDir), "staging", pv.Staging)
 	for rel, b := range files {
-		if err := AtomicWriteFile(filepath.Join(dir, filepath.FromSlash(rel)), b, 0o644); err != nil {
+		dst := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return pv, err
+		}
+		if err := AtomicWriteFile(dst, b, 0o644); err != nil {
 			return pv, err
 		}
 	}
