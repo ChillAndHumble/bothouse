@@ -36,6 +36,7 @@ type ReleaseInfo struct {
 	Body       string `json:"body"`
 	Prerelease bool   `json:"prerelease"`
 	CreatedAt  string `json:"created_at"`
+	HTMLURL    string `json:"html_url"`
 }
 
 // CheckForUpdate queries GitHub/Gitee for newer releases.

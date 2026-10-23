@@ -322,6 +322,13 @@ func main() {
 	}
 	slog.Info("acquired instance lock", "path", instanceLock.Path())
 
+	// After an upgrade, bring ~/.bothouse/dsh plugin code up to this version (user files kept).
+	if refreshed, err := core.RefreshEmbeddedDSH("", version); err != nil {
+		slog.Warn("dsh plugin refresh failed", "error", err)
+	} else if refreshed {
+		slog.Info("dsh plugin code refreshed", "version", version)
+	}
+
 	// conest: no config, or one without any bot ([[projects]]) — e.g. the [log]-only file an older
 	// `setup apply --dry-run` left behind → serve the setup wizard instead of asking for TOML.
 	// Same test as `cc-connect web` (needsSetup).

@@ -49,9 +49,13 @@ if [ -n "$DSH_BIN" ]; then
 fi
 
 echo "== step: deps"
-if [ ! -d "$HERE/collab/node_modules" ]; then
+# Reinstall when deps are missing or package.json/pnpm-lock.yaml changed since the last install
+# (an upgrade refreshes these files in place); the stamp is a copy of both files.
+DEPS_STAMP="$HERE/collab/node_modules/.bothouse-deps"
+if [ ! -d "$HERE/collab/node_modules" ] || ! cat "$HERE/collab/package.json" "$HERE/collab/pnpm-lock.yaml" | cmp -s - "$DEPS_STAMP"; then
   echo "== install collab dependencies"
   (cd "$HERE/collab" && pnpm install --frozen-lockfile --config.minimum-release-age=0)
+  cat "$HERE/collab/package.json" "$HERE/collab/pnpm-lock.yaml" > "$DEPS_STAMP"
 fi
 
 if [ -f "$UI/lib/client.js" ]; then
