@@ -5,7 +5,8 @@ import {
   type DSHMember, type DSHStatus, type LocalCLI, type PersonaPreset,
 } from '@/api/wizard';
 import { PersonaLibrary, useLibrary } from '@/components/library';
-import { fmt, libraryTexts, type LibraryPersona } from '@/pages/Setup/texts';
+import { type LibraryPersona } from '@/api/library';
+import { fmt, libraryTexts } from '@/pages/Setup/texts';
 
 /** install.sh `== step:` markers, in order (dsh/install.sh). */
 const INSTALL_STEPS = ['download', 'deps', 'plugin'] as const;
@@ -131,7 +132,7 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
       runner: defaultRunner(),
       persona: p?.text || '',
       personaSlug: p?.id || '',
-      avatar: p?.avatar || '',
+      avatar: (p as any)?.avatar || '',
     };
   };
   // Enter the roles step with one role filled from the first persona preset.
