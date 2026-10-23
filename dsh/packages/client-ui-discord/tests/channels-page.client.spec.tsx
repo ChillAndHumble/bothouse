@@ -229,4 +229,16 @@ describe('channels page', () => {
     await act(async () => { fireEvent.submit(dialog) })
     expect(p.updateMember).toHaveBeenCalledWith('cc', { name: 'CC', persona: '本地', avatar: 'lanxi', cli: 'claude' })
   })
+  it('guides to add a member when the channel has no role members', async () => {
+    const p = props({ ...ready, members: [{ id: 'owner', name: '我', kind: 'human', online: true }], messages: [], thinking: {} })
+    render(<ChannelsPage {...p} />)
+    expect(screen.getByText(zh.guideNoMembers)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.addMember }))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+  })
+
+  it('hides the add-member guide once a role member exists', () => {
+    render(<ChannelsPage {...props(ready)} />)
+    expect(screen.queryByText(zh.guideNoMembers)).toBeNull()
+  })
 })
