@@ -59,3 +59,29 @@ echo "installed $3"
 		t.Fatalf("GET status %d", rec.Code)
 	}
 }
+
+func TestLookDSHAndBash(t *testing.T) {
+	// 1. With dsh on PATH
+	d := t.TempDir()
+	dshPath := filepath.Join(d, "dsh")
+	if err := os.WriteFile(dshPath, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", d)
+	got, err := LookDSH()
+	if err != nil || got == "" {
+		t.Fatalf("expected dsh found, got %s, err: %v", got, err)
+	}
+
+	// 2. Without dsh on PATH
+	t.Setenv("PATH", t.TempDir())
+	if _, err := LookDSH(); err == nil {
+		t.Fatal("expected LookDSH to fail when dsh is not on PATH")
+	}
+
+	// 3. Bash lookup
+	t.Setenv("PATH", os.Getenv("PATH"))
+	if _, err := LookBash(); err != nil {
+		t.Logf("LookBash: %v", err)
+	}
+}

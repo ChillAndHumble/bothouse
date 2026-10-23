@@ -270,7 +270,7 @@ func OpenDSHWeb(ctx context.Context) (DSHWeb, error) {
 	if b, err := os.ReadFile(statePath); err == nil && json.Unmarshal(b, &prev) == nil && prev.PID > 0 && processAlive(prev.PID) && prev.URL != "" {
 		return prev, nil
 	}
-	bin, err := exec.LookPath("dsh")
+	bin, err := LookDSH()
 	if err != nil {
 		return DSHWeb{}, errDSHMissing
 	}
