@@ -1,0 +1,47 @@
+#!/usr/bin/env -S python3 -I
+# 把本频道收到的结果摘要转给工作区里的主角色：追加到最近一次 ws-handoff 的交接文件「## 转交结果」节，再叫她去读。
+# 用法：ws-forward "<摘要>"
+# 最近一次交接记在 <GATE_SETUP_DIR>/ws-handoff-last.json（ws-handoff 写，见 _team.py）。
+# 来源：用户 2026-10-23「如果你觉得已经开始管不过来了，你可以去开新的频道，就叫工作区……」「方便任意人当主角色，并且也能放到仓库」。
+import json, subprocess, sys, time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _team  # noqa: E402
+
+HEAD = "## 转交结果"
+
+
+def append_result(path: str, summary: str, now: str):
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    add = ""
+    if HEAD not in text.splitlines():
+        add += ("" if text.endswith("\n") or not text else "\n") + f"\n{HEAD}\n"
+    elif not text.endswith("\n"):
+        add += "\n"
+    add += f"- {now} {summary}\n"
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(add)
+
+
+def timer_cmd(ws: str, path: str):
+    return ["cc-connect", "timer", "add", "-s", f"discord:{ws}", "--delay", "1m", "--timeout-mins", "0",
+            "--desc", "工作区转交", "--prompt", f"主频道转来新结果，读 {path} 末尾「转交结果」节最新一条，接着推进"]
+
+
+def main(argv):
+    if len(argv) != 1 or not argv[0].strip():
+        sys.exit('用法：ws-forward "<摘要>"')
+    if not _team.LAST.is_file():
+        sys.exit(f"ws-forward: 还没跑过 ws-handoff（没有 {_team.LAST}）")
+    last = json.loads(_team.LAST.read_text(encoding="utf-8"))
+    append_result(last["file"], argv[0], time.strftime("%Y-%m-%d %H:%M:%S"))
+    r = subprocess.run(timer_cmd(last["channel"], last["file"]), capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"ws-forward: timer add 失败：{r.stderr.strip() or r.stdout.strip()}")
+    print((r.stdout.strip().splitlines() or [""])[0])  # cc-connect 第一行就是 timer id
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

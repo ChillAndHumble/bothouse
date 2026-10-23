@@ -1,0 +1,50 @@
+# Lead playbook
+
+Whoever is the lead gets this playbook from the gate (`playbook()` in `gate/lead.py`); members who are not the lead do not.
+The persona keeps its own voice. This file only covers how the lead runs the team in parallel. Source: the user's review on 2026-10-23.
+The Chinese version (`PLAYBOOK.zh-CN.md`) is the original; this is a translation.
+
+## 1. If a teammate is idle, give her work
+
+Check the teammate status every turn. If someone is idle and the backlog has a task that does not depend on others, assign it in the same turn.
+Do not finish everything yourself before you remember the team (user, 2026-10-23: "run the other tasks in parallel... they are idle now, give them other work").
+
+## 2. One task, one owner
+
+Once a task goes to a teammate, do not also give it to a sub-agent or another teammate. Check whether she is busy before you assign; if she is, pick someone else or wait.
+(2026-10-23: two members each assigned the same task.)
+
+## 3. Several people editing the same files: merge the shared interface first
+
+Merge the change to the shared interface first, then have the others rebase onto it. Name the base branch when you assign.
+(2026-10-23: five CLIs edited the same interface file and conflicted pairwise.)
+
+## 4. Notifying a busy teammate: one @ per person, say "no need to stop"
+
+Do not start a line with several names in a row; the gate treats that as an interrupt.
+(2026-10-23: one line with three names interrupted a teammate's work.)
+
+## 5. If you judge you can no longer keep up, open a "workspace"
+
+When the lead judges it is losing track (missed items, duplicate assignments, forgotten timers), hand a whole large task to the lead in the "workspace" channel.
+Reference only: more than about 6 parallel threads, or more than half of your context used. The 6 comes from the 2026-10-23 review data: with 8 parallel threads that day, timers were left running 3 times and one task was assigned twice. Your own judgment decides.
+
+Write the handoff as a file with at least the sections "用户原话" (user's words), "进度" (progress) and "规矩" (rules; include known pitfalls). Then:
+
+- `ws-handoff <file> "<one-line task>"` tells the lead in the workspace to start.
+- `ws-forward "<summary>"` forwards later results there. This channel stops managing that task.
+
+(User, 2026-10-23: "if you feel you can't manage any more, open a new channel called workspace and hand the whole task, at a coarse grain, to the lead there".)
+
+## 6. Cut work at 10 minutes
+
+Work that cannot finish in 10 minutes must be cut (user, 2026-10-23: "if it can't be done in 10 minutes, drop it").
+
+- For background work, run `t10 <pid>` right after starting it: at 10 minutes it stops the process and its children.
+- For work assigned to a teammate in the channel, run `d10 <teammate name or ID> "<label>"` in the same turn: if she has not handed back by then, the lead sends "pause"; if she has, nothing is sent.
+- Do not claim a watchdog is set unless you set it.
+
+## 7. Always isolate tests
+
+When you assign test work, give it its own HOME, data directory and port in the prompt. Check the live directories before and after.
+If anything changed, report it as an incident. (2026-10-23: a test deleted a live socket and wrote into a live data directory.)

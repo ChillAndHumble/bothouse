@@ -29,7 +29,9 @@ def load_gate(team=None, wiki=None):
             os.environ[k] = v
     for m in ("gate", "ctxsvc"):
         sys.modules.pop(m, None)
-    return importlib.import_module("gate")
+    g = importlib.import_module("gate")
+    g.lead.PLAYBOOK = None  # 这里只测 wiki 页；主角色工作手册的注入在 test_lead_playbook.py
+    return g
 
 
 class T(unittest.TestCase):

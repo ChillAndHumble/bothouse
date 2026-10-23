@@ -20,9 +20,13 @@ def make_wiki(d):
 class T(unittest.TestCase):
     def setUp(self):
         self.old = ctxsvc.WIKI
+        if ctxsvc.lead:  # 这里只测 wiki 页；主角色工作手册的注入在 test_lead_playbook.py
+            self.old_pb, ctxsvc.lead.PLAYBOOK = ctxsvc.lead.PLAYBOOK, None
 
     def tearDown(self):
         ctxsvc.WIKI, ctxsvc._idx = self.old, None
+        if ctxsvc.lead:
+            ctxsvc.lead.PLAYBOOK = self.old_pb
 
     def test_query_keeps_reply_quote(self):
         self.assertEqual(ctxsvc.query(REPLY), REPLY.strip())

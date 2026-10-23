@@ -1,0 +1,79 @@
+#!/usr/bin/env -S python3 -I
+# 把一整块大活交给「工作区」频道里的主角色：检查交接文件，再用 cc-connect timer 叫她开工，输出 timer id。
+# 用法：ws-handoff <交接文件> "<一句话任务>"
+#   交接文件必须含「用户原话」「进度」「规矩」三个小节标题（# 开头的行）。
+#   工作区频道：WS_CHANNEL 或团队文件顶层 "workspace"（_team.py）；没配或频道已删时，
+#   用 Discord API 在当前频道（CC_SESSION_KEY）同分类下建「工作区」文字频道，并提示把 ID 写进团队文件。
+# 来源：用户 2026-10-23「如果你觉得已经开始管不过来了，你可以去开新的频道，就叫工作区，然后把任务整个大颗粒度的交给那边的橘」
+#   「方便任意人当主角色，并且也能放到仓库」。
+import json, os, subprocess, sys, urllib.error, urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _team  # noqa: E402
+
+REQUIRED = ["用户原话", "进度", "规矩"]
+API = "https://discord.com/api/v10"
+
+
+def api(method, path, body=None):
+    req = urllib.request.Request(API + path, method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Authorization": f"Bot {_team.token()}",
+                                          "User-Agent": "DiscordBot (bothouse, 1)",
+                                          "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.load(r)
+
+
+def missing_sections(text: str):
+    heads = [l for l in text.splitlines() if l.lstrip().startswith("#")]
+    return [s for s in REQUIRED if not any(s in h for h in heads)]
+
+
+def ensure_channel() -> str:
+    ws = _team.workspace()
+    if ws:
+        try:
+            api("GET", f"/channels/{ws}")
+            return ws
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+    cur = os.environ.get("CC_SESSION_KEY", "").removeprefix("discord:")
+    if not cur.isdigit():
+        sys.exit("ws-handoff: 没有可用的工作区频道，也没有当前频道（CC_SESSION_KEY）可取分类")
+    ch = api("GET", f"/channels/{cur}")
+    new = api("POST", f"/guilds/{ch['guild_id']}/channels",
+              {"name": "工作区", "type": 0, "parent_id": ch.get("parent_id")})
+    print(f'ws-handoff: 新建工作区频道 {new["id"]}，把 "workspace": "{new["id"]}" 写进团队文件', file=sys.stderr)
+    return new["id"]
+
+
+def timer_cmd(ws: str, path: str, task: str):
+    prompt = (f"你是工作区频道里的主角色，从主频道接手一整块大活：{task}。"
+              f"先读交接 {path}，接手后发五段式说明，并把还没派的活当场派出去")
+    return ["cc-connect", "timer", "add", "-s", f"discord:{ws}", "--delay", "1m", "--timeout-mins", "0",
+            "--desc", "工作区接手", "--prompt", prompt]
+
+
+def main(argv):
+    if len(argv) != 2 or not argv[1].strip():
+        sys.exit('用法：ws-handoff <交接文件> "<一句话任务>"')
+    path, task = os.path.abspath(os.path.expanduser(argv[0])), argv[1]
+    if not os.path.isfile(path):
+        sys.exit(f"ws-handoff: 交接文件不存在 {path}")
+    with open(path, encoding="utf-8") as fh:
+        miss = missing_sections(fh.read())
+    if miss:
+        sys.exit(f"ws-handoff: 交接文件缺小节：{'、'.join(miss)}")
+    ws = ensure_channel()
+    r = subprocess.run(timer_cmd(ws, path, task), capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(f"ws-handoff: timer add 失败：{r.stderr.strip() or r.stdout.strip()}")
+    _team.LAST.write_text(json.dumps({"file": path, "channel": ws, "task": task}, ensure_ascii=False), encoding="utf-8")
+    print((r.stdout.strip().splitlines() or [""])[0])  # cc-connect 第一行就是 timer id
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
