@@ -8,13 +8,15 @@ import { Badge, Button, Card, Input, Textarea } from '@/components/ui';
 import PlatformSetupQR from '@/pages/Projects/PlatformSetupQR';
 import { restartSystem } from '@/api/status';
 import {
-  applyWizard, checkDiscord, getSetupPersona, getCLIs, getExistingBots, getLocalHub, getMatrix, getPersonas, getSetupState, listChannels, listFeishuChats,
+  applyWizard, checkDiscord, getSetupPersona, getCLIs, getExistingBots, getLocalHub, getMatrix, getSetupState, listChannels, listFeishuChats,
   startLocalHub, testCloudWeb, testJev, saveJev,
-  type CloudWebTest, type DiscordBotInfo, type LocalHubStatus, type DiscordChannel, type ExistingBot, type LocalCLI, type MatrixCell, type PersonaPreset,
+  type CloudWebTest, type DiscordBotInfo, type LocalHubStatus, type DiscordChannel, type ExistingBot, type LocalCLI, type MatrixCell,
   type SetupPersona, type SetupStateResp, type WizardRequest, type WizardResult, type WizardVendor, type WizardWiki,
 } from '@/api/wizard';
 import DSHSetup from './DSHSetup';
-import { isZhLang, keptLangLabel, langLabel, replyLangOptions, stepLabel, wizardTexts } from './texts';
+import { PersonaLibrary, useLibrary } from '@/components/library';
+import type { LibraryPersona } from '@/api/library';
+import { fmt, isZhLang, keptLangLabel, langLabel, libraryTexts, replyLangOptions, stepLabel, wizardTexts } from './texts';
 
 interface RoleDraft {
   key: number;
@@ -28,6 +30,9 @@ interface RoleDraft {
   useProvider: boolean;
   provider: { vendor: string; base_url: string; api_key: string; model: string };
   persona: string;
+  // library picks: undefined = not touched (the server keeps what it has); '' = cleared
+  personaSlug?: string;
+  avatar?: string;
   reply_language: string;
   replyTouched?: boolean; // picked by hand for this role: the language picker no longer changes it
   // existing bot (reuse_project): its persona file is only written when editPersona is ticked
@@ -77,7 +82,8 @@ export default function SetupWizard() {
   const [clis, setClis] = useState<LocalCLI[] | null>(null);
   const [vendors, setVendors] = useState<WizardVendor[]>([]);
   const [matrix, setMatrix] = useState<MatrixCell[]>([]);
-  const [presets, setPresets] = useState<PersonaPreset[]>([]);
+  const LT = libraryTexts(lang);
+  const { lib, error: libError, reload: reloadLib } = useLibrary(lang);
   const [existing, setExisting] = useState<ExistingBot[]>([]);
   const newRole = useCallback((): RoleDraft => ({
     key: keySeq++, token: '', agent_type: '', useProvider: false,
@@ -116,7 +122,6 @@ export default function SetupWizard() {
   }, [lang]);
   // refresh the jev hint with the fallback bot's name when reaching the jev step
   useEffect(() => { if (step === 5) getSetupState(lang, fallbackName).then(setState).catch(() => {}); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { getPersonas(lang).then((r) => setPresets(r.presets)).catch(() => {}); }, [lang]);
 
   // default CLI: first installed one that is logged in, else first supported
   const defaultAgent = useMemo(() => {
@@ -309,6 +314,8 @@ export default function SetupWizard() {
         agent_type: r.agent_type,
         ...(!r.reuse_project ? { persona: r.persona || undefined, reply_language: r.reply_language }
           : r.editPersona ? { persona: r.persona || undefined, reply_language: r.reply_language, edit_persona: true } : {}),
+        ...(r.personaSlug !== undefined ? { persona_preset: r.personaSlug } : {}),
+        ...(r.avatar !== undefined ? { avatar: r.avatar } : {}),
         ...(r.useProvider ? { provider: { vendor: r.provider.vendor, base_url: r.provider.base_url || undefined,
           api_key: mask(r.provider.api_key, '<API_KEY>'), model: r.provider.model || undefined } } : {}),
       })),
@@ -724,13 +731,14 @@ export default function SetupWizard() {
                 )}
                 {(!r.reuse_project || r.editPersona) ? (
                   <>
-                    <div className="flex flex-wrap gap-1.5">
-                      {presets.map((p) => (
-                        <Button key={p.id} size="sm" variant="secondary" onClick={() => patchRole(r.key, { persona: p.text })} data-testid={`preset-${idx}-${p.id}`}>
-                          {p.name}<span className="opacity-60">· {p.model}</span>{p.new && <Badge variant="info">{T.personaNew}</Badge>}
-                        </Button>
-                      ))}
-                    </div>
+                    {lib ? (
+                      <PersonaLibrary lib={lib} lang={lang} T={LT} reload={reloadLib} selected={r.personaSlug}
+                        onPick={(p: LibraryPersona | null) => patchRole(r.key, p
+                          ? { persona: p.text, personaSlug: p.slug, avatar: p.avatar || '' }
+                          : { personaSlug: '', avatar: '' })} />
+                    ) : (
+                      <p className="text-xs text-gray-500">{libError ? fmt(LT.loadFailed, { error: libError }) : LT.loading}</p>
+                    )}
                     <Textarea rows={8} value={r.persona} onChange={(e) => patchRole(r.key, { persona: e.target.value })} data-testid={`persona-${idx}`} />
                     <div className="flex items-center gap-2">
                       <label className="text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">{T.replyLang}</label>
