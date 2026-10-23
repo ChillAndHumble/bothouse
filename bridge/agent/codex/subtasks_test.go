@@ -203,3 +203,73 @@ func TestCodexSubTasksDuplicateResumePreservesResult(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexSubTasksStaleTurnCompletesNewActivation(t *testing.T) {
+	s := &appServerSession{ctx: context.Background(), events: make(chan core.Event, 20)}
+	s.threadID.Store("parent")
+	s.handleItemCompleted(map[string]any{"type": "collabAgentToolCall", "tool": "spawnAgent", "status": "completed", "receiverThreadIds": []any{"child"}})
+	emit := func(method, turn, status string) {
+		raw, _ := json.Marshal(map[string]any{"threadId": "child", "turn": map[string]any{"id": turn, "status": status}})
+		s.handleNotification(method, raw)
+	}
+	emit("turn/started", "turn-1", "inProgress")
+	emit("turn/completed", "turn-1", "completed")
+	emit("turn/started", "turn-2", "inProgress")
+	emit("turn/completed", "turn-1", "completed")
+	emit("turn/completed", "older-unseen-turn", "failed")
+	emit("turn/completed", "", "completed")
+	_, rows, _ := s.SubTasks()
+	if rows[0].Status != core.SubTaskRunning {
+		t.Fatalf("old turn-1 completion changed active turn-2 to %s", rows[0].Status)
+	}
+	emit("turn/completed", "turn-2", "failed")
+	_, rows, _ = s.SubTasks()
+	if rows[0].Status != core.SubTaskFailed {
+		t.Fatalf("turn-2 failure lost: %s", rows[0].Status)
+	}
+}
+func TestCodexSubTasksSendInputRestartsCompletedChild(t *testing.T) {
+	for _, tool := range []string{"send_input", "sendInput"} {
+		s := &subTaskTracker{}
+		s.UpdateSubTask(core.SubTask{ID: "child", Status: core.SubTaskCompleted}, false)
+		item := map[string]any{"tool": tool, "id": "send-2", "status": "completed", "receiverThreadIds": []any{"child"}, "agentsStates": map[string]any{"child": map[string]any{"status": "running"}}}
+		updateCollaborationSubTasks(s, item)
+		_, rows, _ := s.SubTasks()
+		if rows[0].Status != core.SubTaskRunning {
+			t.Errorf("%s authoritative running state ignored: %s", tool, rows[0].Status)
+		}
+		s.UpdateSubTask(core.SubTask{ID: "child", Status: core.SubTaskCompleted}, false)
+		updateCollaborationSubTasks(s, item)
+		_, rows, _ = s.SubTasks()
+		if rows[0].Status != core.SubTaskCompleted {
+			t.Fatal("duplicate dispatch reopened a completed child")
+		}
+	}
+}
+
+func TestCodexSubTasksChildWaitingFlag(t *testing.T) {
+	s := &appServerSession{ctx: context.Background(), events: make(chan core.Event, 20)}
+	s.threadID.Store("parent")
+	s.handleItemCompleted(map[string]any{"type": "collabAgentToolCall", "tool": "spawnAgent", "status": "completed", "receiverThreadIds": []any{"child"}})
+	s.handleNotification("thread/status/changed", json.RawMessage(`{"threadId":"child","status":{"type":"active","activeFlags":["waitingOnApproval"]}}`))
+	_, rows, _ := s.SubTasks()
+	if rows[0].Status != core.SubTaskWaiting {
+		t.Fatalf("native waitingOnApproval discarded: %s", rows[0].Status)
+	}
+	s.handleNotification("thread/status/changed", json.RawMessage(`{"threadId":"child","status":{"type":"active","activeFlags":[]}}`))
+	_, rows, _ = s.SubTasks()
+	if rows[0].Status != core.SubTaskRunning {
+		t.Fatal("cleared waiting flags did not restore running")
+	}
+	s.handleNotification("thread/status/changed", json.RawMessage(`{"threadId":"child","status":{"type":"active","activeFlags":["waitingOnUserInput"]}}`))
+	_, rows, _ = s.SubTasks()
+	if rows[0].Status != core.SubTaskWaiting || !rows[0].ModeUnknown {
+		t.Fatal("waiting for input was lost or given an invented execution mode")
+	}
+	s.handleNotification("turn/completed", json.RawMessage(`{"threadId":"child","turn":{"id":"turn-1","status":"completed"}}`))
+	s.handleNotification("thread/status/changed", json.RawMessage(`{"threadId":"child","status":{"type":"active","activeFlags":[]}}`))
+	_, rows, _ = s.SubTasks()
+	if rows[0].Status != core.SubTaskCompleted {
+		t.Fatal("late active status reopened terminal child")
+	}
+}

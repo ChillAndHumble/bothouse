@@ -47,7 +47,7 @@ DSH 发标准 ACP tool_call / tool_call_update，扩展仅位于 update._meta：
 - end 的 completed → completed，aborted → stopped，error / max-tokens / refusal → failed。
 - Go 接收端要求父 sessionId 精确匹配；重复 start、旧 runId 的结束事件不会重开或覆盖新任务。
 - wait/send/close 工具返回不代表子 Agent 成功。桥接断开会将仍活动的行标为 stopped。
-- 表格仅展示身份和状态，不转发提示词、私密推理或最终正文。DSH 原生事件不提供前台/后台标记，因此显示「子 Agent」而不猜；idle 显示「等待继续」。
+- 表格仅展示身份和状态，任务描述使用 ID；当前未采集可公开的任务摘要或逐步进展，不转发提示词、私密推理或最终正文。Codex / DSH 的这些事件不提供前台/后台标记，因此显示「子 Agent」而不猜；等待显示「等待继续」。Codex app_server 明确的 waitingOnApproval / waitingOnUserInput 显示等待，标记解除后恢复运行。
 
 ## 验证
 

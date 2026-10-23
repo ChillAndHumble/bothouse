@@ -14,7 +14,10 @@ var _ core.SubTaskReporter = (*appServerSession)(nil)
 
 type subTaskTracker struct {
 	core.SubTaskTracker
-	starts sync.Map // native tool/turn IDs already used to reopen a child
+	starts      sync.Map          // native tool/turn IDs already used to reopen a child
+	lifecycleMu sync.Mutex        // orders activation bookkeeping with table updates
+	turns       map[string]string // current native turn per child
+	ended       map[string]bool   // completed turn identities, including late arrivals
 }
 
 func (t *subTaskTracker) firstStart(id string) bool {
@@ -36,6 +39,8 @@ func updateCollaborationSubTasks(table *subTaskTracker, item map[string]any) {
 	default:
 		return
 	}
+	table.lifecycleMu.Lock()
+	defer table.lifecycleMu.Unlock()
 	states, _ := item["agentsStates"].(map[string]any)
 	if states == nil {
 		states, _ = item["agents_states"].(map[string]any)
@@ -65,12 +70,9 @@ func updateCollaborationSubTasks(table *subTaskTracker, item map[string]any) {
 	if sender == "" {
 		sender, _ = item["sender_thread_id"].(string)
 	}
-	restart := false
-	if status, _ := item["status"].(string); tool == "resumeagent" && status == "completed" {
-		if id, _ := item["id"].(string); id != "" {
-			restart = table.firstStart("resume:" + id)
-		}
-	}
+	callID, _ := item["id"].(string)
+	callStatus, _ := item["status"].(string)
+	activates := tool == "resumeagent" || tool == "sendinput" || tool == "followuptask"
 	for _, raw := range ids {
 		id, _ := raw.(string)
 		if id == "" || id == sender {
@@ -88,7 +90,18 @@ func updateCollaborationSubTasks(table *subTaskTracker, item map[string]any) {
 			}
 			mapped = core.SubTaskRunning
 		}
-		table.UpdateSubTask(core.SubTask{ID: id, Status: mapped, Background: true}, restart && mapped == core.SubTaskRunning)
+		// Consume every accepted dispatch identity, including terminal
+		// observations, so a delayed replay cannot reopen a finished child.
+		restart := false
+		if activates && callStatus == "completed" && callID != "" {
+			restart = table.firstStart("dispatch:" + callID + ":" + id)
+		}
+		if restart && mapped == core.SubTaskRunning {
+			if turn := table.turns[id]; turn != "" && table.ended["turn:"+id+":"+turn] {
+				delete(table.turns, id)
+			}
+		}
+		table.UpdateSubTask(core.SubTask{ID: id, Status: mapped, ModeUnknown: true}, restart && mapped == core.SubTaskRunning)
 	}
 }
 
@@ -116,9 +129,19 @@ func (s *appServerSession) handleChildNotification(method string, raw json.RawMe
 			ID     string `json:"id"`
 			Status string `json:"status"`
 		} `json:"turn"`
+		Status struct {
+			Type        string   `json:"type"`
+			ActiveFlags []string `json:"activeFlags"`
+		} `json:"status"`
 	}
 	if json.Unmarshal(raw, &n) != nil || n.ThreadID == "" || n.ThreadID == s.CurrentSessionID() || !s.HasSubTask(n.ThreadID) {
 		return false
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.turns == nil {
+		s.turns = make(map[string]string)
+		s.ended = make(map[string]bool)
 	}
 	var status core.SubTaskStatus
 	switch method {
@@ -126,10 +149,20 @@ func (s *appServerSession) handleChildNotification(method string, raw json.RawMe
 		if n.Turn.ID == "" || !s.firstStart("turn:"+n.ThreadID+":"+n.Turn.ID) {
 			return true
 		}
+		s.turns[n.ThreadID] = n.Turn.ID
 		status = core.SubTaskRunning
 	case "turn/completed":
+		key := "turn:" + n.ThreadID + ":" + n.Turn.ID
 		if n.Turn.ID != "" {
-			s.starts.Store("turn:"+n.ThreadID+":"+n.Turn.ID, struct{}{})
+			if s.ended[key] {
+				return true
+			}
+			s.ended[key] = true
+			s.starts.Store(key, struct{}{})
+		}
+		// A completion without identity cannot settle a tracked turn.
+		if current := s.turns[n.ThreadID]; current != "" && current != n.Turn.ID {
+			return true
 		}
 		switch n.Turn.Status {
 		case "completed":
@@ -141,9 +174,20 @@ func (s *appServerSession) handleChildNotification(method string, raw json.RawMe
 		default:
 			return true
 		}
+	case "thread/status/changed":
+		if n.Status.Type != "active" {
+			// Idle alone is not a successful child result.
+			return true
+		}
+		status = core.SubTaskRunning
+		for _, flag := range n.Status.ActiveFlags {
+			if flag == "waitingOnApproval" || flag == "waitingOnUserInput" {
+				status = core.SubTaskWaiting
+			}
+		}
 	default:
 		return true
 	}
-	s.UpdateSubTask(core.SubTask{ID: n.ThreadID, Status: status, Background: true}, method == "turn/started")
+	s.UpdateSubTask(core.SubTask{ID: n.ThreadID, Status: status, ModeUnknown: true}, method == "turn/started")
 	return true
 }
