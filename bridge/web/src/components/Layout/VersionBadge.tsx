@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, ExternalLink, AlertCircle } from 'lucide-react';
+import { RefreshCw, ExternalLink, AlertCircle, Clock, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getUpdate, applyUpdate, type UpdateInfo } from '@/api/update';
+import { getUpdate, applyUpdate, ackUpdate, type UpdateInfo, type UpdateFailReason } from '@/api/update';
 import { getStatus } from '@/api/status';
 
 // Reconnect poll while the program restarts after an update. A restart takes about 10 s
 // (bots reconnect in ~10 s, im-bridge/claude/CLAUDE.md), so 2 s keeps the wait short.
 const RECONNECT_POLL_MS = 2000;
+// Give up waiting after this long. 来源：后端自检最多等 90 s 新版回应、再给 15 s 让旧版被拉起
+// （core/update_guard.go UpdateGuardTimeout / updateGuardGrace），之后旧版还要启动；
+// 取 150 s，保证回退结果先于超时提示出现。
+const RESTART_WAIT_MS = 150_000;
 
-type Phase = 'idle' | 'updating' | 'restarting' | 'failed';
+type Phase = 'idle' | 'updating' | 'restarting' | 'failed' | 'timeout' | 'rolledBack' | 'rollbackFailed';
 
 const v = (s: string) => (s && !s.startsWith('v') && s !== 'dev' ? `v${s}` : s);
 
@@ -18,11 +22,23 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState('');
+  const [reason, setReason] = useState<UpdateFailReason>('other');
+  const [rb, setRb] = useState<{ from: string; to: string }>({ from: '', to: '' });
   const [downloadUrl, setDownloadUrl] = useState('');
   const timer = useRef<number | undefined>(undefined);
 
+  const showLastResult = (i: UpdateInfo) => {
+    const lr = i.last_result;
+    if (!lr) return false;
+    setRb({ from: v(lr.from), to: v(lr.to) });
+    setError(lr.detail || '');
+    setDownloadUrl(i.download_url);
+    setPhase(lr.status === 'rolled_back' ? 'rolledBack' : 'rollbackFailed');
+    return true;
+  };
+
   useEffect(() => {
-    getUpdate().then(setInfo).catch(() => {
+    getUpdate().then(i => { setInfo(i); showLastResult(i); }).catch(() => {
       getStatus().then(s => setInfo({ current: s.version, latest: '', has_update: false, dev: false, download_url: '', error: '' })).catch(() => {});
     });
     return () => window.clearInterval(timer.current);
@@ -31,12 +47,28 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
   if (!info) return null;
 
   const waitForRestart = (from: string) => {
+    const started = Date.now();
     timer.current = window.setInterval(() => {
+      if (Date.now() - started > RESTART_WAIT_MS) {
+        window.clearInterval(timer.current);
+        setDownloadUrl(info.download_url);
+        setPhase('timeout');
+        return;
+      }
       getStatus()
         .then(s => {
           if (s.version && s.version !== from) {
             window.clearInterval(timer.current);
             window.location.reload();
+          } else if (s.version === from) {
+            // Old version answering: either not restarted yet, or the self-check rolled back.
+            getUpdate().then(i => {
+              if (i.last_result) {
+                window.clearInterval(timer.current);
+                setInfo(i);
+                showLastResult(i);
+              }
+            }).catch(() => {});
           }
         })
         .catch(() => { /* still restarting */ });
@@ -57,24 +89,47 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
       } else {
         setPhase('failed');
         setError(r.error || '');
+        setReason(r.reason || 'other');
         setDownloadUrl(r.download_url || info.download_url);
       }
     } catch (e: any) {
       setPhase('failed');
       setError(e?.message || String(e));
+      setReason('other');
       setDownloadUrl(info.download_url);
     }
   };
 
+  const dismiss = () => {
+    ackUpdate().catch(() => {});
+    setInfo({ ...info, last_result: undefined });
+    setPhase('idle');
+  };
+
   const current = v(info.current);
   const busy = phase === 'updating' || phase === 'restarting';
-  const showUpdate = info.has_update && phase !== 'failed';
+  const notice = phase === 'failed' || phase === 'timeout' || phase === 'rolledBack' || phase === 'rollbackFailed';
+  const showUpdate = info.has_update && !notice;
   const label = phase === 'updating'
     ? t('update.updating', { version: v(info.latest) })
     : phase === 'restarting'
       ? t('update.restarting')
       : t('update.button', { version: v(info.latest) });
   const title = info.dev ? t('update.dev') : info.error ? `${t('update.checkFailed')}: ${info.error}` : undefined;
+
+  const noticeText = phase === 'failed'
+    ? t(`update.reason.${reason}`)
+    : phase === 'timeout'
+      ? t('update.timeout')
+      : phase === 'rolledBack'
+        ? t('update.rolledBack', rb)
+        : t('update.rollbackFailed', rb);
+  const noticeHead = phase === 'failed' ? t('update.failed') : undefined;
+  // rolled back = working again, so it is a warning (amber), not an error (red)
+  const tone = phase === 'rolledBack' || phase === 'timeout'
+    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    : 'bg-red-500/10 text-red-600 dark:text-red-400';
+  const NoticeIcon = phase === 'timeout' ? Clock : phase === 'rolledBack' ? Undo2 : AlertCircle;
 
   if (collapsed) {
     return (
@@ -92,9 +147,9 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
             <RefreshCw size={14} className={cn(busy && 'animate-spin')} />
           </button>
         )}
-        {phase === 'failed' && (
-          <a href={downloadUrl} target="_blank" rel="noopener noreferrer" title={`${t('update.failed')}: ${error}`} className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10">
-            <AlertCircle size={14} />
+        {notice && (
+          <a href={downloadUrl} target="_blank" rel="noopener noreferrer" title={noticeText} aria-label={noticeText} className={cn('p-1.5 rounded-lg', tone)}>
+            <NoticeIcon size={14} />
           </a>
         )}
       </div>
@@ -121,16 +176,30 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
           <span className="truncate">{label}</span>
         </button>
       )}
-      {phase === 'failed' && (
-        <div className="rounded-lg bg-red-500/10 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 space-y-1">
+      {notice && (
+        <div className={cn('rounded-lg px-2 py-1.5 text-xs space-y-1', tone)} data-testid="update-notice">
           <div className="flex items-start gap-1">
-            <AlertCircle size={13} className="shrink-0 mt-px" />
-            <span className="min-w-0 [overflow-wrap:anywhere]">{t('update.failed')}{error ? `: ${error}` : ''}</span>
+            <NoticeIcon size={13} className="shrink-0 mt-px" />
+            <span className="min-w-0 [overflow-wrap:anywhere]">
+              {noticeHead && <span className="font-medium">{noticeHead}：</span>}
+              {noticeText}
+            </span>
           </div>
-          <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline">
-            <ExternalLink size={12} />
-            {t('update.openDownload')}
-          </a>
+          {error && (
+            <details className="opacity-80">
+              <summary className="cursor-pointer select-none">{t('update.details')}</summary>
+              <div className="mt-1 font-mono text-[11px] [overflow-wrap:anywhere]">{error}</div>
+            </details>
+          )}
+          <div className="flex items-center gap-3">
+            <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline">
+              <ExternalLink size={12} />
+              {t('update.openDownload')}
+            </a>
+            {(phase === 'rolledBack' || phase === 'rollbackFailed') && (
+              <button type="button" onClick={dismiss} className="underline opacity-80">{t('update.dismiss')}</button>
+            )}
+          </div>
         </div>
       )}
     </div>
