@@ -32,6 +32,7 @@ import (
 // ── request / result ───────────────────────────────────────────
 
 type WizardRequest struct {
+	libraryHost string // host of the management page (handleSetupApply): cloud_web loads library pictures from it
 	Platform string `json:"platform"` // "discord" (default) | "feishu" | "lark" | "cloud_web" (自建平台)
 	Language string `json:"language,omitempty"`
 	Discord  *struct {
@@ -123,7 +124,7 @@ type WizardRoleResult struct {
 // WizardWarning is something the user still has to do (or should know) after apply.
 // Blocking ones mean the bot will not work until it is done, so the result is not ok.
 type WizardWarning struct {
-	Code     string `json:"code"` // cloud_web_unreachable | message_content_intent_off | message_content_intent_unknown | bot_not_in_guild | allow_from_unknown | allow_from_everyone | gate_not_running | discord_token_invalid | agent_not_logged_in | agent_login_unknown | reply_language_default
+	Code     string `json:"code"` // cloud_web_unreachable | message_content_intent_off | message_content_intent_unknown | bot_not_in_guild | allow_from_unknown | allow_from_everyone | gate_not_running | discord_token_invalid | agent_not_logged_in | agent_login_unknown | reply_language_default | discord_avatar_not_set
 	Project  string `json:"project,omitempty"`
 	Blocking bool   `json:"blocking"`
 	Message  string `json:"message"`
@@ -1127,6 +1128,9 @@ func ApplyWizard(ctx context.Context, env WizardEnv, req WizardRequest) *WizardR
 	_, usable := activeJev(env.DataDir)
 	res.JevHint = JevHint(req.Language, usable, res.Hardware, pl.fallbackName)
 
+	if req.Platform == "discord" {
+		applyDiscordAvatars(ctx, env.DataDir, req.Language, pl.roles, pl.team, state.Team, res)
+	}
 	st := SetupState{Platform: req.Platform, Language: req.Language, GuildID: guildID, ChannelID: channelID,
 		FallbackRole: pl.fallback, Team: pl.team, UpdatedAt: time.Now().Format(time.RFC3339)}
 	if isFeishu {
@@ -1424,7 +1428,11 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 			pw.PlatformType = "cloud_web"
 			cur := s.projectPlatform(r.project, "cloud_web")
 			pw.Options["transport"] = "websocket"
-			pw.Options["ws_url"] = cloudWebBotURL(cwBase, r.project, r.Name, r.mentionID)
+			avatar := cloudWebQuery(fmt.Sprint(cur["ws_url"]), "avatar") // not passed = keep
+			if r.Avatar != nil {
+				avatar = cloudWebAvatar(dataDir, req.libraryHost, *r.Avatar)
+			}
+			pw.Options["ws_url"] = cloudWebBotURL(cwBase, r.project, r.Name, r.mentionID, avatar)
 			pw.Options["token"] = cwToken
 			if a, _ := cur["allow_from"].(string); strings.TrimSpace(a) == "" || strings.TrimSpace(a) == AllowFromUnset {
 				pw.Options["allow_from"] = cloudWebPresets[req.Platform].AllowFrom
@@ -1989,6 +1997,7 @@ func (m *ManagementServer) handleSetupApply(w http.ResponseWriter, r *http.Reque
 	if m.cronScheduler != nil { // a running service: the wiki's jobs start without a restart
 		env.Cron = CronOfScheduler(m.cronScheduler)
 	}
+	req.libraryHost = r.Host
 	res := ApplyWizard(r.Context(), env, req)
 	status := http.StatusOK
 	if !res.OK && !res.Saved { // saved with warnings is still a 200: the config was written
