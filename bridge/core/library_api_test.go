@@ -128,3 +128,39 @@ func TestCloudWebAvatarParam(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyDiscordAvatars(t *testing.T) {
+	dir := t.TempDir()
+	var img bytes.Buffer
+	_ = png.Encode(&img, image.NewRGBA(image.Rect(0, 0, 4, 4)))
+	_ = SaveLibraryAvatar(dir, "mypic", img.Bytes())
+	calls := 0
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch && r.URL.Path == "/users/@me" {
+			calls++
+			if fail {
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	old := discordAPIBase
+	discordAPIBase = srv.URL
+	t.Cleanup(func() { discordAPIBase = old; srv.Close() })
+
+	roles := []plannedRole{{wizardIdentity: wizardIdentity{token: "tok"}, project: "a"}, {wizardIdentity: wizardIdentity{token: "tok"}, project: "b"}}
+	team := []SetupTeamEntry{{Project: "a", Avatar: "mypic"}, {Project: "b", Avatar: "mypic"}}
+	res := &WizardResult{}
+	applyDiscordAvatars(t.Context(), dir, "zh", roles, team, []SetupTeamEntry{{Project: "b", Avatar: "mypic"}}, res)
+	if calls != 1 || len(res.Warnings) != 0 || team[0].Avatar != "mypic" {
+		t.Fatalf("unchanged avatar must not be patched: calls=%d warnings=%v", calls, res.Warnings)
+	}
+	fail = true
+	team = []SetupTeamEntry{{Project: "a", Avatar: "mypic"}}
+	applyDiscordAvatars(t.Context(), dir, "zh", roles, team, []SetupTeamEntry{{Project: "a", Avatar: "orange"}}, res)
+	if calls != 2 || len(res.Warnings) != 1 || team[0].Avatar != "orange" || res.Warnings[0].Blocking {
+		t.Fatalf("failed patch: one try, a non-blocking warning, old avatar kept: calls=%d %v %v", calls, res.Warnings, team)
+	}
+}
