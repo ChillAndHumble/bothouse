@@ -177,8 +177,13 @@ func ourHook(cmd string) string {
 	return m[1]
 }
 
-// AgentHookSettingsPath is the role's Claude Code project settings file, read by both CLIs.
-func AgentHookSettingsPath(workDir string) string {
+// AgentHookSettingsPath is the role's project settings file: .claude/settings.json for Claude Code and DSH (DSH
+// reads it through its bridge), .gemini/settings.json for Gemini CLI (user-level is ~/.gemini/settings.json;
+// the role's work dir is the project, so the project-level file is the one we write — never the user's home).
+func AgentHookSettingsPath(cli, workDir string) string {
+	if cli == "gemini" {
+		return filepath.Join(workDir, ".gemini", "settings.json")
+	}
 	return filepath.Join(workDir, ".claude", "settings.json")
 }
 
@@ -271,8 +276,8 @@ func editHooks(m map[string]any, drop func(name string) bool, add []map[string]a
 }
 
 // AgentHooksEnabled lists the hooks switched on in the role's settings file, in agentHooks order.
-func AgentHooksEnabled(workDir string) ([]string, error) {
-	m, err := readSettings(AgentHookSettingsPath(workDir))
+func AgentHooksEnabled(cli, workDir string) ([]string, error) {
+	m, err := readSettings(AgentHookSettingsPath(cli, workDir))
 	if err != nil {
 		return nil, err
 	}
@@ -302,9 +307,9 @@ func AgentHooksEnabled(workDir string) ([]string, error) {
 }
 
 // wizardHooksFor: the wizard switches hooks on for new roles of this agent type: Claude Code natively, DSH
-// (agent type "dsh") through its hook bridge.
+// (agent type "dsh") through its hook bridge, Gemini CLI through the same run.py translator as DSH.
 func wizardHooksFor(agentType string) bool {
-	return (agentType == "claudecode" || agentType == "dsh") && AgentHookFS != nil
+	return (agentType == "claudecode" || agentType == "dsh" || agentType == "gemini") && AgentHookFS != nil
 }
 
 // AgentHookSwitchFile is the role's on/off switch: {"off": [hook names] or ["all"]}. run.py reads it on every
@@ -334,8 +339,47 @@ func AgentHooksSwitchedOff(workDir string) []string {
 	return out
 }
 
-// AgentHookCLIs are the CLIs the hooks run under: Claude Code natively, DSH through its bridge.
-var AgentHookCLIs = []string{"claudecode", "dsh"}
+// AgentHookCLIs are the CLIs the hooks run under: Claude Code natively, DSH and Gemini CLI through run.py
+// (each turns its own payload into Claude Code's shape).
+var AgentHookCLIs = []string{"claudecode", "dsh", "gemini"}
+
+// geminiMatchers: the matcher each hook gets in Gemini CLI, whose built-in tool names differ from both Claude
+// Code's and DSH's (https://geminicli.com/docs/hooks/reference "Matchers and tool names": run_shell_command,
+// read_file, write_file, replace, invoke_agent). Matchers there are regular expressions.
+var geminiMatchers = map[string]string{
+	"bash-guard":            "run_shell_command",
+	"param-source-guard":    "write_file|replace",
+	"dispatch-review-guard": "invoke_agent|subagent|write_file|replace",
+}
+
+// geminiEvent translates a Claude Code hook event name (what agentHooks registers) into Gemini CLI's name.
+// Source: https://geminicli.com/docs/hooks/ and /docs/hooks/reference ("Hook events" table).
+//
+//	PreToolUse       -> BeforeTool   ("Fires before a tool is invoked", decision "deny" blocks it)
+//	PostToolUse      -> AfterTool    ("Fires after a tool executes")
+//	UserPromptSubmit -> BeforeAgent  ("after a user submits a prompt, but before the agent begins planning";
+//	                                  it injects context, which is what wiki-context does)
+//	Stop             -> AfterAgent   ("once per turn after the model generates its final response" — the same
+//	                                  moment as Claude Code's Stop, and its deny/exit 2 retries the turn, which
+//	                                  is what fix-claim-guard/promise-guard need. SessionEnd is the session's
+//	                                  exit: too late to send the agent back to fix its claim.)
+//
+// Unknown events pass through unchanged.
+func geminiEvent(claudeCodeEvent string) string {
+	switch claudeCodeEvent {
+	case "PreToolUse":
+		return "BeforeTool"
+	case "PostToolUse":
+		return "AfterTool"
+	case "UserPromptSubmit":
+		return "BeforeAgent"
+	case "Stop":
+		return "AfterAgent"
+	case "SessionStart", "SessionEnd", "Notification", "PreCompress":
+		return claudeCodeEvent
+	}
+	return claudeCodeEvent
+}
 
 // AgentHookOptions says which role and which hooks.
 type AgentHookOptions struct {
@@ -391,6 +435,8 @@ func (o AgentHookOptions) personaPath() (string, error) {
 		return PersonaFilePath("claudecode", o.WorkDir), nil
 	case "dsh":
 		return filepath.Join(o.WorkDir, "AGENTS.md"), nil // DSH reads AGENTS.md (dsh-agent-instructions)
+	case "gemini":
+		return PersonaFilePath("gemini", o.WorkDir), nil // Gemini CLI reads GEMINI.md
 	}
 	return "", fmt.Errorf("hooks run under %s only, not %q", strings.Join(AgentHookCLIs, " and "), o.CLI)
 }
@@ -416,7 +462,7 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	sp := AgentHookSettingsPath(o.WorkDir)
+	sp := AgentHookSettingsPath(o.CLI, o.WorkDir)
 	m, err := readSettings(sp)
 	if err != nil {
 		return nil, err
@@ -425,20 +471,32 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	var events []string
 	for _, n := range names {
 		h, _ := agentHookByName(n)
+		timeout := h.Timeout
+		ev := h.Event
+		if o.CLI == "gemini" {
+			ev = geminiEvent(h.Event)
+			timeout *= 1000 // Gemini's "timeout" is milliseconds (default 60000), Claude Code's is seconds
+		}
 		g := map[string]any{"hooks": []any{map[string]any{"type": "command",
-			"command": agentHookCommand(python, dir, n, "--role", o.WorkDir), "timeout": h.Timeout}}}
-		if h.Matcher != "" {
-			g["matcher"] = h.Matcher
+			"command": agentHookCommand(python, dir, n, "--role", o.WorkDir), "timeout": timeout}}}
+		matcher := h.Matcher
+		if o.CLI == "gemini" {
+			if m, ok := geminiMatchers[n]; ok {
+				matcher = m
+			}
+		}
+		if matcher != "" {
+			g["matcher"] = matcher
 		}
 		add = append(add, g)
-		events = append(events, h.Event)
+		events = append(events, ev)
 	}
 	editHooks(m, func(n string) bool { return slices.Contains(names, n) }, add, events)
 	if err := writeSettings(sp, m); err != nil {
 		return nil, err
 	}
 	res := &AgentHookResult{HooksDir: dir, SettingsFile: sp, PersonaFile: persona}
-	if res.Enabled, err = AgentHooksEnabled(o.WorkDir); err != nil {
+	if res.Enabled, err = AgentHooksEnabled(o.CLI, o.WorkDir); err != nil {
 		return nil, err
 	}
 	if err := writeHookRules(persona, o.Lang, res.Enabled, python, dir, o.WorkDir); err != nil {
@@ -467,7 +525,7 @@ func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	sp := AgentHookSettingsPath(o.WorkDir)
+	sp := AgentHookSettingsPath(o.CLI, o.WorkDir)
 	m, err := readSettings(sp)
 	if err != nil {
 		return nil, err
@@ -479,7 +537,7 @@ func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 		}
 	}
 	res := &AgentHookResult{SettingsFile: sp, PersonaFile: persona}
-	if res.Enabled, err = AgentHooksEnabled(o.WorkDir); err != nil {
+	if res.Enabled, err = AgentHooksEnabled(o.CLI, o.WorkDir); err != nil {
 		return nil, err
 	}
 	python, _ := FindPython()

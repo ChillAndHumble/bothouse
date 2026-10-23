@@ -25,7 +25,7 @@ func useRepoHooks(t *testing.T) {
 
 func readSettingsT(t *testing.T, workDir string) map[string]any {
 	t.Helper()
-	b, err := os.ReadFile(AgentHookSettingsPath(workDir))
+	b, err := os.ReadFile(AgentHookSettingsPath("claudecode", workDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestAgentHooksOnOffKeepsUserContent(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(wd, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(AgentHookSettingsPath(wd), []byte(user), 0o644); err != nil {
+	if err := os.WriteFile(AgentHookSettingsPath("claudecode", wd), []byte(user), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(wd, "CLAUDE.md"), []byte("# 角色\n你是橘。\n"), 0o644); err != nil {
@@ -84,7 +84,7 @@ func TestAgentHooksOnOffKeepsUserContent(t *testing.T) {
 	if _, err := EnableAgentHooks(o); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(AgentHookSettingsPath(wd))
+	b, _ := os.ReadFile(AgentHookSettingsPath("claudecode", wd))
 	if n := strings.Count(string(b), "' bash-guard\""); n != 1 {
 		t.Fatalf("bash-guard entries = %d\n%s", n, b)
 	}
@@ -125,13 +125,107 @@ func TestAgentHooksOnOffKeepsUserContent(t *testing.T) {
 	if m["model"] != "opus" {
 		t.Fatalf("settings after off = %v", m)
 	}
-	b, _ = os.ReadFile(AgentHookSettingsPath(wd))
+	b, _ = os.ReadFile(AgentHookSettingsPath("claudecode", wd))
 	if !strings.Contains(string(b), "my-own-hook") || strings.Contains(string(b), "run.py") {
 		t.Fatalf("settings after off:\n%s", b)
 	}
 	p, _ = os.ReadFile(filepath.Join(wd, "CLAUDE.md"))
 	if string(p) != "# 角色\n你是橘。\n" {
 		t.Fatalf("persona after off = %q", p)
+	}
+}
+
+func TestAgentHooksGemini(t *testing.T) {
+	useRepoHooks(t)
+	// never the real ~/.gemini: HOME points at a scratch dir for the whole test
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	data, wd := t.TempDir(), t.TempDir()
+	o := AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "gemini", Lang: "en"}
+	res, err := EnableAgentHooks(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(wd, ".gemini", "settings.json"); res.SettingsFile != want {
+		t.Fatalf("settings file = %q, want %q", res.SettingsFile, want)
+	}
+	if res.PersonaFile != filepath.Join(wd, "GEMINI.md") {
+		t.Fatalf("persona = %q", res.PersonaFile)
+	}
+	if !slices.Equal(res.Enabled, AgentHookNames()) {
+		t.Fatalf("enabled = %v", res.Enabled)
+	}
+	if _, err := os.Stat(filepath.Join(wd, ".claude", "settings.json")); !os.IsNotExist(err) {
+		t.Fatalf("gemini must not write .claude/settings.json: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".gemini")); !os.IsNotExist(err) {
+		t.Fatalf("gemini must not write the user's ~/.gemini: %v", err)
+	}
+	b, err := os.ReadFile(AgentHookSettingsPath("gemini", wd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	hooks, _ := m["hooks"].(map[string]any)
+	for _, ev := range []string{"BeforeTool", "AfterAgent", "BeforeAgent"} {
+		if hooks[ev] == nil {
+			t.Fatalf("no %s group in\n%s", ev, b)
+		}
+	}
+	for _, ev := range []string{"PreToolUse", "Stop", "UserPromptSubmit"} {
+		if hooks[ev] != nil {
+			t.Fatalf("Claude Code event %s must be translated for gemini:\n%s", ev, b)
+		}
+	}
+	txt := string(b)
+	if !strings.Contains(txt, `"matcher": "run_shell_command"`) || strings.Contains(txt, "Bash|bash|job_output") {
+		t.Fatalf("bash-guard matcher must be Gemini's tool name:\n%s", txt)
+	}
+	// Gemini's timeout is milliseconds: bash-guard's 10s becomes 10000
+	if !strings.Contains(txt, `"timeout": 10000`) {
+		t.Fatalf("timeout must be in milliseconds:\n%s", txt)
+	}
+	if on, err := AgentHooksEnabled("gemini", wd); err != nil || !slices.Equal(on, AgentHookNames()) {
+		t.Fatalf("enabled read back = %v %v", on, err)
+	}
+	p, _ := os.ReadFile(filepath.Join(wd, "GEMINI.md"))
+	if !strings.Contains(string(p), hookRulesBegin) || !strings.Contains(string(p), "bash-guard") {
+		t.Fatalf("GEMINI.md = %q", p)
+	}
+	// twice = no duplicate entries
+	if _, err := EnableAgentHooks(o); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(res.SettingsFile)
+	if n := strings.Count(string(b), "' bash-guard\""); n != 1 {
+		t.Fatalf("bash-guard entries = %d\n%s", n, b)
+	}
+	// off: the hook groups go, the persona block goes
+	if _, err := DisableAgentHooks(o); err != nil {
+		t.Fatal(err)
+	}
+	if on, _ := AgentHooksEnabled("gemini", wd); len(on) != 0 {
+		t.Fatalf("after off: %v", on)
+	}
+	if p, _ := os.ReadFile(filepath.Join(wd, "GEMINI.md")); strings.Contains(string(p), hookRulesBegin) {
+		t.Fatalf("GEMINI.md after off = %q", p)
+	}
+}
+
+func TestGeminiEvent(t *testing.T) {
+	for cc, want := range map[string]string{
+		"PreToolUse": "BeforeTool", "PostToolUse": "AfterTool", "Stop": "AfterAgent",
+		"UserPromptSubmit": "BeforeAgent", "SessionStart": "SessionStart", "Other": "Other",
+	} {
+		if got := geminiEvent(cc); got != want {
+			t.Errorf("geminiEvent(%q) = %q, want %q", cc, got, want)
+		}
 	}
 }
 
@@ -266,7 +360,7 @@ func TestApplyWizardNewClaudeRoleGetsHooks(t *testing.T) {
 		t.Fatalf("apply failed: %+v", res)
 	}
 	ju := filepath.Join(dir, "roles", "juzi")
-	on, err := AgentHooksEnabled(ju)
+	on, err := AgentHooksEnabled("claudecode", ju)
 	if err != nil || !slices.Equal(on, AgentHookNames()) {
 		t.Fatalf("juzi hooks = %v %v", on, err)
 	}
@@ -274,7 +368,7 @@ func TestApplyWizardNewClaudeRoleGetsHooks(t *testing.T) {
 	if !strings.Contains(string(p), "你是橘") || !strings.Contains(string(p), "都用中文回答") || !strings.Contains(string(p), "## 工具拦截规则") {
 		t.Fatalf("juzi persona = %q", p)
 	}
-	if _, err := os.Stat(AgentHookSettingsPath(filepath.Join(dir, "roles", "whale"))); !os.IsNotExist(err) {
+	if _, err := os.Stat(AgentHookSettingsPath("claudecode", filepath.Join(dir, "roles", "whale"))); !os.IsNotExist(err) {
 		t.Fatalf("codex role must get no hooks: %v", err)
 	}
 	found := false
