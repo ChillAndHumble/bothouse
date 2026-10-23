@@ -8,13 +8,17 @@ wiki 在哪：环境变量 GATE_WIKI（默认 ~/wiki，即 llm-wiki 装在 ~/wik
 
 POST /context {key, text}  → {wiki: [{path, desc}]}，desc = 页描述 | 行号: 原文 | …（cc-connect 原样拼成「- path — desc」）
 """
-import os, re, time
+import hashlib, os, re, time
 from pathlib import Path
 
 try:
     import lead  # 主角色切换（gate 目录里有）；hooks/wiki-context.py 只装了 ctxsvc + wiki_search，没有就不附身份段
 except ImportError:
     lead = None
+try:
+    import board  # 任务板（gate 目录里有）；同上，没装就不附
+except ImportError:
+    board = None
 import wiki_search as search
 
 _env = os.environ.get("GATE_WIKI", "~/wiki").strip()
@@ -70,5 +74,21 @@ def match_wiki(text, k=TOP_PAGES):
 def context(req):
     # 主角色切换过就附上主/次身份段（lead.py）。cc-connect 按 path 每个会话只推一次，path 里带切换时间，
     # 所以每次切换后每个角色的下一轮各收到一次（用户 2026-10-21「这个我预期可以一句话去换」）
-    who = lead.identity(req.get("bot") or "") if lead else None
-    return {"wiki": ([who] if who else []) + match_wiki(req.get("text") or "")}
+    bot = req.get("bot") or ""
+    who = lead.identity(bot) if lead else None
+    pb = lead.playbook(bot) if lead else None  # 当主的才有：主角色工作手册（lead.playbook）
+    return {"wiki": [x for x in (who, pb) if x] + board_items() + match_wiki(req.get("text") or "")}
+
+
+def board_items():
+    """任务板整张附上（board.py）。path 带内容指纹：cc-connect 同一 path 每个会话只推一次（gate.go turnContext），
+    所以板子不变不重复推，一变每个 bot 下一轮各收到一次新板（用户 2026-10-22「他应该能看到为什么从开始找」）。"""
+    if board is None or not board._path("board.jsonl").exists():  # 没用过任务板就不附（板子清空后文件还在，照推「没有进行中的事」）
+        return []
+    try:
+        ls = board.lines()
+    except Exception:  # 板子读坏了不挡推页
+        return []
+    body = "\n".join(ls) or "现在没有进行中的事"
+    tag = hashlib.sha1(body.encode()).hexdigest()[:6]
+    return [{"path": f"【任务板 {tag}】", "desc": "谁手上有哪件事、做在哪（接手前先看这里；增改结束用 board 命令）\n" + body}]

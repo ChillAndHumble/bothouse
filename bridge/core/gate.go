@@ -34,6 +34,12 @@ import (
 
 const insertNote = "（以下是补充信息，不是提问。若它不改变你之前的结论、也无需动作，只回复 NO_REPLY；否则简短回应。）"
 
+// mentionedNote goes before a person's message that called this bot (an @ of the bot or its role,
+// a bare @, or a reply to its message) when the gate says reply: such a turn must not end in a bare
+// NO_REPLY. 2026-10-22, user: 「好像我回你的时候同时艾特彩虹猫，你们都不理我，然后还有空@也不理我」
+// (both times the gate said reply and the model answered NO_REPLY).
+const mentionedNote = "（用户这条明确 @ 了你或回复了你，必须回复，不要只回 NO_REPLY。）"
+
 type gateState struct {
 	url             string
 	timeout         time.Duration
@@ -43,13 +49,13 @@ type gateState struct {
 	textBurstWindow time.Duration // per-project idle text debounce; attachments keep the default
 	mu              sync.Mutex
 	buf             map[string][]string // interactiveKey → silent messages not yet delivered
-	held            map[string]*heldMsg // interactiveKey → burst being collected while idle
+	held            map[string]*heldMsg // interactiveKey → burst being collected (busy or idle)
 	released        map[*Message]bool   // bursts handed back to handleMessage by their timer
 	gbuf            map[string][]string // maomao fork: the same messages as the user wrote them (no media notes), for the gate
 }
 
 // Discord (and most IM clients) split "image + caption" into two messages, in either order,
-// and people often send a few lines in a row. When idle, a message is held burstWindow
+// and people often send a few lines in a row. Busy or idle, a message is held burstWindow
 // (attachment-only: attachmentHold) and anything arriving meanwhile joins it, so a burst
 // becomes one turn instead of a turn plus an injection that ends up answered twice.
 // maxBuffered caps the silent buffer; subs hear every message and may stay quiet for a long time.
@@ -87,7 +93,7 @@ type gateRequest struct {
 	// and a sub together (the sub answers, the lead waits for its @) from the sub's answer @-ing the
 	// lead (issue #182).
 	FromBot bool `json:"from_bot,omitempty"`
-	// Parts (maomao fork): the messages an idle burst folded into this one, each as it was sent; nil
+	// Parts (maomao fork): the messages a burst folded into this one, each as it was sent; nil
 	// for a single message. Content mixes them, so the gate judges "@-ed the lead and a sub together"
 	// on each part (issue #184).
 	Parts []gatePart `json:"parts,omitempty"`
@@ -146,17 +152,22 @@ func (e *Engine) SetGate(url string, timeoutMs int, fallback string) {
 	default:
 		fallback = "reply"
 	}
-	// Claude Code merges stdin input into the running turn, Codex app-server via turn/steer;
-	// codex exec would start a second process, so other agents get busy inserts as a queued turn.
-	inject := e.agent != nil && e.agent.Name() == "claudecode"
-	var injectDyn func() bool
-	if m, ok := e.agent.(interface{ SupportsMidTurnInput() bool }); ok {
-		// Asked per message: ACP learns it from the agent's handshake, after the gate is set up.
-		injectDyn = m.SupportsMidTurnInput
-	}
+	inject, injectDyn := midTurnInjectCaps(e.agent)
 	e.gate = &gateState{url: url, timeout: time.Duration(timeoutMs) * time.Millisecond, fallback: fallback, inject: inject, injectDyn: injectDyn, textBurstWindow: burstWindow,
 		buf: map[string][]string{}, held: map[string]*heldMsg{}, released: map[*Message]bool{}}
 	slog.Info("gate enabled", "url", url, "timeout_ms", timeoutMs, "fallback", fallback, "mid_turn_inject", e.gate.canInject())
+}
+
+// midTurnInjectCaps reports whether agent folds input sent during a turn into that turn.
+// Claude Code merges stdin input into the running turn, Codex app-server via turn/steer;
+// codex exec would start a second process, so other agents get busy inserts as a queued turn.
+// injectDyn is asked per message: ACP learns it from the agent's handshake, after setup.
+func midTurnInjectCaps(agent Agent) (inject bool, injectDyn func() bool) {
+	inject = agent != nil && agent.Name() == "claudecode"
+	if m, ok := agent.(interface{ SupportsMidTurnInput() bool }); ok {
+		injectDyn = m.SupportsMidTurnInput
+	}
+	return inject, injectDyn
 }
 
 // SetGateBurstWindow configures idle text coalescing before the engine starts
@@ -236,6 +247,9 @@ func (e *Engine) applyGate(p Platform, msg *Message, session *Session, interacti
 	}
 	if g == nil || msg.IsPermissionResponse {
 		if !msg.IsPermissionResponse {
+			if g == nil && e.applyLocalGate(p, msg, session, interactiveKey) {
+				return true
+			}
 			e.teamNoteTurn(msg, session)
 		}
 		return false
@@ -268,7 +282,11 @@ func (e *Engine) applyGate(p Platform, msg *Message, session *Session, interacti
 		h.timer.Reset(g.burstDelay(h.msg))
 		g.mu.Unlock()
 		return true
-	} else if !busy {
+	} else {
+		// Busy or idle, the burst is collected the same way (burstWindow / attachmentHold above):
+		// held only while idle, a busy bot judged "@别人 看这个" and its image one by one, and the
+		// image alone — no text, no @ — was inserted into the lead's running turn (user 2026-10-23
+		// 「我都艾特你了，他还在判断」; ~1.5s extra wait accepted).
 		window := g.holdWindow(msg)
 		h := &heldMsg{msg: msg}
 		h.timer = time.AfterFunc(window, func() {
@@ -335,6 +353,9 @@ func (e *Engine) applyGate(p Platform, msg *Message, session *Session, interacti
 		}
 	}
 	content := msg.Content
+	if dec.Action == "reply" && msg.Mentioned && !msg.FromBot {
+		content = mentionedNote + "\n" + content
+	}
 	session.backfillMu.Lock() // maomao fork: read and mark seen as one step (Session.backfillMu)
 	if back, images, ok := e.channelBackfill(p, msg, session); ok {
 		// The channel itself is the record: it covers the gate buffer and also

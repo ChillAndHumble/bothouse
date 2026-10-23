@@ -167,4 +167,20 @@ def identity(bot):
     return {"path": f"【主角色：{NAME[L]}，{s['at']} 用户切换】", "desc": text}
 
 
+
+# 主角色工作手册：谁当主就附给谁，当次的不附（用户 2026-10-23「方便任意人当主角色，并且也能放到仓库」）。
+# GATE_PLAYBOOK=<文件> 可换成英文版 ../lead/PLAYBOOK.md 或自己的；设成空或 off = 不附。
+_pb = os.environ.get("GATE_PLAYBOOK", str(Path(__file__).resolve().parent.parent / "lead" / "PLAYBOOK.zh-CN.md")).strip()
+PLAYBOOK = None if _pb.lower() in ("", "off") else Path(_pb).expanduser()
+
+
+def playbook(bot):
+    """bot 是当前主角色 → 手册段（ctxsvc 拼进上下文），否则 None。
+    path 里带切换时间：cc-connect 按 path 每个会话只推一次，换主后新主的下一轮收到一次。"""
+    s = state()
+    if bot != s["lead"] or PLAYBOOK is None or not PLAYBOOK.is_file():
+        return None
+    return {"path": f"【主角色工作手册：{PLAYBOOK}，{s['at'] or '默认主角色'}】",
+            "desc": PLAYBOOK.read_text(encoding="utf-8").strip()}
+
 configure(_default_team())

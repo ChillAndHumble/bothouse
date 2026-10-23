@@ -49,7 +49,7 @@ Go 全量 47 包、CUJ、目标 vet、Windows 交叉构建、前端构建通过�
 
 2026-10-21 Issue #229：新增 `dsh/`，在 DeepSeek Harness 里做 Discord 式频道 + 多种 AI（DSH 原生模型成员与经 cloud-web 接入的 cc-connect 外部 Agent）+ 语音/设备外接的设计。只含设计（dsh/README.md）、上游 DSH 固定提交、同步脚本和 `client-ui-discord` 包骨架；同步脚本已对固定提交验证两次幂等并拒绝嵌套仓库目标，尚未执行 DSH 安装与构建，无运行功能。未改 bridge/ 与 companion/，未部署。
 
-2026-10-21 Issue #223：ACP 对端声明 `agentCapabilities._meta["dsh/steer"]` 时，gate 忙时插话改走 `SendMidTurn`（session/prompt 带 `_meta["dsh/steer"]`，对端并入正在跑的那一轮并立即回 `_meta["dsh/steered"]`，输出仍从原 prompt 流出；没有在跑的 prompt 时对端拒绝，cc-connect 回落排队，不会另起一轮）。gate 改为逐条询问 `SupportsMidTurnInput`（ACP 握手后才知道），Codex/Claude Code 行为不变。`promptCapabilities.image=true` 时图片发 ACP image 块（png/jpeg/webp/gif，其余仍存盘写路径）；DSH 的 `tool_call_update` 不带 title，进度卡片结果行改用 tool_call 的名字。插话不再附 model-control 说明（那一轮的 prompt 已带）。DSH 侧 steer 是本机对 dsh-acp 0.2.1-rc.2 的补丁，不在本仓库。真实 Discord 私有测试频道（借鲸鱼娘 bot 第二连接，只收测试 webhook）验过插话、带图插话、发图、卡片；未部署，线上切换另行记录。
+2026-10-21 Issue #223：ACP 对端声明 `agentCapabilities._meta["dsh/steer"]` 时，gate 忙时插话改走 `SendMidTurn`（session/prompt 带 `_meta["dsh/steer"]`，对端并入正在跑的那一轮并立即回 `_meta["dsh/steered"]`，输出仍从原 prompt 流出；没有在跑的 prompt 时对端拒绝，cc-connect 回落排队，不会另起一轮）。gate 改为逐条询问 `SupportsMidTurnInput`（ACP 握手后才知道），Codex/Claude Code 行为不变。`promptCapabilities.image=true` 时图片发 ACP image 块（png/jpeg/webp/gif，其余仍存盘写路径）；DSH 的 `tool_call_update` 不带 title，进度卡片结果行改用 tool_call 的名字。插话不再附 model-control 说明（那一轮的 prompt 已带）。DSH 侧 steer 是对 dsh-acp 0.2.1-rc.2 的补丁，已收进 `integrations/dsh-acp-steer/`（`apply.sh` 打补丁，见该目录 README）。真实 Discord 私有测试频道（借鲸鱼娘 bot 第二连接，只收测试 webhook）验过插话、带图插话、发图、卡片；未部署，线上切换另行记录。
 
 2026-10-21：rc5 Linux 真机实测剩余问题（分支 fix/rc5-linux-followups，基线 main 9b880ec6）。重配已有机器人时，页头和确认页按人设文件实际写的回答语言显示（GET /setup/persona 和结果里的 reply_language 读 `<!-- conest:reply-language -->` 下一行），不勾「改现有人设」时写明沿用、怎么改；setup apply / token 校验遇 Discord 429 按 retry_after 重试（最多 3 次、单次不超过 10 秒，超了如实说要等多久）；jev 提示、jev 失败原因、保存页步骤行、token 无效、gate 提示、预设人设名补日文（步骤键名保持英文给脚本用，网页按语言翻）；setup apply 首次运行到写项目时才建 config.toml，token 无效不再留下空模板；媒体库不再默认找 ~/im-bridge/bin，只认 CONEST_MEDIA_BIN_DIR，NAS 根目录只认 CONEST_MEDIA_NAS_ROOT（没设就不用 NAS、不提示 NAS 没挂）；公开副本会带出的私有默认值改成必须给：contrib/gate 的 gate_switch.py / sync_gate.sh（SWITCH_HOST、SWITCH_TS_IP、SWITCH_WIN_HOME）、companion/tools/smoke_device.py（--instance-dir / --releases-dir 或 CONEST_DEVICE_*）、role-household 快照的 dial.py（RH_TEAM_DIR，没设不读忙闲）和 tools/smoke_phone.py（RH_CO_LEAD / RH_CO_SUB）；向导新建的项目写 show_quota_indicator = false、show_workdir_indicator = false，已有项目不动；install.sh 私有仓库不再打出 curl 404、装完的文档链接指向所装 tag，GETTING_STARTED 写了 CONEST_VERSION。未部署。
 
@@ -732,3 +732,9 @@ PR #10只补充工作流文档、PR模板及仓库设置，已合并；Issue #3�
 - 登录后侧栏展开显示 bothouse、收起显示 bh；清理服务商卡片旧品牌宣传与 Slack 应用模板。上游依赖、历史文档和第三方邀请链接保留原值。
 - 作者先前隔离验证：前端 lint、7 项测试、build 和 Go 沙箱全量测试通过；旧版本复现字母圆标及侧栏旧名，新版本验证 5 张头像、DSH 标签、明暗主题、390px 无横向溢出。
 - 本轮按橘派活提交并集成 release/v0.1.3；集成后前端重新构建。尚未部署，最终验收交橘。
+
+## 2026-10-23：本机 hook 同步（Issue #59）
+
+同步前台等待、DSH sleep/轮询/只读查询规则、教训表提示、派活拒绝说明和承诺回放测试。保留 HOOK_PROXY/GATE_WIKI/HOOK_RESEARCHER_DIRS 等通用配置；DSH 辅助文件复用随包日志读取器，既有 run.py 接入会话字段并保留角色开关与 Stop 处理，不另注册兼容 hook。bash-guard matcher 增加 job_output。研究派活按已配置目录要求 researcher，未扩大为所有目录。测试夹具不读取作者定时任务。
+
+Python 等待回归：main 的 bash-guard 对 18 个应拦案例放行，更新后通过。验证日志见 /tmp/hooksync；本分支仅实现与自查，draft PR 待独立验收，未部署。

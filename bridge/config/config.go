@@ -457,7 +457,7 @@ type AutoCompressConfig struct {
 // whose prompt cache has expired, start a fresh agent session instead and hand
 // over the old transcript's compaction summary and recent dialogue.
 type ColdCacheFreshConfig struct {
-	Enabled   *bool `toml:"enabled,omitempty"`    // default false
+	Enabled   *bool `toml:"enabled,omitempty"`    // default true; false turns it off
 	IdleMins  *int  `toml:"idle_mins,omitempty"`  // minutes since the last reply (default 60); checked only when the agent process starts, so keep it >= agent_session_idle_timeout_mins
 	MinTokens *int  `toml:"min_tokens,omitempty"` // context size worth leaving (default 80000)
 }
@@ -532,6 +532,10 @@ type ProjectConfig struct {
 	// GateFallback is the action used when the gate errors or times out (default "reply";
 	// sub agents that only speak when @-ed should use "context").
 	GateFallback string `toml:"gate_fallback,omitempty"`
+	// GateLocal: without gate_url, built-in rules handle a message that calls a busy bot (stop
+	// word → cancel the running turn; anything else → insert into it). nil = on.
+	// Source: user 2026-10-23 「默认打开」.
+	GateLocal *bool `toml:"gate_local,omitempty"`
 	// ChatModel / TaskModel (maomao fork): when both are set, the gate's "chat"/"task" tag picks
 	// the model for each idle turn. ChatEffort / TaskEffort optionally set reasoning effort for
 	// agents that support it. ModelTierStickyMins keeps a session on the task model after a task
@@ -588,6 +592,9 @@ type ProjectConfig struct {
 	// delegation policy (start subagents only on explicit human consent);
 	// false = send the request as is.
 	InjectSubagentPolicy *bool `toml:"inject_subagent_policy,omitempty"`
+	// InjectAgentIdentity: nil/true = prepend the bridge identity block each
+	// turn; false = the persona owns identity (saves prompt tokens).
+	InjectAgentIdentity *bool `toml:"inject_agent_identity,omitempty"`
 	// ReplyFooter: nil/true = render the reply footer; false = disable it
 	// entirely (the per-line indicator flags above become no-ops).
 	ReplyFooter      *bool        `toml:"reply_footer,omitempty"`
@@ -630,6 +637,12 @@ type ProjectConfig struct {
 	Shell string `toml:"shell,omitempty"`
 	// ShellProfile overrides the global shell_profile for this project.
 	ShellProfile string `toml:"shell_profile,omitempty"`
+}
+
+// GateLocalEnabled reports whether the built-in busy rules are on (gate_local; unset = on, user
+// 2026-10-23 「默认打开」). They only act while gate_url is empty.
+func (p ProjectConfig) GateLocalEnabled() bool {
+	return p.GateLocal == nil || *p.GateLocal
 }
 
 type AgentConfig struct {
@@ -4088,4 +4101,14 @@ func orDefault(v, d int) int {
 		return d
 	}
 	return v
+}
+
+// AgentIdentityEnabled reports whether the bridge prepends its per-turn
+// identity block. Default true; set inject_agent_identity = false for a
+// project whose persona file already states who it is.
+func (p ProjectConfig) AgentIdentityEnabled() bool {
+	if p.InjectAgentIdentity != nil {
+		return *p.InjectAgentIdentity
+	}
+	return true
 }

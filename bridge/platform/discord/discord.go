@@ -27,6 +27,7 @@ func init() {
 const maxDiscordLen = 1900
 
 type replyContext struct {
+	recordAgentReply func(string)
 	channelID string
 	messageID string
 	threadID  string
@@ -40,6 +41,7 @@ type replyContext struct {
 // responses. The first reply edits the deferred interaction response;
 // subsequent replies use followup messages.
 type interactionReplyCtx struct {
+	recordAgentReply func(string)
 	interaction *discordgo.Interaction
 	channelID   string
 	mu          sync.Mutex
@@ -796,6 +798,11 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 		m.ReferencedMessage = nil // its quote is already in the channel history
 	}
 	approvalContent := strings.TrimSpace(stripDiscordMention(m.Content, p.botID))
+	// bodySelf: the text itself @-s this bot (user, nickname or managed-role mention), as opposed to
+	// being addressed only as the reply target or by @everyone.
+	bodySelf := strings.Contains(m.Content, "<@"+p.botID+">") || strings.Contains(m.Content, "<@!"+p.botID+">") ||
+		(botRoleID != "" && strings.Contains(m.Content, "<@&"+botRoleID+">"))
+	humanReply := !fromBot && m.GuildID != "" && m.Type == discordgo.MessageTypeReply
 	m.Content = teamRoleMentions(m.Content, m.GuildID, p.botID) // maomao fork: <@&teammate role> → <@teammate>
 	replyAll := false
 	if m.GuildID != "" && p.isGroupReplyAllGuild(m.GuildID) {
@@ -806,14 +813,24 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 		replyAll = p.replyAllHere(m.GuildID, m.ChannelID, parent)
 	}
 	if mentioned && replyAll {
-		m.Content = markSelfMention(m.Content, p.botID, botRoleID, p.botName)
+		if humanReply {
+			m.Content = labelSelfMention(m.Content, p.botID, botRoleID, p.botName)
+		} else {
+			m.Content = markSelfMention(m.Content, p.botID, botRoleID, p.botName)
+		}
 	}
 	if m.GuildID != "" && !replyAll {
 		if !mentioned {
 			slog.Debug("discord: ignoring guild message without bot mention", "channel", m.ChannelID)
 			return
 		}
-		m.Content = stripDiscordMentionWithRole(m.Content, p.botID, botRoleID)
+		if humanReply {
+			// Keep "@name(你)" in a reply: stripped, the quote looked like the whole message and
+			// the bot did not see it was called (2026-10-22, 彩虹猫 stayed silent).
+			m.Content = labelSelfMention(m.Content, p.botID, botRoleID, p.botName)
+		} else {
+			m.Content = stripDiscordMentionWithRole(m.Content, p.botID, botRoleID)
+		}
 		if m.MentionEveryone {
 			m.Content = stripEveryoneHere(m.Content)
 		}
@@ -842,6 +859,13 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	rctx.lead = p.dispatchedBy(fromBot, mentioned, m.Author.ID, m.Content)
+	// A person's message hands this sub's answer back to the lead only when the text @-s this sub
+	// itself and does not reply to the lead. Being only the reply target is not "@lead and @sub
+	// together"; replying to the lead is talking to her, so she answers herself (gate.py co_mention
+	// says the same) instead of answering once now and again on the sub's @.
+	if !fromBot && (!bodySelf || (m.ReferencedMessage != nil && m.ReferencedMessage.Author != nil && m.ReferencedMessage.Author.ID == p.teamLead)) {
+		rctx.lead = ""
+	}
 
 	images, files, audio := classifyAttachments(m.Attachments, downloadURL)
 
@@ -851,7 +875,7 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 		}
 		// maomao fork: a bare @ means "look at what's going on" — keep it so the
 		// turn starts and the channel backfill shows the context.
-		m.Content = "（只 @ 了你，没写内容：看上面的频道消息判断要你做什么；看不出来就问）"
+		m.Content = "（用户 @ 了你，在等你回复：看上面的频道消息判断要你做什么；看不出来就问）"
 	}
 
 	// Prepend the replied-to message's content and images so the agent has context.
@@ -861,11 +885,13 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 
 	msg := &core.Message{
 		SessionKey: sessionKey, ChannelKey: channelKey, Platform: "discord",
+		Reference: p.messageReference(m.ReferencedMessage),
 		ChannelID: m.ChannelID,
 		MessageID: m.ID,
 		UserID:    m.Author.ID, UserName: m.Author.Username,
 		Content: m.Content, Images: images, Files: files, Audio: audio, ReplyCtx: rctx,
 		Mentioned: mentioned, FromBot: fromBot,
+		Direct: m.GuildID == "" && !fromBot, // a DM calls the bot (core/gate_local.go)
 	}
 	// Consume explicit approvals before bot labels, batching or the gate.
 	if fromBot && strings.HasPrefix(approvalContent, "/permit") {
@@ -883,10 +909,10 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 		if text == "" && len(images) == 0 && len(files) == 0 {
 			return // e.g. a footer-only chunk of a long reply
 		}
-		// maomao fork: a teammate calling this bot by name ("行了橘，…") counts like an @, so
+		// maomao fork: a teammate opening a line with this bot's name ("橘，…") counts like an @, so
 		// chat between bots can go on. No hop/round cap (user 2026-10-18「去掉模型聊天限制，
-		// 模型可以持续对话，没有限制」).
-		msg.Mentioned = msg.Mentioned || nameCalled(text, p.botName)
+		// 模型可以持续对话，没有限制」). A name mid-sentence does not (mentions.go nameCalled).
+		msg.Mentioned = msg.Mentioned || nameCalled(text, p.botName, teamBotNames(p.botID)...)
 		msg.Content = "【" + discordDisplayName(m) + "】" + text
 		p.holdBotMessage(s, m, msg, downloadURL)
 		return
@@ -1968,4 +1994,23 @@ func discordDisplayName(m *discordgo.MessageCreate) string {
 		return m.Author.GlobalName
 	}
 	return m.Author.Username
+}
+
+// messageReference only proposes shortening this bot's known agent output.
+// Session.renderReference checks the current context again at actual delivery.
+func (p *Platform) messageReference(ref *discordgo.Message) *core.MessageReference {
+	if ref == nil || ref.Author == nil || p.botID == "" || ref.Author.ID != p.botID || !p.turnSent.has(ref.ID) || ref.Timestamp.IsZero() {
+		return nil
+	}
+	text := []rune(ref.Content)
+	if len(text) > 80 {
+		text = text[:80]
+	}
+	prefix := "[replying to " + ref.Author.Username + ": "
+	return &core.MessageReference{
+		ID: ref.ID,
+		Full:   prefix + ref.Content + "]\n",
+		Short:  prefix + string(text) + "（你自己的上一条，已在上文）]\n",
+		SentAt: ref.Timestamp,
+	}
 }

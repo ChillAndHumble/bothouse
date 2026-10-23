@@ -720,10 +720,23 @@ name = "my-backend"
 #
 # ---- maomao fork: gate / main + subs / team status (see MAOMAO.md, docs/ccm-and-wiki.md) ----
 # ---- maomao 分支：快脑闸门、一主多 sub、队友状态（说明见 MAOMAO.md 和仓库根目录 docs/ccm-and-wiki.md）----
-# All optional; leave them out = upstream behaviour. / 全部可选，不写 = 和上游一样。
+# All optional; leave them out = upstream behaviour, except gate_local (default on). / 全部可选，不写 = 和上游一样（gate_local 除外，默认开）。
 # gate_url = "http://127.0.0.1:9930/decide"   # Main bot: ask the gate (contrib/gate/gate.py) for every user message.
 #                                             # 主 bot：每条用户消息先问闸门；同一个闸门的 /context 还负责每轮推 wiki 页。
 # gate_url = "http://127.0.0.1:9930/decide?bot=coder"   # A sub: ?bot=<key in GATE_TEAM subs>. / sub：?bot=<团队文件 subs 里的 key>
+# gate_local = true                # Default on, no gate_url needed: built-in keyword rules while the bot is busy.
+#                                  # A message that @-s it, replies to it or DMs it is inserted into the running turn
+#                                  # (agents with mid-turn input; others queue as before); one that is only
+#                                  # 「暂停」「停一下」「别做了」 / stop / pause cancels the running turn. Idle bots are unaffected.
+#                                  # The model gate (gate_url) is still installed by hand; with gate_url set it decides instead.
+#                                  # 默认开，不用配 gate_url：bot 忙时的内置关键词规则。@ 它、回复它或私聊它的消息插进当前这一轮
+#                                  # （支持中途插话的 agent；其余照旧排队）；整条只是「暂停」「停一下」「别做了」/ stop / pause
+#                                  # 就打断当前这一轮。空闲时不受影响。模型闸门（gate_url）仍需手动装，配了它就由它判断。
+#                                  # false = upstream behaviour / 关掉 = 和上游一样。
+#                                  # Platforms that tell "called": discord, telegram, cloud-web, feishu, slack, webex
+#                                  # (@ / reply / DM); wecom (websocket), dingtalk (DM only). Others: rules never apply.
+#                                  # 能判断"叫到它"的平台：discord、telegram、cloud-web、飞书、slack、webex（@、回复、私聊）；
+#                                  # 企业微信（websocket）、钉钉只认私聊；其余平台不生效。
 # gate_timeout_ms = 3000           # Gate error/timeout → gate_fallback. / 闸门出错或超时按 gate_fallback 处理。
 # gate_fallback = "reply"          # Main: "reply" (default). Subs: "context" (listen only, never all subs at once).
 #                                  # 主 bot 用默认 reply；sub 用 context（闸门挂了只听不说，不会几个 sub 一起开口）。
@@ -753,6 +766,7 @@ name = "my-backend"
 #                                   # 状态行不显示账号额度，也不再查询额度（默认 true 显示）
 # show_quota_status = false        # Without a measured quota, show nothing instead of "unavailable / no data / querying / failed" (default: true)
 #                                   # 查不到额度时不显示「暂不可查询/暂无数据/查询中/查询失败」，什么都不显示（默认 true 显示）
+# inject_agent_identity = false   # default true; false when the persona file already states identity.
 # inject_subagent_policy = false   # Stop prefixing each turn with the bridge delegation policy (default: true = prefix)
 #                                   # 不再在每轮请求前加「子 agent 委派策略」（默认 true 加）
 # disabled_commands = ["restart", "upgrade", "cron"]  # Disable specific commands for this project
@@ -815,6 +829,21 @@ name = "my-backend"
 # user_ids = ["*"]                                           # matches all unassigned users
 # disabled_commands = ["*"]                                  # disable all built-in commands
 # rate_limit = { max_messages = 10, window_secs = 60 }
+
+# Cold cache fresh (maomao fork) — on by default / 缓存过期开新会话（maomao 分支）—— 默认开
+# When a session has been idle for idle_mins (the prompt cache has expired) and its
+# context is at least min_tokens, the next message starts a fresh agent session and
+# hands over the old transcript's compaction summary and recent dialogue, instead of
+# re-reading the whole uncached context. Agents with handoff support: claudecode,
+# codex, antigravity; others resume as usual.
+# 会话空闲 ≥ idle_mins（提示缓存已过期）且上下文 ≥ min_tokens 时，下一条消息不恢复旧会话，
+# 开新会话并带上旧会话的压缩摘要和最近对话。支持的 agent：claudecode、codex、antigravity。
+#
+# [projects.cold_cache_fresh]
+# enabled = false                # Leave out = on; false = upstream behaviour / 不写 = 开；false = 和上游一样
+# idle_mins = 60                 # Minutes since the last reply (default 60); keep >= agent_session_idle_timeout_mins
+#                                # 距上次回复的分钟数（默认 60）；不要小于 agent_session_idle_timeout_mins
+# min_tokens = 80000             # Context size worth leaving (default 80000) / 上下文达到多少才换新会话（默认 80000）
 
 # Heartbeat — periodic awareness check / 心跳 — 周期性巡检
 # The agent wakes up at a fixed interval to check the environment.
@@ -2016,6 +2045,9 @@ app_secret = "your-feishu-app-secret"
 # For Devin specifically, prefer the dedicated `type = "devin"` section above.
 # 针对 Devin 建议直接使用上面的 type = "devin"；下面的 type = "acp" 主要给其他
 # 通用 ACP 工具使用。
+# DeepSeek DSH (dsh-acp): to let messages sent while DSH is busy join the running
+# turn (steer), patch dsh-acp with integrations/dsh-acp-steer/apply.sh.
+# DSH（dsh-acp）忙时插话：先用 integrations/dsh-acp-steer/apply.sh 给 dsh-acp 打补丁。
 
 # --- Example: Cursor Agent CLI (npm: @anthropic-ai/cursor-agent) ---
 # [[projects]]

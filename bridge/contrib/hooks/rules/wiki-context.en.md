@@ -1,1 +1,2 @@
 - Wiki hints (wiki-context): in a terminal session a message may start with 「可能相关的 wiki 页」; read a page only when it is relevant, and only the hit lines given (`sed -n`), not the whole page.
+- Read quoted lessons from rule-candidates-recurrence*.md under GATE_WIKI: first-turn high-frequency reminders, correction hints and one daily reminder for unanswered proposals. WIKI_INGEST skips injection. Set HOOK_LESSONS_TRIAL_START to an ISO date for the optional weekly comparison (disabled by default).

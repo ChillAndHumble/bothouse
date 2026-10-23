@@ -1,0 +1,12 @@
+#!/bin/zsh
+# 用法：t10 <pid>  —— 派出去的后台活满 10 分钟（从进程启动算）就连同子进程一起杀掉。
+# 来源：用户 2026-10-23「这10分钟之内搞不完就滚蛋」
+pid=$1
+nohup perl -e '
+  my $p=shift; my $start=time;
+  my $et=`ps -p $p -o etime=`; $et=~s/\s//g;
+  my @t=reverse split /[:-]/,$et; my $age=$t[0]+60*($t[1]//0)+3600*($t[2]//0)+86400*($t[3]//0);
+  my $left=600-$age; $left=0 if $left<0;
+  while ($left>0 && kill 0,$p) { select(undef,undef,undef,5); $left-=5 }
+  if (kill 0,$p) { system("pkill -TERM -P $p"); kill "TERM",$p; print "t10: killed $p at 10min\n" }
+' "$pid" >> /tmp/t10.log 2>&1 &

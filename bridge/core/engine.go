@@ -431,6 +431,7 @@ type Engine struct {
 	agentSessionIdleSeq          atomic.Uint64
 	maxQueuedMessages            int
 	gate                         *gateState  // maomao fork: fast-brain gate (nil = off)
+	gateLocal                    bool        // built-in busy rules when gate is nil (gate_local.go)
 	tiers                        *modelTiers // maomao fork: gate-driven chat/task model switching (nil = off)
 	modelSwitchMu                sync.Mutex
 	pendingSwitch                map[string]pendingModelSwitch // maomao fork: switches agents asked for, applied before their next turn
@@ -487,6 +488,7 @@ type Engine struct {
 	// skipSubagentPolicy drops the per-turn delegation policy block
 	// (project option inject_subagent_policy = false). Default false = inject.
 	skipSubagentPolicy atomic.Bool
+	skipAgentIdentity  atomic.Bool
 	replyFooterEnabled bool
 
 	// When true, /list etc. only show sessions tracked by cc-connect,
@@ -569,6 +571,7 @@ type queuedMessage struct {
 	platform          Platform
 	replyCtx          any
 	content           string
+	reference         *MessageReference
 	images            []ImageAttachment
 	files             []FileAttachment
 	fromVoice         bool
@@ -3512,6 +3515,7 @@ func (e *Engine) enqueueForBusySession(p Platform, msg *Message, interactiveKey 
 		platform:            p,
 		replyCtx:            msg.ReplyCtx,
 		content:             msg.Content,
+		reference:           msg.Reference,
 		images:              msg.Images,
 		files:               msg.Files,
 		fromVoice:           msg.FromVoice,
@@ -4244,7 +4248,7 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 		e.deferForCapacity(p, origMsg, agent, sessions, interactiveKey, workspaceDir, wait, true)
 	} else {
 		// Local copy, not msg.Content: the caller may still read *msg (data race).
-		content := msg.Content
+		content := session.renderReference(msg.Content, msg.Reference)
 		images := msg.Images
 		if note, imgs := e.freshContextImages(p, session, msg, images); note != "" {
 			// maomao fork: first turn of a fresh context gets the recent channel images back.
@@ -5270,7 +5274,7 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 
 				if fullResponse != "" {
 					for _, chunk := range SplitMessageCodeFenceAware(fullResponse, maxPlatformMessageLen) {
-						e.send(p, markAgentReply(p, replyCtx), chunk)
+						e.send(p, markAgentReply(p, replyCtx, session), chunk)
 					}
 				}
 
@@ -5442,10 +5446,10 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 	// sendWorkspace* deliver the agent's own output (text, thinking, tool
 	// lines); maomao fork: the reply context is marked so backfill skips them.
 	sendWorkspace := func(p Platform, replyCtx any, content string) {
-		e.sendForWorkspace(p, markAgentReply(p, replyCtx), content, workspaceDir)
+		e.sendForWorkspace(p, markAgentReply(p, replyCtx, session), content, workspaceDir)
 	}
 	sendWorkspaceWithError := func(p Platform, replyCtx any, content string) error {
-		err := e.sendWithErrorForWorkspace(p, markAgentReply(p, replyCtx), content, workspaceDir)
+		err := e.sendWithErrorForWorkspace(p, markAgentReply(p, replyCtx, session), content, workspaceDir)
 		if err != nil {
 			input.finish(inputTurnResult{err: fmt.Errorf("reply delivery: %w", err)})
 		}
@@ -5467,8 +5471,8 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 		}
 	}
 	// maomao fork: previews and the progress card carry agent output (AgentReplyMarker).
-	sp := newStreamPreview(e.streamPreview, inputOutputPlatform(state.platform, input), markAgentReply(state.platform, state.replyCtx), e.ctx, workspaceRenderer)
-	cp := newCompactProgressWriter(e.ctx, inputOutputPlatform(state.platform, input), markAgentReply(state.platform, state.replyCtx), e.agent.Name(), e.i18n.CurrentLang(), workspaceRenderer)
+	sp := newStreamPreview(e.streamPreview, inputOutputPlatform(state.platform, input), markAgentReply(state.platform, state.replyCtx, session), e.ctx, workspaceRenderer)
+	cp := newCompactProgressWriter(e.ctx, inputOutputPlatform(state.platform, input), markAgentReply(state.platform, state.replyCtx, session), e.agent.Name(), e.i18n.CurrentLang(), workspaceRenderer)
 	state.mu.Unlock()
 
 	// maomao fork: this turn's row on the channel task board; the card's steps
@@ -5734,7 +5738,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if cardMessageID == nil {
 					card := buildResolvedRichCard(CardStatusThinking, "", toolSteps, partialText, true, e.composeRichStatusFooter(true, turnStart, e.agent, state.agentSession, state.workspaceDir))
 					if starter, ok := p.(PreviewStarter); ok {
-						handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx), card)
+						handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx, session), card)
 						if err != nil {
 							slog.Debug("rich card: failed to create initial thinking card", "platform", p.Name(), "error", err)
 						} else {
@@ -5822,7 +5826,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if cardMessageID == nil {
 					card := buildResolvedRichCard(CardStatusWorking, "", toolSteps, partialText, true, e.composeRichStatusFooter(true, turnStart, e.agent, state.agentSession, state.workspaceDir))
 					if starter, ok := p.(PreviewStarter); ok {
-						handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx), card)
+						handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx, session), card)
 						if err != nil {
 							slog.Debug("rich card: failed to create initial tool card", "platform", p.Name(), "error", err)
 						} else {
@@ -5979,7 +5983,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						if cardMessageID == nil {
 							card := buildResolvedRichCard(CardStatusWorking, "", toolSteps, partialText, true, e.composeRichStatusFooter(true, turnStart, e.agent, state.agentSession, state.workspaceDir))
 							if starter, ok := p.(PreviewStarter); ok {
-								handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx), card)
+								handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx, session), card)
 								if err != nil {
 									slog.Debug("rich card: failed to create tool-result card", "platform", p.Name(), "error", err)
 								} else {
@@ -6005,7 +6009,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					}
 					if !cp.AppendStructured(entry, resultMsg) {
 						if !SuppressStandaloneToolResultEvent(p) {
-							e.sendRaw(p, markAgentReply(p, replyCtx), resultMsg)
+							e.sendRaw(p, markAgentReply(p, replyCtx, session), resultMsg)
 						}
 					}
 				}
@@ -6052,7 +6056,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 							if cardMessageID == nil && !silentHold {
 								card := buildResolvedRichCard(CardStatusWorking, "", toolSteps, partialText, true, e.composeRichStatusFooter(true, turnStart, e.agent, state.agentSession, state.workspaceDir))
 								if starter, ok := p.(PreviewStarter); ok {
-									handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx), card)
+									handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx, session), card)
 									if err != nil {
 										slog.Debug("rich card: failed to create initial text card", "platform", p.Name(), "error", err)
 									} else {
@@ -6076,7 +6080,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 							if cardMessageID == nil {
 								card := buildResolvedRichCard(CardStatusWorking, "", toolSteps, partialText, true, e.composeRichStatusFooter(true, turnStart, e.agent, state.agentSession, state.workspaceDir))
 								if starter, ok := p.(PreviewStarter); ok {
-									handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx), card)
+									handle, err := starter.SendPreviewStart(e.ctx, markAgentReply(p, replyCtx, session), card)
 									if err != nil {
 										slog.Debug("rich card: failed to create deferred text card", "platform", p.Name(), "error", err)
 									} else {
@@ -6214,7 +6218,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			permissionPlatform := state.platform
 			state.mu.Unlock()
 			if isAskQuestion {
-				e.sendAskQuestionPrompt(permissionPlatform, markAgentReply(permissionPlatform, replyCtx), event.Questions, 0)
+				e.sendAskQuestionPrompt(permissionPlatform, markAgentReply(permissionPlatform, replyCtx, session), event.Questions, 0)
 			} else {
 				permLimit := e.display.ToolMaxLen
 				if permLimit > 0 {
@@ -6568,14 +6572,14 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					if updater, ok := p.(MessageUpdater); ok {
 						if err := updater.UpdateMessage(e.ctx, cardMessageID, finalCard); err != nil {
 							slog.Debug("rich card: final update failed, falling back to send", "platform", p.Name(), "error", err)
-							if err := p.Send(e.ctx, markFinalReply(p, replyCtx), finalCard); err != nil {
+							if err := p.Send(e.ctx, markFinalReply(p, replyCtx, session), finalCard); err != nil {
 								slog.Error("failed to send rich card reply", "error", err)
 								return
 							}
 						}
 					}
 				} else {
-					if err := p.Send(e.ctx, markFinalReply(p, replyCtx), finalCard); err != nil {
+					if err := p.Send(e.ctx, markFinalReply(p, replyCtx, session), finalCard); err != nil {
 						slog.Error("failed to send rich card reply", "error", err)
 						return
 					}
@@ -6583,7 +6587,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				for _, overflow := range parts[1:] {
 					overflowBody := resolveRichCardMarkdown(overflow, true)
 					overflowCard := richCardSupporter.BuildRichCard(CardStatusDone, "", nil, overflowBody, false, richStatusFooter)
-					if err := p.Send(e.ctx, markAgentReply(p, replyCtx), overflowCard); err != nil {
+					if err := p.Send(e.ctx, markAgentReply(p, replyCtx, session), overflowCard); err != nil {
 						slog.Error("failed to send overflow rich card", "error", err)
 						return
 					}
@@ -6595,7 +6599,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if segmentStart < len(textParts) {
 					unsent := strings.Join(textParts[segmentStart:], "")
 					if unsent != "" {
-						if !sp.finish(unsent, statusFooter) && !sendChunksWithStatusFooter(e.ctx, p, markFinalReply(p, replyCtx), unsent, statusFooter, sendWorkspaceWithError) {
+						if !sp.finish(unsent, statusFooter) && !sendChunksWithStatusFooter(e.ctx, p, markFinalReply(p, replyCtx, session), unsent, statusFooter, sendWorkspaceWithError) {
 							return
 						}
 					}
@@ -6606,7 +6610,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				sp.discard()
 				metaOnly := strings.TrimSpace(strings.TrimPrefix(fullResponse, baseResponse))
 				if metaOnly != "" || statusFooter != "" {
-					if !sendChunksWithStatusFooter(e.ctx, p, markFinalReply(p, replyCtx), metaOnly, statusFooter, sendWorkspaceWithError) {
+					if !sendChunksWithStatusFooter(e.ctx, p, markFinalReply(p, replyCtx, session), metaOnly, statusFooter, sendWorkspaceWithError) {
 						return
 					}
 				}
@@ -6615,7 +6619,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				slog.Debug("EventResult: finalized via stream preview", "response_len", len(fullResponse), "footer_len", len(statusFooter))
 			} else {
 				slog.Debug("EventResult: sending via p.Send (preview inactive or failed)", "response_len", len(fullResponse), "footer_len", len(statusFooter))
-				if !sendChunksWithStatusFooter(e.ctx, p, markFinalReply(p, replyCtx), fullResponse, statusFooter, sendWorkspaceWithError) {
+				if !sendChunksWithStatusFooter(e.ctx, p, markFinalReply(p, replyCtx, session), fullResponse, statusFooter, sendWorkspaceWithError) {
 					return
 				}
 			}
@@ -6757,6 +6761,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				// maomao fork: a capacity retry re-sends it with this backfill, not before it
 				// (the backfill already marked those posts seen).
 				*chainedQueued = queued
+				queued.content = session.renderReference(queued.content, queued.reference)
 				queued.content = e.withTurnBlocks(session, queued.msgSessionKey, queued.turnCtxQuery, queued.content, queued.turnCtx)
 				queuedPrompt := e.buildSenderPrompt(queued.content, queued.userID, queued.userName, queued.msgPlatform, queued.msgSessionKey, queued.channelKey)
 				queuedPrompt = e.withSharedMemoryHint(queuedPrompt, replyAgent, &Message{SessionKey: queued.msgSessionKey, ChannelKey: queued.channelKey}, workspaceDir)
@@ -6813,8 +6818,8 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				queuedRenderer := func(content string) string {
 					return e.renderOutgoingContentForWorkspace(queued.platform, content, workspaceDir)
 				}
-				sp = newStreamPreview(e.streamPreview, queued.platform, markAgentReply(queued.platform, queued.replyCtx), e.ctx, queuedRenderer)
-				cp = newCompactProgressWriter(e.ctx, queued.platform, markAgentReply(queued.platform, queued.replyCtx), e.agent.Name(), e.i18n.CurrentLang(), queuedRenderer)
+				sp = newStreamPreview(e.streamPreview, queued.platform, markAgentReply(queued.platform, queued.replyCtx, session), e.ctx, queuedRenderer)
+				cp = newCompactProgressWriter(e.ctx, queued.platform, markAgentReply(queued.platform, queued.replyCtx, session), e.agent.Name(), e.i18n.CurrentLang(), queuedRenderer)
 				board = e.boardBegin(state, sessionKey) // maomao fork: the queued turn's board row
 				cp.onStep = board.step
 
@@ -7212,6 +7217,7 @@ func (e *Engine) drainPendingMessages(state *interactiveState, session *Session,
 		}
 		e.startScheduledQueuedTurn(&queued, session)
 		rawQueued = queued // maomao fork: re-delivered with its backfill (those posts are marked seen now)
+		queued.content = session.renderReference(queued.content, queued.reference)
 		queued.content = e.withTurnBlocks(session, queued.msgSessionKey, queued.turnCtxQuery, queued.content, queued.turnCtx)
 		prompt := e.buildSenderPrompt(queued.content, queued.userID, queued.userName, queued.msgPlatform, queued.msgSessionKey, queued.channelKey)
 		state.mu.Lock()

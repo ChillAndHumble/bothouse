@@ -1,1 +1,2 @@
 - wiki 提示（wiki-context）：终端会话里每条消息前可能附「可能相关的 wiki 页」，相关才读，按给出的行号 `sed -n` 读命中段，不整页 cat。
+- 教训表：从 GATE_WIKI 内的 rule-candidates-recurrence*.md 读取有引文的规则，首轮推高频项；纠正时提示核对规则；未答复建议每天提醒一次。WIKI_INGEST 不注入。HOOK_LESSONS_TRIAL_START 可设置 ISO 日期启用一周对比，默认不开。

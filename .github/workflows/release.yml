@@ -108,14 +108,12 @@ jobs:
           lipo "$mount/Bothouse.app/Contents/MacOS/bothouse" -verify_arch x86_64
           "$mount/Bothouse.app/Contents/MacOS/bothouse" --version
           hdiutil detach "$mount"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Cache release dist
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          name: release-dist-${{ matrix.runner }}
-          path: dist/
-          if-no-files-found: error
-          # 1 天：artifact 只在本次 run 的 job 之间传递，发布后不再需要；额度按账号算，
-          # run 39784879535 (v0.1.1) 因 "Artifact storage quota has been hit" 上传失败。
-          retention-days: 1
+          enableCrossOsArchive: true
+          path: dist
+          key: release-dist-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   # Same check as the linux/amd64 smoke test, on a real Windows machine, before anything is published.
   smoke-windows:
@@ -125,10 +123,13 @@ jobs:
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Restore binaries from cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          name: release-dist-ubuntu-latest
+          enableCrossOsArchive: true
           path: dist
+          key: release-dist-ubuntu-latest-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
       - name: Smoke test (windows/amd64)
         shell: powershell
         run: |
@@ -152,11 +153,20 @@ jobs:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Restore ubuntu binaries from cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          pattern: release-dist-*
-          merge-multiple: true
+          enableCrossOsArchive: true
           path: dist
+          key: release-dist-ubuntu-latest-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+      - name: Restore macos binaries from cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          enableCrossOsArchive: true
+          path: dist
+          key: release-dist-macos-latest-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -165,43 +175,20 @@ jobs:
           (cd dist && sha256sum bothouse-* > SHA256SUMS)
           pre=()
           case "$TAG" in *-*) pre=(--prerelease) ;; esac
-          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
-          ## Improvements
-
-          - The app, CLI, and setup wizard use the bothouse name.
-          - Native app downloads for macOS, Windows, and Linux, with SHA-256 verification.
-
-          ### Install
-
-          Download and open the file for your platform. On first launch, the browser setup wizard opens.
-          The macOS app is unsigned: right-click → Open the first time.
-
-          - **Mac (Apple Silicon and Intel):** `bothouse-mac.dmg` (universal Bothouse.app)
-          - **Windows (x64 and ARM64):** `bothouse-windows.exe`
-          - **Linux:** `bothouse-linux-x64` / `bothouse-linux-arm64` (`chmod +x`, then run)
-          - **Checksums:** `SHA256SUMS`
-
-          Terminal installation: `install.sh` / `install.ps1`; see the README.
-
-          <!-- lang:zh -->
-
-          ## 改进
-
-          - 应用、命令行和网页向导统一使用 bothouse。
-          - 提供 macOS、Windows、Linux 直接下载文件及 SHA-256 校验。
-
-          ### 安装
-
-          - **Mac（Apple 芯片和 Intel 通用）：** `bothouse-mac.dmg`，将 Bothouse.app 拖入 Applications 后双击。
-          - **Windows（x64 和 ARM64）：** `bothouse-windows.exe`，下载后双击。
-          - **Linux：** `bothouse-linux-x64` / `bothouse-linux-arm64`。
-
-          首次启动会打开浏览器安装向导。macOS 未签名，首次打开请「右键→打开」。
-          Linux 下载对应架构文件，`chmod +x` 后运行。校验见 `SHA256SUMS`。
-          命令行安装可用 `install.sh` / `install.ps1`，详见 README。
-          NOTES
+          # Notes come from docs/release-notes/<tag>.md at the tag (read through the API: this job has no checkout).
+          if ! gh api -H "Accept: application/vnd.github.raw" \
+              "repos/$GITHUB_REPOSITORY/contents/docs/release-notes/$TAG.md?ref=$TAG" \
+              > "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::docs/release-notes/$TAG.md not found at $TAG; add it before tagging"
+            exit 1
+          fi
+          if grep -q 'TODO' "$RUNNER_TEMP/release-notes.md"; then
+            echo "::error::docs/release-notes/$TAG.md still has a TODO"
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
           else
             gh release create "$TAG" dist/* "${pre[@]}" --title "bothouse $TAG" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
@@ -430,25 +417,3 @@ jobs:
           Get-Process bothouse -ErrorAction SilentlyContinue | Stop-Process -Force
           Stop-Process -Id $fake.Id -Force
           Write-Host "PASS: quick-try with spaces in home and config path: one --config argument, log in the spaced home, CC_LOG_FILE not left set"
-
-  # 用户 2026-10-22「留1小时」：artifact 只用来在本次 run 的 job 之间传包，发布、验收完就删掉本次 run 的全部
-  # artifact（retention-days 最小 1 天，只作兜底）。额度按账号算，run 39784879535 曾因额度满上传失败。
-  cleanup-artifacts:
-    needs: [build, smoke-windows, publish, verify-windows]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - name: Delete this run's artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          for id in $(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" --jq '.artifacts[].id'); do
-            gh api -X DELETE "repos/$REPO/actions/artifacts/$id"
-            echo "deleted artifact $id"
-          done
