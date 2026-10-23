@@ -789,6 +789,9 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 			return
 		}
 	}
+	// A human's message in a private chat is marked Direct. Core decides whether it bypasses
+	// the gate: only the owner's DMs do (see Engine.isDMOwner); other DMs are gated normally.
+	direct := !fromBot && m.GuildID == ""
 	if fromBot {
 		// Only an explicit <@me> in the text counts; reply pings ("↪ 已插入" quoting a message)
 		// and role/everyone mentions from bots are ignored. Everything else a teammate says
@@ -892,8 +895,7 @@ func (p *Platform) handleMessageCreate(s *discordgo.Session, m *discordgo.Messag
 		MessageID: m.ID,
 		UserID:    m.Author.ID, UserName: m.Author.Username,
 		Content: m.Content, Images: images, Files: files, Audio: audio, ReplyCtx: rctx,
-		Mentioned: mentioned, FromBot: fromBot,
-		Direct: m.GuildID == "" && !fromBot, // a DM calls the bot (core/gate_local.go)
+		Mentioned: mentioned, FromBot: fromBot, Direct: direct,
 	}
 	// Consume explicit approvals before bot labels, batching or the gate.
 	if fromBot && strings.HasPrefix(approvalContent, "/permit") {
@@ -1475,6 +1477,25 @@ func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
 	}
 	return rc, nil
 }
+
+// OpenDM opens (or reuses: Discord returns the existing one) the private channel between this bot
+// and userID, and returns the session key an incoming message in that channel would get, so a
+// proactive DM and the user's reply share one session (maomao fork, `bothouse send --dm`).
+func (p *Platform) OpenDM(userID string) (string, error) {
+	if p.session == nil {
+		return "", fmt.Errorf("discord: not connected")
+	}
+	ch, err := p.session.UserChannelCreate(userID)
+	if err != nil {
+		return "", fmt.Errorf("discord: open DM with %s: %w", userID, err)
+	}
+	if ch == nil || ch.ID == "" {
+		return "", fmt.Errorf("discord: open DM with %s: empty channel", userID)
+	}
+	return p.makeSessionKey(ch.ID, userID), nil
+}
+
+var _ core.DirectMessageOpener = (*Platform)(nil)
 
 func (p *Platform) ResolveCronReplyTarget(sessionKey string, title string) (string, any, error) {
 	if !p.threadIsolation {
