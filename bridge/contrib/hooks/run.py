@@ -56,6 +56,16 @@ Gemini CLI runs the same hooks through its own protocol (https://geminicli.com/d
    output). BeforeTool has no such field, so its hints are dropped. Exit 2 means "block" in both protocols and is passed through; stdout is
    otherwise kept JSON-only, as Gemini requires.
 
+Antigravity (agy) runs the hooks from the role's .agents/hooks.json, each command with --agy <event> (agy's
+payload has no event name). Its payload (conversationId, workspacePaths, transcriptPath, toolCall{name, args})
+becomes session_id / cwd / hook_event_name and, for run_command, tool_name Bash with tool_input.command =
+args.CommandLine. For Stop its transcript (<brain>/.system_generated/logs/transcript_full.jsonl, one step per
+line) is converted to a Claude Code transcript in a temporary file, and a user turn already blocked once gets
+stop_hook_active true. The hook's answer is turned back into agy's: a PreToolUse deny (exit 2 or
+permissionDecision deny) = {"decision": "deny", "reason": ...}; a Stop block = {"decision": "continue", "reason": ...}.
+Every passing exit under --agy (hook switched off, script missing, WIKI_INGEST, a crash) prints
+{"decision": "allow"}: agy's "decision" is Required.
+
 stdout / stderr / exit code of the hook are passed through.
 """
 import json
@@ -102,7 +112,7 @@ GEMINI_TO_CLAUDE_EVENT = {"BeforeTool": "PreToolUse", "AfterTool": "PostToolUse"
                           "AfterAgent": "Stop"}
 STATE = os.path.join(HERE, "state", "dsh-stop.json")
 DSH_ROLES = os.path.join(HERE, "dsh-roles.json")  # {role work_dir: {"hooks": [...], "dsh_home": ...}}
-OPTS = {"role": None, "dsh_home": None, "dsh_global": False}  # {session_id: turn already blocked once}
+OPTS = {"role": None, "dsh_home": None, "dsh_global": False, "agy": None}  # {session_id: turn already blocked once}
 # 来源：实测，验收时日志在钩子开始后约 0.15 秒内写到；留足余量又不拖住回复（Stop 超时设的是 30 秒）
 STOP_WAIT = 3.0
 MODEL_HEAD, MODEL_END = "[bothouse model-control instructions]", "[/bothouse model-control instructions]"
@@ -381,7 +391,7 @@ def parse_args(argv):
     rest, i = [], 0
     while i < len(argv):
         a = argv[i]
-        if a in ("--role", "--dsh-home") and i + 1 < len(argv):
+        if a in ("--role", "--dsh-home", "--agy") and i + 1 < len(argv):
             OPTS[a[2:].replace("-", "_")] = argv[i + 1] or None
             i += 2
             continue
@@ -413,6 +423,15 @@ def dsh_role(start):
         probe = up
 
 
+def pass_exit():
+    """Pass the call. agy requires a decision on stdout (its hook docs: "decision" is Required), so under --agy
+    every passing exit prints {"decision": "allow"} (allow is also agy's pass for Stop, see agy_answer)."""
+    if OPTS["agy"] and not OPTS.get("agy_answered"):
+        OPTS["agy_answered"] = True
+        sys.stdout.write(json.dumps({"decision": "allow"}))
+    sys.exit(0)
+
+
 def main():
     args = parse_args(sys.argv[1:])
     if not args:
@@ -422,13 +441,13 @@ def main():
     if os.environ.get("WIKI_INGEST") == "1":
         # the wiki's own ingest run (llmwiki ingest.py dsh_env sets it): its scratch dir .ingest-work sits inside a
         # role, whose hooks (dispatch-review-guard) would refuse every write and void each pass
-        sys.exit(0)
+        pass_exit()
     name = os.path.basename(args[0])
     name = name[:-3] if name.endswith(".py") else name
     target = os.path.join(HERE, name + ".py")
     if not os.path.isfile(target):
         sys.stderr.write(f"bothouse hook {name}: {target} is missing, passing (reinstall: bothouse setup hooks on)\n")
-        sys.exit(0)
+        pass_exit()
     raw = sys.stdin.read()
     try:
         payload = json.loads(raw)
@@ -445,7 +464,9 @@ def main():
         OPTS["dsh_home"] = OPTS["dsh_home"] or entry.get("dsh_home")
     off = load_off(role_dir(os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or None))
     if "all" in off or name in off:
-        sys.exit(0)  # switched off for this role (run.py off): pass without running the hook
+        pass_exit()  # switched off for this role (run.py off): pass without running the hook
+    if OPTS["agy"]:
+        return run_agy(target, payload, OPTS["agy"])
     gemini = payload.get("hook_event_name") in GEMINI_EVENTS
     tmp, turn, sid = None, None, payload.get("session_id") or ""
     if gemini:
@@ -520,9 +541,133 @@ def main():
     sys.exit(proc.returncode)
 
 
+# ── Antigravity ──
+AGY_NAMES = {"run_command": "Bash"}  # agy tool -> Claude Code tool (run_command: agy 1.4.5 PreToolUse payload)
+AGY_STATE = os.path.join(HERE, "state", "agy-stop.json")  # {conversationId: user step already blocked once}
+
+
+def agy_user_text(t):
+    t = t or ""
+    a, b = t.find("<USER_REQUEST>"), t.find("</USER_REQUEST>")
+    if a >= 0 and b > a:
+        t = t[a + len("<USER_REQUEST>"):b]
+    return t.strip()
+
+
+def agy_transcript(lines, cwd):
+    """agy steps as Claude Code transcript entries, and the step index of the last user input."""
+    out, last_user = [], None
+    for d in records(lines):
+        base = {"cwd": cwd}
+        if d.get("created_at"):
+            base["timestamp"] = d["created_at"]
+        t = d.get("type")
+        if t == "USER_INPUT":
+            last_user = d.get("step_index")
+            text = agy_user_text(d.get("content"))
+            if text:
+                out.append(dict(base, type="user", message={"role": "user", "content": text}))
+        elif t == "PLANNER_RESPONSE":
+            blocks = []
+            if d.get("content"):
+                blocks.append({"type": "text", "text": d["content"]})
+            for c in d.get("tool_calls") or []:
+                if isinstance(c, dict):
+                    name, inp = agy_tool(c.get("name") or "", c.get("args"))
+                    blocks.append({"type": "tool_use", "name": name, "input": inp})
+            if blocks:
+                out.append(dict(base, type="assistant", message={"role": "assistant", "content": blocks}))
+    return out, last_user
+
+
+def agy_tool(name, args):
+    args = args if isinstance(args, dict) else {}
+    if name == "run_command":
+        return "Bash", dict(args, command=str(args.get("CommandLine") or ""))
+    return AGY_NAMES.get(name, name), args
+
+
+def agy_payload(p, event):
+    """An Antigravity hook payload in Claude Code's shape."""
+    ws = p.get("workspacePaths") or []
+    out = {"hook_event_name": event, "session_id": p.get("conversationId") or "",
+           "transcript_path": p.get("transcriptPath") or "", "cwd": (ws[0] if ws else "") or os.getcwd(),
+           "agy": True}
+    call = p.get("toolCall")
+    if isinstance(call, dict):
+        out["tool_name"], out["tool_input"] = agy_tool(call.get("name") or "", call.get("args"))
+    return out
+
+
+def agy_answer(event, rc, stdout, stderr):
+    """The hook's Claude Code answer as Antigravity's, and whether it blocks."""
+    try:
+        d = json.loads(stdout or "{}")
+    except ValueError:
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    hs = d.get("hookSpecificOutput") if isinstance(d.get("hookSpecificOutput"), dict) else {}
+    if event == "Stop":
+        if rc == 2 or d.get("decision") == "block":
+            return {"decision": "continue", "reason": d.get("reason") or stderr.strip()}, True
+        return {"decision": "allow"}, False
+    if rc == 2:
+        return {"decision": "deny", "reason": stderr.strip()}, True
+    pd = hs.get("permissionDecision")
+    if pd == "deny" or d.get("decision") == "block":
+        return {"decision": "deny", "reason": hs.get("permissionDecisionReason") or d.get("reason") or ""}, True
+    if pd == "ask":
+        return {"decision": "ask", "reason": hs.get("permissionDecisionReason") or ""}, False
+    return {"decision": "allow"}, False
+
+
+def run_agy(target, raw, event):
+    payload = agy_payload(raw, event)
+    tmp, step, sid = None, None, payload["session_id"]
+    if event == "Stop":
+        lines = []
+        try:
+            with open(payload["transcript_path"], encoding="utf-8") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            pass
+        entries, step = agy_transcript(lines, payload["cwd"])
+        fd, tmp = tempfile.mkstemp(prefix="agy-stop-", suffix=".jsonl")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for r in entries:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        payload["transcript_path"] = tmp
+        try:
+            with open(AGY_STATE) as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            st = {}
+        payload["stop_hook_active"] = step is not None and st.get(sid) == step
+    try:
+        proc = subprocess.run([sys.executable, "-I", target], input=json.dumps(payload, ensure_ascii=False),
+                              capture_output=True, text=True)
+    finally:
+        if tmp:
+            os.unlink(tmp)
+    ans, blocked = agy_answer(event, proc.returncode, proc.stdout, proc.stderr)
+    if blocked and event == "Stop" and step is not None:
+        try:
+            with open(AGY_STATE) as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            st = {}
+        st[sid] = step
+        write_json(AGY_STATE, st)
+    OPTS["agy_answered"] = True
+    sys.stdout.write(json.dumps(ans, ensure_ascii=False))
+    sys.stderr.write(proc.stderr)
+    sys.exit(0)
+
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:  # a broken log or adapter must not turn into a non-zero hook exit: pass
         sys.stderr.write(f"bothouse hook run.py: {type(e).__name__}: {e}, passing\n")
-        sys.exit(0)
+        pass_exit()

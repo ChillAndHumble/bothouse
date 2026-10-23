@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -417,5 +418,133 @@ func TestAgentHookCommandMissingScriptPasses(t *testing.T) {
 	out, err := c.CombinedOutput()
 	if err != nil {
 		t.Fatalf("missing run.py: %v\n%s", err, out)
+	}
+}
+
+func TestAgentHooksAntigravity(t *testing.T) {
+	useRepoHooks(t)
+	data, wd := t.TempDir(), t.TempDir()
+	user := `{"mine": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "my-hook"}]}]}}`
+	if err := os.MkdirAll(filepath.Join(wd, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(AgyHookFile(wd), []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Lang: "en"}
+	res, err := EnableAgentHooks(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"bash-guard", "fix-claim-guard", "promise-guard"}
+	if !slices.Equal(res.Enabled, want) || res.SettingsFile != AgyHookFile(wd) {
+		t.Fatalf("res = %+v", res)
+	}
+	b, _ := os.ReadFile(AgyHookFile(wd))
+	var m map[string]map[string][]map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("%v\n%s", err, b)
+	}
+	if _, ok := m["mine"]; !ok {
+		t.Fatalf("user hook dropped:\n%s", b)
+	}
+	pre := m["bothouse"]["PreToolUse"]
+	if len(pre) != 1 || pre[0]["matcher"] != "run_command" {
+		t.Fatalf("PreToolUse = %v", pre)
+	}
+	h := pre[0]["hooks"].([]any)[0].(map[string]any)
+	if cmd := h["command"].(string); !regexp.MustCompile(`--agy ['"]?PreToolUse`).MatchString(cmd) || !strings.HasSuffix(cmd, " bash-guard") ||
+		ourHook(cmd) != "bash-guard" {
+		t.Fatalf("command = %s", cmd)
+	}
+	stop := m["bothouse"]["Stop"]
+	if len(stop) != 2 || stop[0]["type"] != "command" || !regexp.MustCompile(`--agy ['"]?Stop`).MatchString(stop[0]["command"].(string)) {
+		t.Fatalf("Stop (handlers directly under the event) = %v", stop)
+	}
+	if _, err := os.Stat(AgentHookSettingsPath("claudecode", wd)); err == nil {
+		t.Fatal(".claude/settings.json written for antigravity")
+	}
+	if p, _ := os.ReadFile(filepath.Join(wd, "GEMINI.md")); !strings.Contains(string(p), hookRulesBegin) {
+		t.Fatalf("GEMINI.md has no hook block: %q", p)
+	}
+	if on, _ := AgentHooksEnabled("antigravity", wd); !slices.Equal(on, want) {
+		t.Fatalf("AgentHooksEnabled = %v", on)
+	}
+	if _, err := EnableAgentHooks(AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Only: []string{"param-source-guard"}}); err == nil {
+		t.Fatal("param-source-guard accepted for antigravity")
+	}
+	if res, err = DisableAgentHooks(AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Only: []string{"bash-guard"}}); err != nil || !slices.Equal(res.Enabled, want[1:]) {
+		t.Fatalf("off bash-guard: %v %v", res, err)
+	}
+	if res, err = DisableAgentHooks(o); err != nil || len(res.Enabled) != 0 {
+		t.Fatalf("off: %v %v", res, err)
+	}
+	b, _ = os.ReadFile(AgyHookFile(wd))
+	if strings.Contains(string(b), "bothouse") || !strings.Contains(string(b), "my-hook") {
+		t.Fatalf("after off:\n%s", b)
+	}
+	if !wizardHooksFor("antigravity") {
+		t.Fatal("wizard does not switch hooks on for antigravity")
+	}
+}
+
+// Gemini CLI and Antigravity both read GEMINI.md: switching one off must keep the other's rules in the block.
+func TestAgentHooksGeminiAntigravitySharePersona(t *testing.T) {
+	useRepoHooks(t)
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	data, wd := t.TempDir(), t.TempDir()
+	gem := AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "gemini", Lang: "en", Only: []string{"param-source-guard"}}
+	agy := AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Lang: "en", Only: []string{"bash-guard"}}
+	if _, err := EnableAgentHooks(gem); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnableAgentHooks(agy); err != nil {
+		t.Fatal(err)
+	}
+	block := func() string {
+		b, _ := os.ReadFile(filepath.Join(wd, "GEMINI.md"))
+		s := string(b)
+		if i := strings.Index(s, hookRulesBegin); i >= 0 {
+			return s[i:]
+		}
+		return ""
+	}
+	if b := block(); strings.Count(b, hookRulesBegin) != 1 || !strings.Contains(b, "param-source-guard") || !strings.Contains(b, "bash-guard") {
+		t.Fatalf("both CLIs' hooks must be in the one block:\n%s", b)
+	}
+	if _, err := DisableAgentHooks(agy); err != nil {
+		t.Fatal(err)
+	}
+	if b := block(); !strings.Contains(b, "param-source-guard") {
+		t.Fatalf("antigravity off removed gemini's rules:\n%s", b)
+	}
+	if _, err := DisableAgentHooks(gem); err != nil {
+		t.Fatal(err)
+	}
+	if b := block(); b != "" {
+		t.Fatalf("all off, block left:\n%s", b)
+	}
+}
+
+// agy requires a decision: with run.py gone, the command still prints allow (and exits 0).
+func TestAgyHookCommandMissingRunPy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell prefix")
+	}
+	dir := t.TempDir()
+	cmd := agentHookCommand("python3", dir, "bash-guard", "--role", dir, "--agy", "PreToolUse")
+	out, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil || strings.TrimSpace(string(out)) != `{"decision":"allow"}` {
+		t.Fatalf("%q %v (cmd %s)", out, err, cmd)
+	}
+	if ourHook(cmd) != "bash-guard" {
+		t.Fatalf("ourHook(%s) = %q", cmd, ourHook(cmd))
+	}
+	if out, err := exec.Command("sh", "-c", agentHookCommand("python3", dir, "bash-guard", "--role", dir)).Output(); err != nil || len(out) != 0 {
+		t.Fatalf("non-agy pass must stay silent: %q %v", out, err)
 	}
 }

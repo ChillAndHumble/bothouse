@@ -137,7 +137,8 @@ const agentHookMark = "--conest-hook"
 
 // agentHookCommand: run.py with the marker, then options (--role <work_dir>, --dsh-home, --dsh-global), then the
 // hook name last. On POSIX shells the command passes (exit 0) when run.py is gone: "python3 -I <missing file>"
-// exits 2, which both CLIs read as "block", so a deleted hooks directory would block every tool call.
+// exits 2, which both CLIs read as "block", so a deleted hooks directory would block every tool call. Under
+// --agy that pass also prints {"decision":"allow"}.
 func agentHookCommand(python, dir, name string, opts ...string) string {
 	run := hookQuote(filepath.Join(dir, "run.py"))
 	cmd := hookQuote(python) + " -I " + run + " " + agentHookMark
@@ -150,7 +151,12 @@ func agentHookCommand(python, dir, name string, opts ...string) string {
 	}
 	cmd += " " + name
 	if runtime.GOOS != "windows" {
-		cmd = "[ -f " + run + " ] || exit 0; " + cmd
+		pass := "exit 0"
+		if slices.Contains(opts, "--agy") {
+			// Antigravity requires a decision on stdout ("decision" is Required in its hook docs)
+			pass = `{ echo '{"decision":"allow"}'; exit 0; }`
+		}
+		cmd = "[ -f " + run + " ] || " + pass + "; " + cmd
 	}
 	return cmd
 }
@@ -181,6 +187,9 @@ func ourHook(cmd string) string {
 // reads it through its bridge), .gemini/settings.json for Gemini CLI (user-level is ~/.gemini/settings.json;
 // the role's work dir is the project, so the project-level file is the one we write — never the user's home).
 func AgentHookSettingsPath(cli, workDir string) string {
+	if cli == "antigravity" {
+		return AgyHookFile(workDir)
+	}
 	if cli == "gemini" {
 		return filepath.Join(workDir, ".gemini", "settings.json")
 	}
@@ -277,6 +286,9 @@ func editHooks(m map[string]any, drop func(name string) bool, add []map[string]a
 
 // AgentHooksEnabled lists the hooks switched on in the role's settings file, in agentHooks order.
 func AgentHooksEnabled(cli, workDir string) ([]string, error) {
+	if cli == "antigravity" {
+		return agyHooksEnabled(workDir)
+	}
 	m, err := readSettings(AgentHookSettingsPath(cli, workDir))
 	if err != nil {
 		return nil, err
@@ -309,7 +321,8 @@ func AgentHooksEnabled(cli, workDir string) ([]string, error) {
 // wizardHooksFor: the wizard switches hooks on for new roles of this agent type: Claude Code natively, DSH
 // (agent type "dsh") through its hook bridge, Gemini CLI through the same run.py translator as DSH.
 func wizardHooksFor(agentType string) bool {
-	return (agentType == "claudecode" || agentType == "dsh" || agentType == "gemini") && AgentHookFS != nil
+	return (agentType == "claudecode" || agentType == "dsh" || agentType == "gemini" ||
+		agentType == "antigravity") && AgentHookFS != nil
 }
 
 // AgentHookSwitchFile is the role's on/off switch: {"off": [hook names] or ["all"]}. run.py reads it on every
@@ -340,8 +353,9 @@ func AgentHooksSwitchedOff(workDir string) []string {
 }
 
 // AgentHookCLIs are the CLIs the hooks run under: Claude Code natively, DSH and Gemini CLI through run.py
-// (each turns its own payload into Claude Code's shape).
-var AgentHookCLIs = []string{"claudecode", "dsh", "gemini"}
+// (each turns its own payload into Claude Code's shape), Antigravity (agy) through its own workspace hook file
+// <work_dir>/.agents/hooks.json, with run.py --agy converting payloads.
+var AgentHookCLIs = []string{"claudecode", "dsh", "gemini", "antigravity"}
 
 // geminiMatchers: the matcher each hook gets in Gemini CLI, whose built-in tool names differ from both Claude
 // Code's and DSH's (https://geminicli.com/docs/hooks/reference "Matchers and tool names": run_shell_command,
@@ -439,8 +453,10 @@ func (o AgentHookOptions) personaPath() (string, error) {
 		return filepath.Join(o.WorkDir, "AGENTS.md"), nil // DSH reads AGENTS.md (dsh-agent-instructions)
 	case "gemini":
 		return PersonaFilePath("gemini", o.WorkDir), nil // Gemini CLI reads GEMINI.md
+	case "antigravity":
+		return PersonaFilePath("antigravity", o.WorkDir), nil
 	}
-	return "", fmt.Errorf("hooks run under %s only, not %q", strings.Join(AgentHookCLIs, " and "), o.CLI)
+	return "", fmt.Errorf("hooks run under %s only, not %q", strings.Join(AgentHookCLIs, ", "), o.CLI)
 }
 
 // EnableAgentHooks installs the scripts and switches the hooks on for one role.
@@ -463,6 +479,9 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	dir, err := InstallAgentHookScripts(o.DataDir)
 	if err != nil {
 		return nil, err
+	}
+	if o.CLI == "antigravity" {
+		return enableAgyHooks(o, names, persona, python, dir)
 	}
 	sp := AgentHookSettingsPath(o.CLI, o.WorkDir)
 	m, err := readSettings(sp)
@@ -505,7 +524,7 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	if res.Enabled, err = AgentHooksEnabled(o.CLI, o.WorkDir); err != nil {
 		return nil, err
 	}
-	if err := writeHookRules(persona, o.Lang, res.Enabled, python, dir, o.WorkDir); err != nil {
+	if err := writeHookRules(persona, o.Lang, o.personaEnabled(persona, res.Enabled), python, dir, o.WorkDir); err != nil {
 		return nil, err
 	}
 	if o.CLI == "dsh" {
@@ -531,6 +550,9 @@ func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if o.CLI == "antigravity" {
+		return disableAgyHooks(o, names, persona)
+	}
 	sp := AgentHookSettingsPath(o.CLI, o.WorkDir)
 	m, err := readSettings(sp)
 	if err != nil {
@@ -551,7 +573,7 @@ func DisableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 		python = "python3"
 	}
 	dir := AgentHooksDir(o.DataDir)
-	if err := writeHookRules(persona, o.Lang, res.Enabled, python, dir, o.WorkDir); err != nil {
+	if err := writeHookRules(persona, o.Lang, o.personaEnabled(persona, res.Enabled), python, dir, o.WorkDir); err != nil {
 		return nil, err
 	}
 	if o.CLI == "dsh" {
@@ -686,6 +708,40 @@ func WithHookRules(persona, block string) string {
 	}
 	block = strings.ReplaceAll(block, "\n", eol)
 	return persona + hookRulesBegin + eol + block + eol + hookRulesEnd + eol
+}
+
+// personaEnabled: the hooks the persona block lists. CLIs can share one persona file (Gemini CLI and Antigravity
+// both read GEMINI.md), and the file has one block, so it lists the hooks on for any CLI of this work_dir that
+// reads the same file; otherwise switching one CLI's hooks would overwrite the other's rules.
+func (o AgentHookOptions) personaEnabled(persona string, enabled []string) []string {
+	on := map[string]bool{}
+	for _, n := range enabled {
+		on[n] = true
+	}
+	for _, cli := range AgentHookCLIs {
+		if cli == o.CLI {
+			continue
+		}
+		other := o
+		other.CLI = cli
+		if p, err := other.personaPath(); err != nil || p != persona {
+			continue
+		}
+		names, err := AgentHooksEnabled(cli, o.WorkDir)
+		if err != nil {
+			continue // unreadable settings of the other CLI: keep this CLI's own list
+		}
+		for _, n := range names {
+			on[n] = true
+		}
+	}
+	out := []string{}
+	for _, h := range agentHooks {
+		if on[h.Name] {
+			out = append(out, h.Name)
+		}
+	}
+	return out
 }
 
 func writeHookRules(persona, lang string, enabled []string, python, dir, workDir string) error {
@@ -880,4 +936,151 @@ func withoutDSHPatch(s string) string {
 		s = s[:i] + s[end:]
 	}
 	return s
+}
+
+// ── Antigravity ────────────────────────────────────────────────
+
+// agyHookKey is the hook name bothouse owns in <work_dir>/.agents/hooks.json. Antigravity's file is keyed by hook
+// name, then event (https://antigravity.google/docs/hooks/; the Claude Code {"hooks": {...}} wrapping is not read,
+// tested with agy 1.4.5). Other hook names in the file are the user's and are kept.
+const agyHookKey = "bothouse"
+
+// agyMatchers: the hooks whose payload run.py --agy can turn into Claude Code's shape, with the Antigravity tool
+// they apply to (a regex; "" = an event without matcher). run_command is agy's shell tool (its PreToolUse payload,
+// tested with agy 1.4.5). Edit/subagent hooks are left out: their agy argument names are not verified.
+var agyMatchers = map[string]string{
+	"bash-guard":      "run_command",
+	"fix-claim-guard": "",
+	"promise-guard":   "",
+}
+
+// AgyHookFile is the role's Antigravity workspace hook file.
+func AgyHookFile(workDir string) string { return filepath.Join(workDir, ".agents", "hooks.json") }
+
+func agyHooksEnabled(workDir string) ([]string, error) {
+	m, err := readSettings(AgyHookFile(workDir))
+	if err != nil {
+		return nil, err
+	}
+	ours, _ := m[agyHookKey].(map[string]any)
+	on := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case []any:
+			for _, e := range x {
+				walk(e)
+			}
+		case map[string]any:
+			if cmd, ok := x["command"].(string); ok {
+				if n := ourHook(cmd); n != "" {
+					on[n] = true
+				}
+			}
+			walk(x["hooks"])
+		}
+	}
+	for _, v := range ours {
+		walk(v)
+	}
+	out := []string{}
+	for _, h := range agentHooks {
+		if on[h.Name] {
+			out = append(out, h.Name)
+		}
+	}
+	return out, nil
+}
+
+// writeAgyHooks rewrites bothouse's entry of the role's hook file with exactly these hooks (none = entry removed).
+func writeAgyHooks(workDir, python, dir string, names []string) error {
+	p := AgyHookFile(workDir)
+	m, err := readSettings(p)
+	if err != nil {
+		return err
+	}
+	events := map[string]any{}
+	for _, h := range agentHooks {
+		matcher, ok := agyMatchers[h.Name]
+		if !ok || !slices.Contains(names, h.Name) {
+			continue
+		}
+		handler := map[string]any{"type": "command", "timeout": h.Timeout,
+			"command": agentHookCommand(python, dir, h.Name, "--role", workDir, "--agy", h.Event)}
+		groups, _ := events[h.Event].([]any)
+		if h.Event == "PreToolUse" || h.Event == "PostToolUse" {
+			events[h.Event] = append(groups, map[string]any{"matcher": matcher, "hooks": []any{handler}})
+		} else {
+			events[h.Event] = append(groups, handler) // Stop etc. take handlers directly
+		}
+	}
+	if len(events) == 0 {
+		delete(m, agyHookKey)
+		if len(m) == 0 {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			return nil
+		}
+	} else {
+		m[agyHookKey] = events
+	}
+	return writeSettings(p, m)
+}
+
+func agyNames(o AgentHookOptions, names []string) ([]string, error) {
+	var out []string
+	for _, n := range names {
+		if _, ok := agyMatchers[n]; ok {
+			out = append(out, n)
+		} else if len(o.Only) > 0 {
+			return nil, fmt.Errorf("hook %q does not run under antigravity (antigravity hooks: bash-guard, fix-claim-guard, promise-guard)", n)
+		}
+	}
+	return out, nil
+}
+
+func enableAgyHooks(o AgentHookOptions, names []string, persona, python, dir string) (*AgentHookResult, error) {
+	names, err := agyNames(o, names)
+	if err != nil {
+		return nil, err
+	}
+	on, err := agyHooksEnabled(o.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range names {
+		if !slices.Contains(on, n) {
+			on = append(on, n)
+		}
+	}
+	return finishAgyHooks(o, on, persona, python, dir)
+}
+
+func disableAgyHooks(o AgentHookOptions, names []string, persona string) (*AgentHookResult, error) {
+	on, err := agyHooksEnabled(o.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+	on = slices.DeleteFunc(on, func(n string) bool { return slices.Contains(names, n) })
+	python, _ := FindPython()
+	if python == "" {
+		python = "python3"
+	}
+	return finishAgyHooks(o, on, persona, python, AgentHooksDir(o.DataDir))
+}
+
+func finishAgyHooks(o AgentHookOptions, on []string, persona, python, dir string) (*AgentHookResult, error) {
+	if err := writeAgyHooks(o.WorkDir, python, dir, on); err != nil {
+		return nil, err
+	}
+	res := &AgentHookResult{HooksDir: dir, SettingsFile: AgyHookFile(o.WorkDir), PersonaFile: persona}
+	var err error
+	if res.Enabled, err = agyHooksEnabled(o.WorkDir); err != nil {
+		return nil, err
+	}
+	if err := writeHookRules(persona, o.Lang, o.personaEnabled(persona, res.Enabled), python, dir, o.WorkDir); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
