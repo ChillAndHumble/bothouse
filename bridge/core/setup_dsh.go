@@ -252,5 +252,8 @@ func hookSettingsShown(agentType, workDir string, h *AgentHookResult) string {
 	if h != nil {
 		return h.SettingsFile
 	}
+	if agentType == "antigravity" {
+		return AgyHookFile(workDir)
+	}
 	return AgentHookSettingsPath(workDir)
 }

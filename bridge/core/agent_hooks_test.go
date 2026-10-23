@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -316,5 +317,72 @@ func TestAgentHookCommandMissingScriptPasses(t *testing.T) {
 	out, err := c.CombinedOutput()
 	if err != nil {
 		t.Fatalf("missing run.py: %v\n%s", err, out)
+	}
+}
+
+func TestAgentHooksAntigravity(t *testing.T) {
+	useRepoHooks(t)
+	data, wd := t.TempDir(), t.TempDir()
+	user := `{"mine": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "my-hook"}]}]}}`
+	if err := os.MkdirAll(filepath.Join(wd, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(AgyHookFile(wd), []byte(user), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	o := AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Lang: "en"}
+	res, err := EnableAgentHooks(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"bash-guard", "fix-claim-guard", "promise-guard"}
+	if !slices.Equal(res.Enabled, want) || res.SettingsFile != AgyHookFile(wd) {
+		t.Fatalf("res = %+v", res)
+	}
+	b, _ := os.ReadFile(AgyHookFile(wd))
+	var m map[string]map[string][]map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("%v\n%s", err, b)
+	}
+	if _, ok := m["mine"]; !ok {
+		t.Fatalf("user hook dropped:\n%s", b)
+	}
+	pre := m["bothouse"]["PreToolUse"]
+	if len(pre) != 1 || pre[0]["matcher"] != "run_command" {
+		t.Fatalf("PreToolUse = %v", pre)
+	}
+	h := pre[0]["hooks"].([]any)[0].(map[string]any)
+	if cmd := h["command"].(string); !regexp.MustCompile(`--agy ['"]?PreToolUse`).MatchString(cmd) || !strings.HasSuffix(cmd, " bash-guard") ||
+		ourHook(cmd) != "bash-guard" {
+		t.Fatalf("command = %s", cmd)
+	}
+	stop := m["bothouse"]["Stop"]
+	if len(stop) != 2 || stop[0]["type"] != "command" || !regexp.MustCompile(`--agy ['"]?Stop`).MatchString(stop[0]["command"].(string)) {
+		t.Fatalf("Stop (handlers directly under the event) = %v", stop)
+	}
+	if _, err := os.Stat(AgentHookSettingsPath(wd)); err == nil {
+		t.Fatal(".claude/settings.json written for antigravity")
+	}
+	if p, _ := os.ReadFile(filepath.Join(wd, "GEMINI.md")); !strings.Contains(string(p), hookRulesBegin) {
+		t.Fatalf("GEMINI.md has no hook block: %q", p)
+	}
+	if on, _ := AgentHooksEnabled(wd); !slices.Equal(on, want) {
+		t.Fatalf("AgentHooksEnabled = %v", on)
+	}
+	if _, err := EnableAgentHooks(AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Only: []string{"param-source-guard"}}); err == nil {
+		t.Fatal("param-source-guard accepted for antigravity")
+	}
+	if res, err = DisableAgentHooks(AgentHookOptions{DataDir: data, WorkDir: wd, CLI: "antigravity", Only: []string{"bash-guard"}}); err != nil || !slices.Equal(res.Enabled, want[1:]) {
+		t.Fatalf("off bash-guard: %v %v", res, err)
+	}
+	if res, err = DisableAgentHooks(o); err != nil || len(res.Enabled) != 0 {
+		t.Fatalf("off: %v %v", res, err)
+	}
+	b, _ = os.ReadFile(AgyHookFile(wd))
+	if strings.Contains(string(b), "bothouse") || !strings.Contains(string(b), "my-hook") {
+		t.Fatalf("after off:\n%s", b)
+	}
+	if !wizardHooksFor("antigravity") {
+		t.Fatal("wizard does not switch hooks on for antigravity")
 	}
 }

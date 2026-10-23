@@ -352,5 +352,66 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.run_hook("dispatch-review-guard", p, env), "")
 
 
+    # ---- Antigravity (agy): run.py --agy <event> ----
+    def run_agy(self, name, event, payload, role):
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "--conest-hook", "--role", role,
+                            "--agy", event, name], input=json.dumps(payload), capture_output=True, text=True,
+                           env=self.env, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_agy_pretooluse_bash(self):
+        role = tempfile.mkdtemp(dir=self.tmp)
+        p = {"conversationId": "agy1", "workspacePaths": [role], "transcriptPath": "/nonexistent", "stepIdx": 2,
+             "modelName": "m", "toolCall": {"name": "run_command",
+                                             "args": {"CommandLine": "sleep 120", "WaitMsBeforeAsync": 2000}}}
+        out = self.run_agy("bash-guard", "PreToolUse", p, role)
+        self.assertEqual(out["decision"], "deny", out)
+        self.assertTrue(out["reason"], out)
+        p["toolCall"]["args"]["CommandLine"] = "ls"
+        self.assertEqual(self.run_agy("bash-guard", "PreToolUse", p, role), {"decision": "allow"})
+        os.makedirs(os.path.join(role, ".claude"), exist_ok=True)
+        with open(os.path.join(role, ".claude", "conest-hooks.json"), "w") as f:
+            json.dump({"off": ["all"]}, f)
+        p["toolCall"]["args"]["CommandLine"] = "sleep 120"
+        self.assertEqual(self.run_agy("bash-guard", "PreToolUse", p, role), {"decision": "allow"})
+
+    def test_agy_payload_and_answer(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("agyrun", os.path.join(self.hooks, "run.py"))
+        run = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(run)
+        got = run.agy_payload({"conversationId": "c", "workspacePaths": ["/w"], "transcriptPath": "/t",
+                               "toolCall": {"name": "run_command", "args": {"CommandLine": "ls"}}}, "PreToolUse")
+        self.assertEqual((got["hook_event_name"], got["session_id"], got["cwd"], got["transcript_path"],
+                          got["tool_name"], got["tool_input"]["command"]),
+                         ("PreToolUse", "c", "/w", "/t", "Bash", "ls"))
+        self.assertEqual(run.agy_answer("PreToolUse", 2, "", "no\n")[0], {"decision": "deny", "reason": "no"})
+        deny = json.dumps({"hookSpecificOutput": {"permissionDecision": "deny", "permissionDecisionReason": "r"}})
+        self.assertEqual(run.agy_answer("PreToolUse", 0, deny, "")[0], {"decision": "deny", "reason": "r"})
+        self.assertEqual(run.agy_answer("Stop", 0, json.dumps({"decision": "block", "reason": "x"}), "")[0],
+                         {"decision": "continue", "reason": "x"})
+        self.assertEqual(run.agy_answer("Stop", 0, "", "")[0], {"decision": "allow"})
+
+    def test_agy_stop_blocks_once(self):
+        role = tempfile.mkdtemp(dir=self.tmp)
+        tr = os.path.join(role, "transcript_full.jsonl")
+        steps = [
+            {"step_index": 0, "type": "USER_INPUT", "created_at": "2026-10-23T01:26:14Z",
+             "content": "<USER_REQUEST>\n登录报错了，修一下\n</USER_REQUEST>\n<ADDITIONAL_METADATA>x</ADDITIONAL_METADATA>"},
+            {"step_index": 1, "type": "PLANNER_RESPONSE", "created_at": "2026-10-23T01:26:15Z",
+             "tool_calls": [{"name": "run_command", "args": {"CommandLine": "ls"}}]},
+            {"step_index": 2, "type": "PLANNER_RESPONSE", "created_at": "2026-10-23T01:26:16Z", "content": "已修复，登录正常了。"},
+        ]
+        with open(tr, "w", encoding="utf-8") as f:
+            f.write("\n".join(json.dumps(x, ensure_ascii=False) for x in steps) + "\n")
+        p = {"conversationId": "agystop", "workspacePaths": [role], "transcriptPath": tr, "executionNum": 0,
+             "terminationReason": "model_stop", "fullyIdle": True}
+        out = self.run_agy("fix-claim-guard", "Stop", p, role)
+        self.assertEqual(out["decision"], "continue", out)
+        self.assertTrue(out["reason"])
+        self.assertEqual(self.run_agy("fix-claim-guard", "Stop", p, role), {"decision": "allow"})  # once per turn
+
+
 if __name__ == "__main__":
     unittest.main()
