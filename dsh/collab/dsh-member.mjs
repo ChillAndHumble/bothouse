@@ -84,6 +84,15 @@ export function describeReason(reason) {
 
 const INTERRUPTED = Symbol('interrupted');
 
+export function friendlyFailure(raw) {
+  const text = String(raw);
+  if (/no.{0,12}(api.?key|key)|missing.{0,12}(key|credential)|api.?key.{0,12}(missing|not set|required)|未配置.*key/i.test(text)) return '还没有配置模型的 API Key，请先去配置模型。';
+  if (/model.{0,30}(not found|unavailable|not available|unsupported)|unknown model|模型.*不可用|404/i.test(text)) return '这个模型暂时不可用，请检查模型名称或换一个模型。';
+  if (/login|log.?in|auth|unauthorized|401|未登录/i.test(text)) return '模型或 CLI 还没有登录，或登录已过期。请先登录后再试。';
+  if (/exit|ENOENT|spawn|没有输出文字/i.test(text)) return '本机 CLI 未能正常运行或已退出，请检查安装和登录状态。';
+  return `这次没能完成，请检查配置后重试。原始错误：${text}`;
+}
+
 export class DshMembers {
   /**
    * @param hub - Hub instance.
@@ -228,6 +237,7 @@ export class DshMembers {
       entry = { cli: member.cli, agent: this.rt.createCliMember({ cli: member.cli, cwd: this.rt.workspacePath, persona: '' }) };
       this.cliAgents.set(member.id, entry);
     }
+    this.hub.setError(member.id, undefined);
     this.hub.setThinking(job.room_id, member.id, true);
     try {
       this.store.advanceCursor(member.id, job.room_id, job.trigger_id);
@@ -254,6 +264,7 @@ export class DshMembers {
     const done = new Promise((resolve) => {
       this.watching.set(sessionId, { jobId: job.id, inputId: input.id, seqBefore, turn: undefined, resolve });
     });
+    this.hub.setError(member.id, undefined);
     this.hub.setThinking(job.room_id, member.id, true);
     try {
       if (input.admit !== false) agent.followup(input);
@@ -288,8 +299,11 @@ export class DshMembers {
     if (this.closed) return;
     const job = this.store.job(jobId);
     if (job === undefined || !this.store.finishJob(jobId, state)) return;
+    const error = friendlyFailure(notice);
+    this.hub.setError(job.member_id, error);
     this.hub.post(job.room_id, {
-      authorKind: 'system', author: 'system', name: 'system', text: notice, clientKey: `dsh-job-${jobId}-${state}`,
+      authorKind: 'system', author: 'system', name: 'system', text: error, clientKey: `dsh-job-${jobId}-${state}`,
+      card: JSON.stringify({ title: '成员出错', state: 'failed', action: 'configure-model' }),
     });
   }
 

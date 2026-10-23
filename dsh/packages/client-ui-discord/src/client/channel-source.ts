@@ -32,7 +32,9 @@ export interface ChannelMember {
   readonly id: string
   readonly name: string
   readonly kind: 'human' | 'dsh' | 'bot'
+  readonly error?: string
   readonly online: boolean
+  readonly error?: string
   /** DSH members only: configured model, or null for the host default. */
   readonly model?: MemberModel | null
   /** Local CLI members only: which CLI the member runs as. */

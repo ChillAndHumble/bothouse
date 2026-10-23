@@ -592,3 +592,6 @@
   color: var(--dsw-alias-label-primary);
   background: transparent;
 }
+
+.memberFailed .memberStatus { color: var(--dsw-alias-state-error-primary, #ed4245); }
+.memberFailed .presence { background: #ed4245; }
