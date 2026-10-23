@@ -37,6 +37,23 @@ this file unchanged. DSH runs the same .claude/settings.json through its officia
    until the log holds the hook/invoked record of this Stop hook (written before the hook runs) with no
    hook/result after it, re-reading for at most STOP_WAIT seconds.
    Plain and zstd-compressed logs (the DSH default) are found and read by dshlog.py (next to this file).
+Gemini CLI runs the same hooks through its own protocol (https://geminicli.com/docs/hooks/ and
+/docs/hooks/reference). run.py spots its payload (hook_event_name is a Gemini event name) and:
+1. Tool names become Claude Code's: run_shell_command -> Bash ("is_background" becomes "run_in_background"),
+   write_file -> Write, replace -> Edit, read_file -> Read, invoke_agent/subagent -> Agent. Its other tools
+   keep their names (no hook matches them).
+2. Events become Claude Code's: BeforeTool -> PreToolUse, AfterTool -> PostToolUse, BeforeAgent ->
+   UserPromptSubmit, AfterAgent -> Stop (the same "turn ends" moment; fix-claim-guard/promise-guard need it to be
+   able to send the agent back to fix its claim, which SessionEnd cannot). session_id/cwd pass through.
+3. Gemini's transcript is its own JSON, not a Claude Code JSONL: for Stop a two-entry transcript is built from
+   the payload's prompt / prompt_response, so the Stop hooks see the turn they check (they only read the last
+   user message and the assistant's final text).
+4. Its output is turned back: a Claude Code deny (hookSpecificOutput.permissionDecision, or decision "block")
+   becomes Gemini's {"decision": "deny", "reason": ...}; an additionalContext becomes
+   hookSpecificOutput.additionalContext on BeforeAgent only (the tool hooks have no such field in Gemini's
+   schema, so their hints are dropped). Exit 2 means "block" in both protocols and is passed through; stdout is
+   otherwise kept JSON-only, as Gemini requires.
+
 stdout / stderr / exit code of the hook are passed through.
 """
 import json
@@ -74,6 +91,14 @@ NAMES = {
     "subagent_fork": "Agent",
     "workflow": "Agent",
 }
+# Gemini CLI payloads: its event names and built-in tool names (hooks/reference "Tool hooks")
+GEMINI_EVENTS = {"BeforeTool", "AfterTool", "BeforeAgent", "AfterAgent", "BeforeModel", "AfterModel",
+                 "BeforeToolSelection", "SessionStart", "SessionEnd", "Notification", "PreCompress"}
+GEMINI_NAMES = {"run_shell_command": "Bash", "write_file": "Write", "replace": "Edit", "read_file": "Read",
+                "glob": "Glob", "grep_search": "Grep", "list_directory": "LS", "invoke_agent": "Agent",
+                "subagent": "Agent"}
+GEMINI_TO_CLAUDE_EVENT = {"BeforeTool": "PreToolUse", "AfterTool": "PostToolUse", "BeforeAgent": "UserPromptSubmit",
+                          "AfterAgent": "Stop"}
 STATE = os.path.join(HERE, "state", "dsh-stop.json")
 DSH_ROLES = os.path.join(HERE, "dsh-roles.json")  # {role work_dir: {"hooks": [...], "dsh_home": ...}}
 OPTS = {"role": None, "dsh_home": None, "dsh_global": False}  # {session_id: turn already blocked once}
@@ -148,6 +173,68 @@ def tool_input(name, args):
             return "Edit", {"file_path": args.get("path", ""), "old_string": args.get("old_str") or "",
                             "new_string": args.get("new_str") or ""}
     return NAMES.get(name, name), args
+
+
+def gemini_tool_input(name, args):
+    """A Gemini BeforeTool tool_input as the Claude Code tool's input."""
+    if not isinstance(args, dict):
+        args = {}
+    if name == "run_shell_command":
+        return "Bash", {"command": args.get("command") or "", "run_in_background": bool(args.get("is_background"))}
+    if name == "write_file":
+        return "Write", {"file_path": args.get("file_path") or args.get("path") or "",
+                         "content": args.get("content") or ""}
+    if name == "replace":
+        return "Edit", {"file_path": args.get("file_path") or args.get("path") or "",
+                        "old_string": args.get("old_string") or "", "new_string": args.get("new_string") or ""}
+    return GEMINI_NAMES.get(name, name), args
+
+
+def gemini_payload(payload):
+    """A Gemini CLI hook payload as Claude Code's shape (session_id/cwd pass through)."""
+    ev = payload.get("hook_event_name")
+    out = {"session_id": payload.get("session_id") or "", "cwd": payload.get("cwd") or os.getcwd(),
+           "hook_event_name": GEMINI_TO_CLAUDE_EVENT.get(ev, ev), "transcript_path": ""}
+    if out["hook_event_name"] in ("PreToolUse", "PostToolUse"):
+        name, inp = gemini_tool_input(payload.get("tool_name") or "", payload.get("tool_input"))
+        out["tool_name"], out["tool_input"] = name, inp
+    elif out["hook_event_name"] == "UserPromptSubmit":
+        out["prompt"] = payload.get("prompt") or ""
+    elif out["hook_event_name"] == "Stop":
+        out["stop_hook_active"] = bool(payload.get("stop_hook_active"))
+        out["gemini_prompt"], out["gemini_response"] = payload.get("prompt") or "", payload.get("prompt_response") or ""
+    return out
+
+
+def gemini_transcript(payload, cwd):
+    """Turn the Stop payload's prompt/prompt_response into a Claude Code transcript (JSONL temp file)."""
+    fd, path = tempfile.mkstemp(prefix="gemini-stop-", suffix=".jsonl")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        for rec in ({"type": "user", "cwd": cwd, "message": {"role": "user", "content": payload.pop("gemini_prompt", "")}},
+                    {"type": "assistant", "cwd": cwd,
+                     "message": {"role": "assistant", "content": [
+                         {"type": "text", "text": payload.pop("gemini_response", "")}]}}):
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return path
+
+
+def gemini_output(out, event):
+    """A Claude Code hook's stdout as Gemini CLI's: deny -> decision "deny", context -> additionalContext.
+    Anything else prints nothing (Gemini treats non-JSON or unknown text on stdout as a systemMessage)."""
+    try:
+        d = json.loads(out or "{}")
+    except ValueError:
+        return ""
+    if not isinstance(d, dict):
+        return ""
+    hso = d.get("hookSpecificOutput") or {}
+    if hso.get("permissionDecision") == "deny" or d.get("decision") == "block":
+        reason = hso.get("permissionDecisionReason") or d.get("reason") or "blocked by a bothouse hook"
+        return json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False)
+    ctx = hso.get("additionalContext")
+    if ctx and event == "BeforeAgent":
+        return json.dumps({"hookSpecificOutput": {"additionalContext": ctx}}, ensure_ascii=False)
+    return ""
 
 
 def user_text(text):
@@ -246,7 +333,9 @@ def role_dir(start=None):
     d = os.path.abspath(start or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     probe = d
     while True:
-        if os.path.isfile(os.path.join(probe, ".claude", "settings.json")):
+        # .gemini/settings.json: a Gemini CLI role (hooks written there; its switch file stays .claude/conest-hooks.json)
+        if (os.path.isfile(os.path.join(probe, ".claude", "settings.json"))
+                or os.path.isfile(os.path.join(probe, ".gemini", "settings.json"))):
             return probe
         up = os.path.dirname(probe)
         if up == probe:
@@ -356,13 +445,20 @@ def main():
     off = load_off(role_dir(os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or None))
     if "all" in off or name in off:
         sys.exit(0)  # switched off for this role (run.py off): pass without running the hook
+    gemini = payload.get("hook_event_name") in GEMINI_EVENTS
+    tmp, turn, sid = None, None, payload.get("session_id") or ""
+    if gemini:
+        payload = gemini_payload(payload)
+        if payload["hook_event_name"] == "Stop":
+            tmp = gemini_transcript(payload, payload["cwd"])
+            payload["transcript_path"] = tmp
     tool = payload.get("tool_name")
-    dsh = isinstance(tool, str) and (tool in NAMES or tool in ("str_replace_editor", "job_output"))
+    dsh = not gemini and isinstance(tool, str) and (tool in NAMES or tool in ("str_replace_editor", "job_output"))
     if dsh:
         payload["tool_name"], payload["tool_input"] = tool_input(tool, payload.get("tool_input"))
     stop = payload.get("hook_event_name") == "Stop"
     # Claude Code always gives a transcript; an empty one is the DSH bridge (dsh-hooks-claude-code base())
-    bridge = dsh or OPTS["dsh_global"] or not payload.get("transcript_path")
+    bridge = not gemini and (dsh or OPTS["dsh_global"] or not payload.get("transcript_path"))
     path = session_file(payload.get("session_id") or "") if bridge else None
     # only the first record (session header) is needed here; the whole log is read for Stop alone
     first = records(read_lines(path, head=True)) if path else []
@@ -388,7 +484,6 @@ def main():
             # (dsh_turn) and dsh_busy only for a sleep / wait=true; unreadable log = no fields, hook still runs
             compat.add_fields(payload, tool, sub, lambda: read_lines(path))
 
-    tmp, turn, sid = None, None, payload.get("session_id") or ""
     if stop and path:
         if sub:
             sys.exit(0)
@@ -416,7 +511,10 @@ def main():
             st = load_state()
             st[sid] = turn
             write_json(STATE, st)
-    sys.stdout.write(proc.stdout)
+    if gemini:
+        sys.stdout.write(gemini_output(proc.stdout, payload.get("hook_event_name")))
+    else:
+        sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     sys.exit(proc.returncode)
 

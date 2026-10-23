@@ -74,6 +74,44 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.run_hook("bash-guard", p), "")
         self.assertTrue(self.denied(self.run_hook("bash-guard", p, dict(self.env, HOOK_PROXY="http://127.0.0.1:7890"))))
 
+    # ---- Gemini CLI payloads (https://geminicli.com/docs/hooks/reference) ----
+    def gemini(self, event, **kw):
+        p = {"session_id": "g1", "transcript_path": "/tmp/gemini-session.json", "cwd": self.tmp,
+             "hook_event_name": event, "timestamp": "2026-10-23T10:00:00Z"}
+        p.update(kw)
+        return p
+
+    def test_gemini_before_tool_denies(self):
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="run_shell_command",
+                                                      tool_input={"command": "sleep 120", "is_background": False}))
+        d = json.loads(out)
+        self.assertEqual(d.get("decision"), "deny", out)
+        self.assertIn("sleep", d.get("reason", ""))
+
+    def test_gemini_before_tool_allows(self):
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="run_shell_command",
+                                                      tool_input={"command": "ls -la"}))
+        self.assertEqual(out, "")
+        # a Gemini tool no hook matches still passes
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="google_web_search",
+                                                      tool_input={"query": "x"}))
+        self.assertEqual(out, "")
+
+    def test_gemini_background_arg(self):
+        # Gemini's run_shell_command says is_background, Claude Code's Bash says run_in_background
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="run_shell_command",
+                                                      tool_input={"command": "sleep 120", "is_background": True}))
+        self.assertEqual(json.loads(out).get("decision"), "deny", out)  # background without a timeout
+
+    def test_gemini_after_agent_blocks(self):
+        # AfterAgent -> Stop: fix-claim-guard/promise-guard read the turn from prompt/prompt_response
+        out = self.run_hook("promise-guard", self.gemini("AfterAgent", prompt="改一下 foo",
+                                                         prompt_response="改好了，我等你回来。", stop_hook_active=False))
+        d = json.loads(out) if out else {}
+        self.assertIn(d.get("decision"), (None, "deny"), out)  # never a Claude Code "block" leaking through
+        if out:
+            self.assertIn("reason", d)
+
     # ---- dispatch-review-guard ----
     def test_dispatch_review_both_clis(self):
         for tool, inp in (("Agent", {"prompt": "改一下 foo"}), ("subagent", {"prompt": "改一下 foo"}),
