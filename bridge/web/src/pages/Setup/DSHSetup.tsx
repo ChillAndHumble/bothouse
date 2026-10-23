@@ -140,12 +140,12 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
   const patch = (key: number, p: Partial<Role>) => setRoles((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
 
   useEffect(() => {
-    if (lib && roles.length === 1 && !roles[0].avatar) {
-      const p = lib.personas.find((x) => x.name === roles[0].name) || lib.personas[0];
-      if (p) {
-        setRoles([{ ...roles[0], name: p.name, persona: p.text, personaSlug: p.slug, avatar: p.avatar || '' }]);
-      }
-    }
+    if (!lib) return;
+    setRoles((rs) => {
+      if (rs.length !== 1 || rs[0].avatar) return rs;
+      const p = lib.personas.find((x) => x.name === rs[0].name) || lib.personas[0];
+      return p ? [{ ...rs[0], name: p.name, persona: p.text, personaSlug: p.slug, avatar: p.avatar || '' }] : rs;
+    });
   }, [lib]);
 
   const install = () => run(async () => {
