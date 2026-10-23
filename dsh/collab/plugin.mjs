@@ -13,6 +13,7 @@ import { Hub } from './hub.mjs';
 import { CloudWebGateway, WS_PATH } from './cloudweb.mjs';
 import { DshMembers } from './dsh-member.mjs';
 import { Roster } from './roster.mjs';
+import { Tasks } from './tasks.mjs';
 import { createCliMember } from './cli-member.mjs';
 import { avatarImage, checkAvatar } from './avatars.mjs';
 import { handler as clisHandler } from './clis.mjs';
@@ -77,6 +78,11 @@ export async function apply(ctx, rawConfig) {
   const gateway = new CloudWebGateway(hub, { token: config.botToken, logger: ctx.logger });
   const dsh = new DshMembers(hub, { ctx, createUserMessage, createCliMember, workspacePath: config.workspacePath, logger: ctx.logger }, [], { maxRelay: config.maxRelay });
   const roster = new Roster(hub, dsh, ctx.llm);
+  // #139 B: dispatched tasks; a reminder wakes its owner whichever kind of member it is.
+  // Started after dsh.recover(): a reminder due during the downtime must not look like a leftover job.
+  const tasks = new Tasks(hub, { start: false });
+  gateway.tasks = tasks;
+  tasks.onWake((memberId, message) => dsh.nudge(memberId, message) || gateway.nudge(memberId, message));
   // Config members are seeds; UI-created members persist in the store. Both must be routable before recovery.
   roster.load(config.dshMembers);
   const wizard = await roster.importWizard(join(config.dataDir, 'wizard-members.json'), ctx.logger);
@@ -86,6 +92,7 @@ export async function apply(ctx, rawConfig) {
   ctx.on('agent/inbox/discarded', ({ agent, message }) => dsh.onDiscarded(agent.session.id, message.id));
   // Queue leftover jobs before any route can add new ones, so both share one order.
   dsh.recover();
+  tasks.start();
   if (!config.botToken) ctx.logger.warn(`conest-collab: ${config.botTokenEnv} is unset; cc-connect bots cannot connect`);
 
   const owner = req => ctx.connection.requestRejection(req) === undefined;
@@ -106,6 +113,7 @@ export async function apply(ctx, rawConfig) {
     },
   }), 'conest-collab: cloud-web upgrade');
   ctx.effect(() => async () => {
+    tasks.close();
     gateway.closeAll();
     for (const end of streams) end();
     wss.close();
@@ -131,6 +139,8 @@ export async function apply(ctx, rawConfig) {
   async function browserRoute(req, res) {
     const url = new URL(req.url ?? '/', 'http://collab.invalid');
     const path = url.pathname.replace(/\/+$/, '');
+    const routed = tasksRoute(req, res, url, { tasks, gateway, owner });
+    if (routed !== undefined) return routed;
     if (!owner(req)) {
       if (path === '/collab' && req.method === 'GET') return text(res, 401, 'text/plain; charset=utf-8', '请先在同一个浏览器打开 DSH 网页登录，再回到 /collab。');
       return json(res, 401, { error: 'unauthorized' });
@@ -204,7 +214,43 @@ export async function apply(ctx, rawConfig) {
   }
 }
 
-const ERROR_STATUS = { 'room-missing': 404, 'member-missing': 404, conflict: 409, 'read-only': 403, offline: 503 };
+/**
+ * #139 B task API, for the owner's browser and for cloud-web bots. The browser
+ * always acts as the owner. Under the shared bot token a bot names itself in
+ * body.actor, which is unverified (Tasks.perform: no owner, no review); a bot
+ * acts as itself verified with a `task` frame on its cloud-web socket.
+ *   GET  /collab/api/rooms/{id}/tasks           board of the room's chat channel and its workspaces
+ *   POST /collab/api/rooms/{id}/tasks           { title, owner, parent_task?, message_id? } dispatch
+ *   GET  /collab/api/tasks/{id}
+ *   POST /collab/api/tasks/{id}/stance          { stance: 接|问|退|升, note? }  (task owner)
+ *   POST /collab/api/tasks/{id}/return          { message_id }                  (task owner)
+ *   POST /collab/api/tasks/{id}/review          { verdict: done|rework, note? } (the dispatcher)
+ * Returns undefined when the request is not for this route, else a Promise of the reply.
+ */
+export function tasksRoute(req, res, url, { tasks, gateway, owner }) {
+  const path = url.pathname.replace(/\/+$/, '');
+  const board = /^\/collab\/api\/rooms\/(\d+)\/tasks$/.exec(path);
+  const one = /^\/collab\/api\/tasks\/(\d+)(?:\/(stance|return|review))?$/.exec(path);
+  if (board === null && one === null) return undefined;
+  const human = owner(req);
+  if (!human && !gateway.authorized(req, url)) return Promise.resolve(json(res, 401, { error: 'unauthorized' }));
+  // The browser is the owner; the shared bot token says nothing about which bot, so body.actor is unverified.
+  const sender = body => (human ? { actor: OWNER, verified: true } : { actor: body?.actor, verified: false });
+  const id = Number((board ?? one)[1]);
+  if (req.method === 'GET' && board !== null) return withBody(req, res, () => ({ tasks: tasks.list(id), chat_id: tasks.chatOf(id) }), false);
+  if (req.method === 'GET' && one !== null && one[2] === undefined) {
+    return withBody(req, res, () => {
+      const t = tasks.task(id);
+      if (t === undefined) throw new CollabError('task-missing', `task ${id} does not exist`);
+      return { task: tasks.view(t) };
+    }, false);
+  }
+  if (req.method !== 'POST') return Promise.resolve(json(res, 404, { error: 'not found' }));
+  if (board !== null) return withBody(req, res, body => ({ task: tasks.perform('assign', { roomId: id, body }, sender(body)) }));
+  return withBody(req, res, body => ({ task: tasks.perform(one[2], { id, body }, sender(body)) }));
+}
+
+const ERROR_STATUS = { 'room-missing': 404, 'member-missing': 404, 'task-missing': 404, conflict: 409, 'read-only': 403, forbidden: 403, offline: 503 };
 
 /** Parse a JSON body (unless `parse` is false), run fn, and map CollabError codes to HTTP statuses. */
 async function withBody(req, res, fn, parse = true) {

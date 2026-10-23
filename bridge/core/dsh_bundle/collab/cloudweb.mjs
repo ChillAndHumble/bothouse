@@ -12,7 +12,7 @@ export const WS_PATH = '/cloud-web/ws';
 // a `buttons` frame (bridge platform/cloud-web SendWithButtons) instead of plain
 // text (#120); cards are not declared, so cc-connect degrades them to text
 // (bridge docs/cloud-web.md "Handshake").
-export const CAPABILITIES = ['text', 'reconstruct_reply', 'typing', 'preview', 'update_message', 'delete_message', 'reply_in_place', 'buttons'];
+export const CAPABILITIES = ['text', 'reconstruct_reply', 'typing', 'preview', 'update_message', 'delete_message', 'reply_in_place', 'buttons', 'tasks'];
 // Permission decisions the Channel page and text replies may send. Values are the
 // button data cc-connect's sendPermissionPrompt uses (bridge core/engine.go).
 export const PERM_DECISIONS = { allow: 'perm:allow', deny: 'perm:deny', allow_all: 'perm:allow_all' };
@@ -85,6 +85,8 @@ export class CloudWebGateway {
     this.bots = new Map();
     /** permission prompt message id -> { bot, room, sessionKey, replyCtx } while undecided */
     this.pendingPerms = new Map();
+    /** Tasks (#139 B), set by the plugin; `task` frames act through it. */
+    this.tasks = undefined;
     hub.onMessage(message => this.onNew(message));
   }
 
@@ -198,10 +200,41 @@ export class CloudWebGateway {
     }
   }
 
+  /**
+   * Deliver a system message to one connected bot as a mention (#139 B task
+   * reminder); onNew never forwards system rows. False when the bot is offline.
+   */
+  nudge(memberId, msg) {
+    const bot = this.bots.get(memberId);
+    if (bot === undefined) return false;
+    const members = this.hub.routable();
+    const room = this.hub.store.room(msg.room_id);
+    const frame = {
+      type: 'message', msg_id: `hub-${msg.id}`, chat_id: roomKey(msg.room_id), chat_type: 'group',
+      user_id: msg.author, user_name: msg.name, content: forMember(msg.text, bot.member, members) || msg.text,
+      reply_ctx: roomKey(msg.room_id), mentioned: true, from_bot: false,
+    };
+    if (room !== undefined) frame.chat_name = room.name.replace(/\s+/g, ' ');
+    send(bot.ws, frame);
+    return true;
+  }
+
   async fromBot(bot, d) {
     const { member } = bot;
     switch (d.type) {
       case 'ping': send(bot.ws, { type: 'pong' }); return;
+      case 'task': {
+        // #139 B: the socket says which bot this is, so the action is verified as it.
+        const ack = r => send(bot.ws, { type: 'task_ack', ref: d.ref, ...r });
+        if (this.tasks === undefined) { ack({ ok: false, error: 'tasks are not enabled' }); return; }
+        try {
+          const task = this.tasks.perform(String(d.action ?? ''), { id: Number(d.task_id), roomId: roomOf(d, this.hub.store), body: d }, { actor: member.id, verified: true });
+          ack({ ok: true, task });
+        } catch (error) {
+          ack({ ok: false, error: error?.message ?? String(error), code: error?.code });
+        }
+        return;
+      }
       case 'reply': {
         const room = roomOf(d, this.hub.store);
         if (typeof d.content !== 'string' || room === undefined) return;
