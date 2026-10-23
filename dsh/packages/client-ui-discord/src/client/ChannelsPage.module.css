@@ -595,3 +595,15 @@
 
 .memberFailed .memberStatus { color: var(--dsw-alias-state-error-primary, #ed4245); }
 .memberFailed .presence { background: #ed4245; }
+.mobileButton, .drawerBackdrop { display: none; }
+@media (max-width: 900px) {
+  .page { position: relative; overflow: hidden; }
+  .mobileButton { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 40px; border: 0; border-radius: 6px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+  .mobileButton:last-child { margin-left: auto; }
+  .drawerBackdrop { display: block; position: absolute; inset: 0; z-index: 4; border: 0; background: rgb(0 0 0 / .45); }
+  .rooms.drawerOpen, .members.drawerOpen { display: block; position: absolute; top: 0; bottom: 0; z-index: 5; width: min(280px, 85%); box-sizing: border-box; box-shadow: 0 0 24px rgb(0 0 0 / .3); }
+  .rooms.drawerOpen { left: 0; }
+  .members.drawerOpen { right: 0; }
+  .memberActions { opacity: 1; }
+  .messageHead { flex-wrap: wrap; }
+}
