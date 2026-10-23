@@ -77,6 +77,8 @@ export async function apply(ctx, rawConfig) {
   const roster = new Roster(hub, dsh, ctx.llm);
   // Config members are seeds; UI-created members persist in the store. Both must be routable before recovery.
   roster.load(config.dshMembers);
+  const wizard = await roster.importWizard(join(config.dataDir, 'wizard-members.json'), ctx.logger);
+  if (wizard.length) ctx.logger.info('conest-collab: added wizard members %s', wizard.join(', '));
   ctx.on('session/event', (session, event) => dsh.onSessionEvent(session, event));
   ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => dsh.onClaimed(agent.session.id, message.id, turn));
   ctx.on('agent/inbox/discarded', ({ agent, message }) => dsh.onDiscarded(agent.session.id, message.id));

@@ -2,6 +2,7 @@
 // in the UI), UI members are created, edited and removed here. Names must be
 // unique across every channel member (DSH members and cc-connect bots alike)
 // because @-mentions are matched by name.
+import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { CollabError } from './store.mjs';
 
 const MAX_NAME = 32;
@@ -40,6 +41,35 @@ export class Roster {
   load(configMembers) {
     this.store.transaction(() => { for (const m of configMembers) this.store.seedMember(m); });
     for (const row of this.store.members()) this.dsh.putMember(rowToMember(row));
+  }
+
+  /**
+   * Add the roles the setup wizard wrote (bridge core/setup_dsh_configure.go: {"members":[{name,cli?,persona?}]})
+   * as UI members, once: names already in the channel are skipped, then the file becomes *.imported.json.
+   * Returns the names added.
+   */
+  async importWizard(path, logger) {
+    if (!existsSync(path)) return [];
+    let members = [];
+    try {
+      members = JSON.parse(readFileSync(path, 'utf8'))?.members ?? [];
+    } catch (error) {
+      logger?.warn?.('conest-collab: cannot read %s: %s', path, error?.message ?? error);
+      return [];
+    }
+    const added = [];
+    for (const m of Array.isArray(members) ? members : []) {
+      const name = String(m?.name ?? '').trim();
+      if (this.hub.memberList().some(x => x.name.toLowerCase() === name.toLowerCase())) continue;
+      try {
+        await this.create({ name, persona: m?.persona ?? '', ...(m?.cli ? { cli: m.cli } : {}) });
+        added.push(name);
+      } catch (error) {
+        logger?.warn?.('conest-collab: wizard member %s not added: %s', name, error?.message ?? error);
+      }
+    }
+    renameSync(path, path.replace(/\.json$/, '') + '.imported.json');
+    return added;
   }
 
   /** Provider routes and their models, for the add-member picker. Slow or failing routes are reported, not fatal. */

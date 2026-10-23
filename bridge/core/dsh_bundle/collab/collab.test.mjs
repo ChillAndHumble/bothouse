@@ -672,3 +672,23 @@ test('clis: detection lists installed CLIs in order; handler answers GET with [{
   const real = await detectClis();
   for (const c of real) assert.ok(c.path.startsWith('/'), `real which gives absolute path for ${c.cli}`);
 });
+
+test('roster: wizard roles are imported once, existing names skipped', async () => {
+  const { mkdtempSync, writeFileSync, existsSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'collab-wiz-'));
+  const file = join(dir, 'wizard-members.json');
+  writeFileSync(file, JSON.stringify({ members: [{ name: '橘', cli: 'claude', persona: '大姐头' }, { name: 'DeepSeek' }, { name: '鲸鱼娘' }] }));
+  const hub = makeHub();
+  const members = fakeDsh().attach(hub, []);
+  const roster = new Roster(hub, members, fakeLlm());
+  roster.load([{ id: 'ds', name: 'DeepSeek' }]);
+  assert.deepEqual(await roster.importWizard(file), ['橘', '鲸鱼娘']);
+  const ju = hub.memberView().find(m => m.name === '橘');
+  assert.equal(members.config.get(ju.id).cli, 'claude');
+  assert.equal(members.config.get(ju.id).persona, '大姐头');
+  assert.equal(existsSync(file), false);
+  assert.equal(existsSync(join(dir, 'wizard-members.imported.json')), true);
+  assert.deepEqual(await roster.importWizard(file), []);
+});
