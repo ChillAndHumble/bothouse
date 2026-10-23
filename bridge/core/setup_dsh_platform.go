@@ -8,10 +8,10 @@ package core
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
-	"io"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,7 +32,8 @@ type DSHStatus struct {
 	Profile         string `json:"profile"`
 	OpenCommand     string `json:"open_command"` // run this to open the DSH web page
 	InstallScript   string `json:"install_script,omitempty"`
-	Log             string `json:"log,omitempty"` // install.sh output (install only)
+	Log             string `json:"log,omitempty"`    // install.sh output (install only)
+	HasDeepSeekKey  bool   `json:"has_deepseek_key"` // a DeepSeek key is stored or exported (wizard can leave the field empty)
 }
 
 func dshHome() string {
@@ -101,6 +102,7 @@ func GetDSHStatus(ctx context.Context) DSHStatus {
 		return st
 	}
 	st.Found = true
+	st.HasDeepSeekKey = dshHasDeepSeekKey()
 	if out, err := exec.CommandContext(ctx, "dsh", "--version").Output(); err == nil {
 		st.Version = strings.TrimSpace(string(out))
 	}
