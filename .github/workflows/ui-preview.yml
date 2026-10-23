@@ -60,6 +60,8 @@ jobs:
         run: .github/ui-preview/run.sh . ui-preview-out
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        # artifact storage quota is shared and was full on 2026-10-23; screenshots passing is the check, the upload is best-effort
+        continue-on-error: true
         with:
           name: ui-preview
           path: ui-preview-out
