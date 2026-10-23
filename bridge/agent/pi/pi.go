@@ -543,9 +543,6 @@ func findSessionFile(sessDir, sessionID string) string {
 		}
 		// Extract UUID: strip .jsonl, then take everything after the last "_".
 		base := strings.TrimSuffix(name, ".jsonl")
-		if base == sessionID {
-			return filepath.Join(sessDir, name)
-		}
 		if idx := strings.LastIndex(base, "_"); idx >= 0 {
 			if base[idx+1:] == sessionID {
 				return filepath.Join(sessDir, name)

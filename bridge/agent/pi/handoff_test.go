@@ -6,141 +6,159 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chenhg5/cc-connect/core"
 )
 
-var piSessionFixture = []string{
-	`{"type":"session","version":3,"id":"sess-pi-uuid-001","timestamp":"2026-10-23T01:00:00.000Z"}`,
-	`{"type":"message","id":"m1","parentId":"sess-pi-uuid-001","timestamp":"2026-10-23T01:01:00.000Z","message":{"role":"user","content":"请帮我看一下代码架构"}}`,
-	`{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-10-23T01:01:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"没问题，我正在分析项目结构"}],"usage":{"input":1200,"output":150,"cacheRead":300,"cacheWrite":0}}}`,
-	`{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-10-23T01:05:00.000Z","message":{"role":"user","content":[{"type":"text","text":"重点关注认证模块"}]}}`,
-	`{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-10-23T01:06:15.500Z","message":{"role":"assistant","content":"认证模块采用 JWT 实现，配置在 config.go 中","usage":{"input":2500,"output":400,"cacheRead":1000,"cacheWrite":0}}}`,
+// Fixture lines follow the official pi types (@earendil-works/pi-coding-agent
+// 1.4.0 session-manager.d.ts, pi-ai types.d.ts): entry timestamp is an ISO
+// string, message.timestamp is a number (ms), assistant content mixes
+// thinking/toolCall/text blocks, and entries form a parentId tree whose leaf
+// is the last entry in the file.
+var piBranchedFixture = []string{
+	`{"type":"session","version":3,"id":"sess-1","timestamp":"2026-10-23T01:00:00.000Z","cwd":"/w"}`,
+	`{"type":"message","id":"m1","parentId":null,"timestamp":"2026-10-23T01:01:00.000Z","message":{"role":"user","content":"看一下代码架构","timestamp":1792803660000}}`,
+	`{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-10-23T01:01:20.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"先列目录"},{"type":"toolCall","id":"tc1","name":"bash","arguments":{"command":"ls"}}],"api":"anthropic-messages","provider":"anthropic","model":"m","usage":{"input":100,"output":20,"cacheRead":1000,"cacheWrite":200,"totalTokens":1320,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1792803680000}}`,
+	`{"type":"message","id":"t1","parentId":"m2","timestamp":"2026-10-23T01:01:21.000Z","message":{"role":"toolResult","toolCallId":"tc1","toolName":"bash","content":[{"type":"text","text":"a.go b.go"}],"isError":false,"timestamp":1792803681000}}`,
+	`{"type":"message","id":"m3","parentId":"t1","timestamp":"2026-10-23T01:01:30.000Z","message":{"role":"assistant","content":[{"type":"text","text":"两个文件"}],"api":"anthropic-messages","provider":"anthropic","model":"m","usage":{"input":10,"output":5,"cacheRead":1300,"cacheWrite":20,"totalTokens":1335,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1792803690000}}`,
+	// abandoned branch from m3
+	`{"type":"message","id":"x1","parentId":"m3","timestamp":"2026-10-23T01:02:00.000Z","message":{"role":"user","content":"废弃的问题","timestamp":1792803720000}}`,
+	`{"type":"message","id":"x2","parentId":"x1","timestamp":"2026-10-23T01:02:10.000Z","message":{"role":"assistant","content":[{"type":"text","text":"废弃的回答"}],"api":"a","provider":"p","model":"m","usage":{"input":1,"output":1,"cacheRead":9000,"cacheWrite":0,"totalTokens":9002,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1792803730000}}`,
+	// active branch, also from m3
+	`{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-10-23T01:03:00.000Z","message":{"role":"user","content":[{"type":"text","text":"重点看认证"},{"type":"image","data":"QUJD","mimeType":"image/png"}],"timestamp":1792803780000}}`,
+	`{"type":"message","id":"m5","parentId":"m4","timestamp":"2026-10-23T01:03:30.500Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"看 jwt"},{"type":"text","text":"认证用 JWT"}],"api":"a","provider":"p","model":"m","usage":{"input":50,"output":30,"cacheRead":1400,"cacheWrite":100,"totalTokens":1580,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1792803810500}}`,
 }
 
-func TestParsePiHandoffNormal(t *testing.T) {
-	h, err := parsePiHandoff(strings.NewReader(strings.Join(piSessionFixture, "\n")))
+func mustTime(t *testing.T, s string) time.Time {
+	t.Helper()
+	ts, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
-		t.Fatalf("parsePiHandoff failed: %v", err)
+		t.Fatal(err)
 	}
-
-	if h.CompactSummary != "" || !h.CompactedAt.IsZero() {
-		t.Fatalf("expected empty compaction, got summary=%q at=%v", h.CompactSummary, h.CompactedAt)
-	}
-
-	// 2500 + 1000 = 3500 tokens
-	if h.ContextTokens != 3500 {
-		t.Fatalf("expected ContextTokens=3500, got %d", h.ContextTokens)
-	}
-
-	wantTime, _ := time.Parse(time.RFC3339Nano, "2026-10-23T01:06:15.500Z")
-	if !h.LastActivity.Equal(wantTime) {
-		t.Fatalf("expected LastActivity=%v, got %v", wantTime, h.LastActivity)
-	}
-
-	if len(h.Tail) != 4 {
-		t.Fatalf("expected 4 tail entries, got %d", len(h.Tail))
-	}
-
-	if h.Tail[0].Role != "user" || h.Tail[0].Content != "请帮我看一下代码架构" {
-		t.Fatalf("unexpected entry 0: %+v", h.Tail[0])
-	}
-	if h.Tail[1].Role != "assistant" || h.Tail[1].Content != "没问题，我正在分析项目结构" {
-		t.Fatalf("unexpected entry 1: %+v", h.Tail[1])
-	}
-	if h.Tail[2].Role != "user" || h.Tail[2].Content != "重点关注认证模块" {
-		t.Fatalf("unexpected entry 2: %+v", h.Tail[2])
-	}
-	if h.Tail[3].Role != "assistant" || h.Tail[3].Content != "认证模块采用 JWT 实现，配置在 config.go 中" {
-		t.Fatalf("unexpected entry 3: %+v", h.Tail[3])
-	}
+	return ts
 }
 
-func TestParsePiHandoffCompaction(t *testing.T) {
-	lines := append([]string{}, piSessionFixture...)
-	lines = append(lines,
-		`{"type":"compaction","id":"c1","parentId":"m4","timestamp":"2026-10-23T01:10:00.000Z","summary":"用户询问项目架构并重点排查了 JWT 认证逻辑","firstKeptEntryId":"m5","tokensBefore":45000}`,
-		`{"type":"message","id":"m5","parentId":"c1","timestamp":"2026-10-23T01:12:00.000Z","message":{"role":"user","content":"现在继续检查权限拦截"}}`,
-		`{"type":"message","id":"m6","parentId":"m5","timestamp":"2026-10-23T01:13:20.000Z","message":{"role":"assistant","content":"已核查，RBAC 权限守卫已挂载完毕","usage":{"input":4200,"output":200,"cacheRead":0,"cacheWrite":0}}}`,
-	)
+func TestPiHandoffBranchedSession(t *testing.T) {
+	h, err := parsePiHandoff(strings.NewReader(strings.Join(piBranchedFixture, "\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.CompactSummary != "" || !h.CompactedAt.IsZero() {
+		t.Fatalf("unexpected compaction %q %v", h.CompactSummary, h.CompactedAt)
+	}
+	if want := mustTime(t, "2026-10-23T01:03:30.500Z"); !h.LastActivity.Equal(want) {
+		t.Fatalf("LastActivity = %v, want %v", h.LastActivity, want)
+	}
+	if h.ContextTokens != 50+1400+100 {
+		t.Fatalf("ContextTokens = %d, want 1550", h.ContextTokens)
+	}
+	if h.ImageBytes != 4 {
+		t.Fatalf("ImageBytes = %d, want 4", h.ImageBytes)
+	}
+	want := []string{"user:看一下代码架构", "assistant:两个文件", "user:重点看认证", "assistant:认证用 JWT"}
+	checkTail(t, h.Tail, want)
+}
 
+func TestPiHandoffToolCallOnlyReply(t *testing.T) {
+	lines := append([]string{}, piBranchedFixture[:3]...)
 	h, err := parsePiHandoff(strings.NewReader(strings.Join(lines, "\n")))
 	if err != nil {
-		t.Fatalf("parsePiHandoff failed: %v", err)
+		t.Fatal(err)
+	}
+	if want := mustTime(t, "2026-10-23T01:01:20.000Z"); !h.LastActivity.Equal(want) {
+		t.Fatalf("LastActivity = %v, want %v", h.LastActivity, want)
+	}
+	if h.ContextTokens != 100+1000+200 {
+		t.Fatalf("ContextTokens = %d, want 1300", h.ContextTokens)
+	}
+	checkTail(t, h.Tail, []string{"user:看一下代码架构"})
+}
+
+func TestPiHandoffCompactionKeepsEntries(t *testing.T) {
+	compaction := `{"type":"compaction","id":"c1","parentId":"m5","timestamp":"2026-10-23T01:10:00.000Z","summary":"用户在排查认证","firstKeptEntryId":"m4","tokensBefore":45000}`
+	lines := append(append([]string{}, piBranchedFixture...), compaction)
+	h, err := parsePiHandoff(strings.NewReader(strings.Join(lines, "\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.CompactSummary != "用户在排查认证" {
+		t.Fatalf("summary = %q", h.CompactSummary)
+	}
+	if want := mustTime(t, "2026-10-23T01:10:00.000Z"); !h.CompactedAt.Equal(want) {
+		t.Fatalf("CompactedAt = %v", h.CompactedAt)
+	}
+	if h.ContextTokens != 0 {
+		t.Fatalf("ContextTokens after compaction = %d, want 0 until next reply", h.ContextTokens)
+	}
+	checkTail(t, h.Tail, []string{"user:重点看认证", "assistant:认证用 JWT"})
+	if h.ImageBytes != 4 { // m4 is kept verbatim, its image is still sent
+		t.Fatalf("ImageBytes = %d, want 4", h.ImageBytes)
 	}
 
-	wantSummary := "用户询问项目架构并重点排查了 JWT 认证逻辑"
-	if h.CompactSummary != wantSummary {
-		t.Fatalf("expected summary %q, got %q", wantSummary, h.CompactSummary)
+	lines = append(lines,
+		`{"type":"message","id":"m6","parentId":"c1","timestamp":"2026-10-23T01:12:00.000Z","message":{"role":"user","content":"继续看权限","timestamp":1792804320000}}`,
+		`{"type":"message","id":"m7","parentId":"m6","timestamp":"2026-10-23T01:12:30.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"tc2","name":"read","arguments":{"path":"rbac.go"}}],"api":"a","provider":"p","model":"m","usage":{"input":7,"output":3,"cacheRead":4000,"cacheWrite":300,"totalTokens":4310,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1792804350000}}`,
+	)
+	h, err = parsePiHandoff(strings.NewReader(strings.Join(lines, "\n")))
+	if err != nil {
+		t.Fatal(err)
 	}
+	if h.ContextTokens != 7+4000+300 {
+		t.Fatalf("ContextTokens = %d, want 4307", h.ContextTokens)
+	}
+	if want := mustTime(t, "2026-10-23T01:12:30.000Z"); !h.LastActivity.Equal(want) {
+		t.Fatalf("LastActivity = %v, want %v", h.LastActivity, want)
+	}
+	checkTail(t, h.Tail, []string{"user:重点看认证", "assistant:认证用 JWT", "user:继续看权限"})
+}
 
-	wantCompactedAt, _ := time.Parse(time.RFC3339Nano, "2026-10-23T01:10:00.000Z")
-	if !h.CompactedAt.Equal(wantCompactedAt) {
-		t.Fatalf("expected CompactedAt=%v, got %v", wantCompactedAt, h.CompactedAt)
+func TestPiHandoffLongLine(t *testing.T) {
+	big := strings.Repeat("x", 11*1024*1024)
+	lines := append(append([]string{}, piBranchedFixture[:3]...),
+		`{"type":"message","id":"t1","parentId":"m2","timestamp":"2026-10-23T01:01:21.000Z","message":{"role":"toolResult","toolCallId":"tc1","toolName":"bash","content":[{"type":"text","text":"`+big+`"}],"isError":false,"timestamp":1792803681000}}`,
+		piBranchedFixture[4])
+	h, err := parsePiHandoff(strings.NewReader(strings.Join(lines, "\n")))
+	if err != nil {
+		t.Fatal(err)
 	}
+	checkTail(t, h.Tail, []string{"user:看一下代码架构", "assistant:两个文件"})
+}
 
-	if h.ContextTokens != 4200 {
-		t.Fatalf("expected ContextTokens=4200, got %d", h.ContextTokens)
+func checkTail(t *testing.T, tail []core.HistoryEntry, want []string) {
+	t.Helper()
+	var got []string
+	for _, e := range tail {
+		got = append(got, e.Role+":"+e.Content)
 	}
-
-	wantLastActivity, _ := time.Parse(time.RFC3339Nano, "2026-10-23T01:13:20.000Z")
-	if !h.LastActivity.Equal(wantLastActivity) {
-		t.Fatalf("expected LastActivity=%v, got %v", wantLastActivity, h.LastActivity)
-	}
-
-	// Earlier tail entries before compaction must be pruned; only m5 and m6 remain.
-	if len(h.Tail) != 2 {
-		t.Fatalf("expected 2 tail entries after compaction, got %d", len(h.Tail))
-	}
-	if h.Tail[0].Role != "user" || h.Tail[0].Content != "现在继续检查权限拦截" {
-		t.Fatalf("unexpected entry 0: %+v", h.Tail[0])
-	}
-	if h.Tail[1].Role != "assistant" || h.Tail[1].Content != "已核查，RBAC 权限守卫已挂载完毕" {
-		t.Fatalf("unexpected entry 1: %+v", h.Tail[1])
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("Tail = %q, want %q", got, want)
 	}
 }
 
 func TestReadSessionHandoffFindsSession(t *testing.T) {
 	tempHome := t.TempDir()
 	t.Setenv("HOME", tempHome)
-
 	workDir := filepath.Join(tempHome, "my-pi-project")
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
 	sessDir := piSessionDir(workDir)
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-
 	uuid := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-	fileName := "2026-10-23T01-00-00_" + uuid + ".jsonl"
-	filePath := filepath.Join(sessDir, fileName)
-
-	if err := os.WriteFile(filePath, []byte(strings.Join(piSessionFixture, "\n")+"\n"), 0o644); err != nil {
+	filePath := filepath.Join(sessDir, "2026-10-23T01-00-00-000Z_"+uuid+".jsonl")
+	if err := os.WriteFile(filePath, []byte(strings.Join(piBranchedFixture, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	agent := &Agent{
-		workDir: workDir,
+	a := &Agent{workDir: workDir}
+	for _, id := range []string{uuid, filePath} {
+		h, err := a.ReadSessionHandoff(id)
+		if err != nil {
+			t.Fatalf("ReadSessionHandoff(%q): %v", id, err)
+		}
+		if h.Path != filePath || h.ContextTokens != 1550 || len(h.Tail) != 4 {
+			t.Fatalf("ReadSessionHandoff(%q) = path %q tokens %d tail %d", id, h.Path, h.ContextTokens, len(h.Tail))
+		}
 	}
-
-	h, err := agent.ReadSessionHandoff(uuid)
-	if err != nil {
-		t.Fatalf("ReadSessionHandoff(%q) failed: %v", uuid, err)
-	}
-
-	if h.Path != filePath {
-		t.Fatalf("expected Path=%q, got %q", filePath, h.Path)
-	}
-	if h.ContextTokens != 3500 {
-		t.Fatalf("expected ContextTokens=3500, got %d", h.ContextTokens)
-	}
-	if len(h.Tail) != 4 {
-		t.Fatalf("expected 4 tail entries, got %d", len(h.Tail))
-	}
-
-	// Negative test: non-existent session
-	if _, err := agent.ReadSessionHandoff("non-existent-session-id"); err == nil {
-		t.Fatal("expected error for non-existent session, got nil")
+	if _, err := a.ReadSessionHandoff("non-existent-session-id"); err == nil {
+		t.Fatal("expected error for non-existent session")
 	}
 }
