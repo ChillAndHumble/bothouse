@@ -1,12 +1,14 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -382,5 +384,61 @@ func TestProbeSocketVersion(t *testing.T) {
 	CurrentVersion = "v0.1.5"
 	if v := probeStatusVersion(updateGuardSpec{SocketPath: sock}); v != "v0.1.5" {
 		t.Fatalf("got %q", v)
+	}
+}
+
+// systemd kills the guard together with the new process: the old binary must already be back
+// in place when the guard stops the new one.
+func TestUpdateGuard_SwapsBeforeKill(t *testing.T) {
+	spec := guardFixture(t)
+	spec.PID = 999999
+	clk := &fakeClock{t: time.Unix(0, 0)}
+	var atKill string
+	runUpdateGuard(spec, guardOps{now: clk.now, sleep: clk.sleep,
+		probe: func(updateGuardSpec) string { return "" },
+		kill:  func(int) { atKill = readFile(t, spec.Exe) },
+		start: func(string, []string) error { return nil },
+	})
+	if atKill != "OLD" {
+		t.Fatalf("exe at kill time = %q, want OLD", atKill)
+	}
+}
+
+// The guard was killed (systemd cgroup) before rolling back: the new binary's next start finds the
+// pending update with a dead guard, swaps the old binary back and hands over to it.
+func TestRecoverOrphanedUpdate(t *testing.T) {
+	spec := guardFixture(t)
+	old := CurrentVersion
+	t.Cleanup(func() { CurrentVersion = old })
+	CurrentVersion = "v0.1.5"
+	dead := exec.Command("true")
+	if err := dead.Run(); err != nil {
+		t.Skip("no true binary")
+	}
+	var restarted string
+	restart := func(exe string) error { restarted = exe; return nil }
+
+	// guard alive (this process): leave it to the guard
+	spec.GuardPID = os.Getpid()
+	b, _ := json.Marshal(spec)
+	if recoverOrphanedUpdate(spec.StateDir, b, restart) || readFile(t, spec.Exe) != "NEW" {
+		t.Fatal("rolled back while the guard is alive")
+	}
+	// guard dead
+	spec.GuardPID = dead.Process.Pid
+	b, _ = json.Marshal(spec)
+	if !recoverOrphanedUpdate(spec.StateDir, b, restart) {
+		t.Fatal("no rollback with a dead guard")
+	}
+	if readFile(t, spec.Exe) != "OLD" || restarted != spec.Exe {
+		t.Fatalf("exe=%q restarted=%q", readFile(t, spec.Exe), restarted)
+	}
+	if r := ReadUpdateResult(spec.StateDir); r == nil || r.Status != "rolled_back" {
+		t.Fatalf("result %+v", r)
+	}
+	// already the old version: nothing to do
+	CurrentVersion = "v0.1.4"
+	if recoverOrphanedUpdate(spec.StateDir, b, restart) {
+		t.Fatal("rolled back the old version")
 	}
 }
