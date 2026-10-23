@@ -61,15 +61,16 @@ func (r PublicProgressRequest) Validate() error {
 }
 
 type progressRecord struct {
-	Task     *Task            `json:"task"`
-	Platform string           `json:"platform"`
-	Lang     Language         `json:"lang"`
-	Closed   bool             `json:"closed"`
-	Accepted bool             `json:"accepted,omitempty"`
-	Reports  map[int64]string `json:"reports"`
-	LastSeq  int64            `json:"last_seq"`
-	CardSeq  int64            `json:"card_seq"`
-	FactSeq  int64            `json:"fact_seq"`
+	Relays   map[string]taskRelayRecord `json:"relays,omitempty"`
+	Task     *Task                      `json:"task"`
+	Platform string                     `json:"platform"`
+	Lang     Language                   `json:"lang"`
+	Closed   bool                       `json:"closed"`
+	Accepted bool                       `json:"accepted,omitempty"`
+	Reports  map[int64]string           `json:"reports"`
+	LastSeq  int64                      `json:"last_seq"`
+	CardSeq  int64                      `json:"card_seq"`
+	FactSeq  int64                      `json:"fact_seq"`
 }
 
 type publicRun struct {
@@ -90,13 +91,15 @@ type publicRun struct {
 type PublicProgress struct {
 	// Lifecycle operations serialize run ownership and durable state transitions.
 	// Delivery never takes this lock; network requests remain independent.
-	transitionMu sync.Mutex
-	mu           sync.Mutex
-	dir          string
-	dataDir      string
-	project      string
-	runs         map[string]*publicRun
-	memberRuns   map[string]*taskMemberRun
+	transitionMu    sync.Mutex
+	mu              sync.Mutex
+	dir             string
+	dataDir         string
+	project         string
+	resolveReporter func(project, platform, session string) (TaskCardPublisher, error)
+	runs            map[string]*publicRun
+	relayRuns       map[string]*taskRelay
+	memberRuns      map[string]*taskMemberRun
 	// Batch keys belong to the authorizing turn, never the session's open slot.
 	delegations map[string]map[string]*publicRun
 	// records indexes every task this project has ever journalled, so a task can
@@ -218,7 +221,7 @@ func (p *PublicProgress) appendEvent(r *publicRun, kind TaskEventKind, summary s
 	t.Seq++
 	t.UpdatedAt = time.Now().UTC()
 	t.LatestProgress = summary
-	t.Events = append(t.Events, TaskEvent{ID: fmt.Sprintf("%s:%d", t.ID, t.Seq), TaskID: t.ID, Seq: t.Seq, Kind: kind, State: t.State, FactStage: t.FactStage, Summary: summary, IsKeyFact: key, Timestamp: t.UpdatedAt})
+	t.Events = append(t.Events, TaskEvent{ReporterProject: p.project, ID: fmt.Sprintf("%s:%d", t.ID, t.Seq), TaskID: t.ID, Seq: t.Seq, Kind: kind, State: t.State, FactStage: t.FactStage, Summary: summary, IsKeyFact: key, Timestamp: t.UpdatedAt})
 }
 
 func (p *PublicProgress) save(r *publicRun) error {
@@ -242,6 +245,7 @@ func (p *PublicProgress) Report(req PublicProgressRequest) (string, error) {
 	}
 	p.mu.Lock()
 	r := p.runs[req.Run]
+	child := p.relayRuns[req.Run]
 	lead := r
 	member := p.memberRuns[req.Run]
 	var adopt *publicRun
@@ -262,6 +266,9 @@ func (p *PublicProgress) Report(req PublicProgressRequest) (string, error) {
 	p.mu.Unlock()
 	if member != nil {
 		return p.reportMember(member, req)
+	}
+	if child != nil {
+		return p.reportTaskRelay(child, req)
 	}
 	if (req.Kind == "failed" || req.Kind == "cancelled") && req.TaskID == "" {
 		return "", errors.New("kind is only available for member reports")
@@ -482,6 +489,7 @@ func (p *PublicProgress) flushRun(parent context.Context, r *publicRun) error {
 	r.mu.Lock()
 	err := p.save(r) // retries a failed terminal-state checkpoint before sending
 	task, cardSeq, factSeq, lang := r.record.Task.Clone(), r.record.CardSeq, r.record.FactSeq, r.record.Lang
+	platform := r.record.Platform
 	r.mu.Unlock()
 	if err != nil {
 		return err
@@ -510,7 +518,31 @@ func (p *PublicProgress) flushRun(parent context.Context, r *publicRun) error {
 			continue
 		}
 		if ev.IsKeyFact {
-			if err := r.publisher.PublishTaskFact(ctx, task, ev, lang); err != nil {
+			publisher, err := p.taskReporter(ev.ReporterProject, platform, task.SessionKey, r.publisher)
+			if err == nil {
+				err = publisher.PublishTaskFact(ctx, task, ev, lang)
+			}
+			if errors.Is(err, ErrTaskFactUndeliverable) && ev.ReporterProject != "" && ev.ReporterProject != p.project {
+				// Persist the replacement first so a retry never goes back to the
+				// refusing account; the creator then posts it in order.
+				note := ev
+				note.ReporterProject, note.Detail = "", ""
+				note.Summary = NewI18n(lang).Tf(MsgTaskReporterMuted, ev.ReporterProject)
+				r.mu.Lock()
+				for i := range r.record.Task.Events {
+					if r.record.Task.Events[i].ID == ev.ID {
+						r.record.Task.Events[i] = note
+					}
+				}
+				err = p.save(r)
+				r.mu.Unlock()
+				if err != nil {
+					return err
+				}
+				slog.Warn("public progress: reporter cannot post; creator posted note", "task_id", task.ID, "reporter", ev.ReporterProject)
+				err = r.publisher.PublishTaskFact(ctx, task, note, lang)
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -531,6 +563,7 @@ func (e *Engine) EnablePublicProgress() error {
 		return err
 	}
 	e.publicProgress = p
+	p.resolveReporter = e.resolveTaskReporter
 	return nil
 }
 
@@ -571,12 +604,13 @@ func (e *Engine) withPublicProgress(prompt string, state *interactiveState, sess
 		"ASSIGN_COMMAND", quote(command)+" task assign --project "+quote(e.name)+" --session "+quote(session)+" --data-dir "+quote(e.publicProgress.dataDir),
 		"RUN_TOKEN", token,
 		"RESUME_NOTE", resumeNote,
+		"RELAY_COMMAND", quote(command)+" relay send --from "+quote(e.name)+" --session "+quote(session)+" --data-dir "+quote(e.publicProgress.dataDir),
 	).Replace(publicProgressPrompt+publicTaskMembersPrompt) + prompt
 }
 
-const publicTaskMembersPrompt = "[Task card members]\nWhen delegation is already authorized, open each new delegation batch with ASSIGN_COMMAND --run RUN_TOKEN --batch STABLE_BATCH_ID --member UNIQUE_ID --name 'display name' --title 'short assignment' (optional --parent existing-member-id for a child). Omit --id for new work: the batch automatically opens a fresh shared card, even if this turn already reported on another card. Use the SAME batch for all participants in that delegation and on retries; use a DIFFERENT batch for independent parallel work. Batch ids are scoped to this turn. To explicitly continue a known card, replace --batch with --id TASK_ID. Overall reports for a delegation use COMMAND --run RUN_TOKEN --task TASK_ID --seq N --kind KIND --message 'public status'; each card has its own lead sequence, beginning at 1 for a new batch; the grant returns lead_next_seq for explicit continuation. Assignment does not consume a lead sequence. A first update can follow assignment without a separate start. Pass only the returned report_command to that participant. The participant itself reports immediately with --seq 1 --kind update --message 'started', then increments its own sequence only for meaningful progress, waiting, result, failed or cancelled. Use the same sequence/content on retry. Member results update only that row, not the overall task or acceptance. Ending the lead turn does not finish other delegation batches; report each batch's overall result separately. No raw tools, credentials or reasoning. A member's first report starts its clock; result/failed/cancelled ends it. Do not register a member unless actually dispatching; registration grants no permission to delegate.\n[/Task card members]\n\n"
+const publicTaskMembersPrompt = "[Task card members]\nWhen delegation is already authorized, open each new delegation batch with ASSIGN_COMMAND --run RUN_TOKEN --batch STABLE_BATCH_ID --member UNIQUE_ID --name 'display name' --title 'short assignment' (for a configured bot, use --reporter-project EXACT_BOUND_PROJECT_ID; its name comes from that project, never from --name). Native children use --name 'explicit child name' and optional --parent existing-member-id; they inherit their owning bot account. Omit --id for new work: the batch automatically opens a fresh shared card, even if this turn already reported on another card. Use the SAME batch for all participants in that delegation and on retries; use a DIFFERENT batch for independent parallel work. Batch ids are scoped to this turn. To explicitly continue a known card, replace --batch with --id TASK_ID. Overall reports for a delegation use COMMAND --run RUN_TOKEN --task TASK_ID --seq N --kind KIND --message 'public status'; each card has its own lead sequence, beginning at 1 for a new batch; the grant returns lead_next_seq for explicit continuation. Assignment does not consume a lead sequence. A first update can follow assignment without a separate start. Pass only the returned report_command to that participant. A --reporter-project member gets no report_command (report_via is set instead): dispatch it with the task relay and that bot receives its own member report command there. The participant itself reports immediately with --seq 1 --kind update --message 'started', then increments its own sequence only for meaningful progress, waiting, result, failed or cancelled. Use the same sequence/content on retry. Member results update only that row, not the overall task or acceptance. Ending the lead turn does not finish other delegation batches; report each batch's overall result separately. No raw tools, credentials or reasoning. A member's first report starts its clock; result/failed/cancelled ends it. Do not register a member unless actually dispatching; registration grants no permission to delegate.\n[/Task card members]\n\n"
 
-const publicProgressPrompt = "[Public progress channel]\nFor an accepted multi-step task only, use the shell tool to report short PUBLIC status with COMMAND --run RUN_TOKEN --seq N --kind KIND --message 'one short public sentence'. The first report must use --seq 1 --kind start --title 'short task title'.RESUME_NOTE Then increase seq by one for each report: update for routine progress; milestone for a verified key finding; waiting for a decision the human must make; result for the final concise result and remaining work. Report at start and meaningful changes only (max 64 reports). Do not open cards for casual chat, questions or status queries. Do not put reasoning, tool output, credentials or full conversations in these reports. Never claim merge, deployment or human verification without evidence. A result is not project acceptance. Keep final spoken replies short; details belong in the card. Retries reuse exactly the same seq and content; never repeat task tools because delivery failed. This run token applies ONLY to this turn; never reuse a token from history.\n[/Public progress channel]\n\n"
+const publicProgressPrompt = "[Public progress channel]\nFor an accepted multi-step task only, use the shell tool to report short PUBLIC status with COMMAND --run RUN_TOKEN --seq N --kind KIND --message 'one short public sentence'. The first report must use --seq 1 --kind start --title 'short task title'.RESUME_NOTE Then increase seq by one for each report: update for routine progress; milestone for a verified key finding; waiting for a decision the human must make; result for the final concise result and remaining work. Report at start and meaningful changes only (max 64 reports). Do not open cards for casual chat, questions or status queries. Do not put reasoning, tool output, credentials or full conversations in these reports. Never claim merge, deployment or human verification without evidence. A result is not project acceptance. Keep final spoken replies short; details belong in the card. Retries reuse exactly the same seq and content; never repeat task tools because delivery failed. This run token applies ONLY to this turn; never reuse a token from history. When delegation is authorized, dispatch quietly using RELAY_COMMAND --task TASK_ID --request-id STABLE_DISPATCH_ID --to EXACT_BOUND_PROJECT_ID --message 'bounded assignment'. Use the card returned by task assign; keep assignment text and report grants out of public facts. Retries reuse the same request ID and content. Worker progress and results appear under its own bot account in that task thread; the creator updates the aggregate card. Do not also send public channel mentions or forward the worker response.\n[/Public progress channel]\n\n"
 
 func (e *Engine) finishPublicProgress(state *interactiveState, outcome string) {
 	if e.publicProgress == nil {

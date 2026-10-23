@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,16 +15,17 @@ import (
 // TaskMember is deliberately public. Capability tokens are kept only in memory.
 // Assignment is not execution: StartedAt is set by the member's first report.
 type TaskMember struct {
-	ID         string    `json:"id"`
-	ParentID   string    `json:"parent_id,omitempty"`
-	Name       string    `json:"name"`
-	Title      string    `json:"title"`
-	Status     string    `json:"status"`
-	Summary    string    `json:"summary,omitempty"`
-	AssignedAt time.Time `json:"assigned_at"`
-	StartedAt  time.Time `json:"started_at,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	EndedAt    time.Time `json:"ended_at,omitempty"`
+	ReporterProject string    `json:"reporter_project,omitempty"`
+	ID              string    `json:"id"`
+	ParentID        string    `json:"parent_id,omitempty"`
+	Name            string    `json:"name"`
+	Title           string    `json:"title"`
+	Status          string    `json:"status"`
+	Summary         string    `json:"summary,omitempty"`
+	AssignedAt      time.Time `json:"assigned_at"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	EndedAt         time.Time `json:"ended_at,omitempty"`
 }
 
 func (m TaskMember) Live() bool {
@@ -31,21 +33,23 @@ func (m TaskMember) Live() bool {
 }
 
 type TaskMemberAssignment struct {
-	Project    string `json:"project"`
-	SessionKey string `json:"session_key"`
-	Run        string `json:"run"`
-	TaskID     string `json:"task_id"`
-	BatchID    string `json:"batch_id,omitempty"`
-	MemberID   string `json:"member_id"`
-	ParentID   string `json:"parent_id,omitempty"`
-	Name       string `json:"name"`
-	Title      string `json:"title"`
+	ReporterProject string `json:"reporter_project,omitempty"` // configured project id, never a display name
+	Project         string `json:"project"`
+	SessionKey      string `json:"session_key"`
+	Run             string `json:"run"`
+	TaskID          string `json:"task_id"`
+	BatchID         string `json:"batch_id,omitempty"`
+	MemberID        string `json:"member_id"`
+	ParentID        string `json:"parent_id,omitempty"`
+	Name            string `json:"name"`
+	Title           string `json:"title"`
 }
 
 type TaskMemberGrant struct {
 	TaskID        string `json:"task_id"`
 	MemberID      string `json:"member_id"`
-	ReportCommand string `json:"report_command"`
+	ReportCommand string `json:"report_command,omitempty"`
+	ReportVia     string `json:"report_via,omitempty"` // set when the token goes only to the member's own bot
 	LeadNextSeq   int64  `json:"lead_next_seq"`
 }
 
@@ -77,7 +81,7 @@ func (p *PublicProgress) AssignMember(req TaskMemberAssignment) (*TaskMemberGran
 		(req.TaskID != "" && req.BatchID != "") ||
 		utf8.RuneCountInString(req.BatchID) > 60 ||
 		strings.TrimSpace(req.MemberID) == "" || utf8.RuneCountInString(req.MemberID) > 60 ||
-		strings.TrimSpace(req.Name) == "" || utf8.RuneCountInString(req.Name) > 60 ||
+		((req.ReporterProject == "" || req.ParentID != "") && strings.TrimSpace(req.Name) == "") || utf8.RuneCountInString(req.Name) > 60 || utf8.RuneCountInString(req.ReporterProject) > 60 ||
 		strings.TrimSpace(req.Title) == "" || utf8.RuneCountInString(req.Title) > 60 {
 		return nil, errors.New("project, session, active run, batch or task, member, name and title required (1..60 characters)")
 	}
@@ -92,6 +96,27 @@ func (p *PublicProgress) AssignMember(req TaskMemberAssignment) (*TaskMemberGran
 	req.TaskID, req.BatchID = r.record.Task.ID, ""
 	if req.ParentID != "" && memberIndex(r.record.Task, req.ParentID) < 0 {
 		return nil, errors.New("unknown parent member")
+	}
+	// Native children inherit their owning bot; an explicit project selects a
+	// real configured bot and its canonical id instead of a caller's nickname.
+	if req.ParentID != "" {
+		parent := r.record.Task.Members[memberIndex(r.record.Task, req.ParentID)]
+		owner := parent.ReporterProject
+		if owner == "" {
+			owner = p.project // legacy/native member belongs to the creator
+		}
+		if req.ReporterProject != "" && req.ReporterProject != owner {
+			return nil, errors.New("child reporter must match its owning bot")
+		}
+		req.ReporterProject = owner
+	} else if req.ReporterProject != "" {
+		req.Name = req.ReporterProject
+	}
+	if req.ReporterProject == "" {
+		req.ReporterProject = p.project
+	}
+	if _, err := p.taskReporter(req.ReporterProject, r.record.Platform, req.SessionKey, r.publisher); err != nil {
+		return nil, err
 	}
 	if memberIndex(r.record.Task, req.MemberID) >= 0 {
 		p.mu.Lock()
@@ -113,7 +138,7 @@ func (p *PublicProgress) AssignMember(req TaskMemberAssignment) (*TaskMemberGran
 		p.appendEvent(r, TaskEventCreated, req.Title, true)
 	}
 	r.record.Closed = false
-	r.record.Task.Members = append(r.record.Task.Members, TaskMember{ID: req.MemberID, ParentID: req.ParentID, Name: req.Name, Title: req.Title, Status: "queued", AssignedAt: now, UpdatedAt: now})
+	r.record.Task.Members = append(r.record.Task.Members, TaskMember{ReporterProject: req.ReporterProject, ID: req.MemberID, ParentID: req.ParentID, Name: req.Name, Title: req.Title, Status: "queued", AssignedAt: now, UpdatedAt: now})
 	p.memberEvent(r, req.Name+": "+req.Title, false)
 	if err := p.save(r); err != nil {
 		r.record = old
@@ -206,13 +231,52 @@ func (p *PublicProgress) lockAssignmentRun(req TaskMemberAssignment) (*publicRun
 	return target, key, resume, nil
 }
 
+// A member bound to another bot publishes under that bot's account, so its
+// report token is a credential for that identity: it is never returned to the
+// creator, only placed in the task relay prompt that bot itself receives.
 func (p *PublicProgress) memberGrant(g *taskMemberRun) *TaskMemberGrant {
+	grant := &TaskMemberGrant{TaskID: g.r.record.Task.ID, MemberID: g.id, LeadNextSeq: g.leadNextSeq}
+	if g.assignment.ReporterProject != p.project {
+		grant.ReportVia = "task relay to " + g.assignment.ReporterProject
+		return grant
+	}
+	grant.ReportCommand = p.memberReportCommand(g)
+	return grant
+}
+
+func (p *PublicProgress) memberReportCommand(g *taskMemberRun) string {
 	command := "bothouse"
 	if path, err := os.Executable(); err == nil {
 		command = path
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-	return &TaskMemberGrant{TaskID: g.r.record.Task.ID, MemberID: g.id, LeadNextSeq: g.leadNextSeq, ReportCommand: quote(command) + " progress --project " + quote(p.project) + " --session " + quote(g.assignment.SessionKey) + " --data-dir " + quote(p.dataDir) + " --run " + g.token}
+	return quote(command) + " progress --project " + quote(p.project) + " --session " + quote(g.assignment.SessionKey) + " --data-dir " + quote(p.dataDir) + " --run " + g.token
+}
+
+// relayMemberCommands returns report commands for live members of r owned by
+// project, for inclusion only in a task relay delivered to that project.
+func (p *PublicProgress) relayMemberCommands(r *publicRun, project string) []string {
+	if project == p.project {
+		return nil
+	}
+	p.mu.Lock()
+	var grants []*taskMemberRun
+	for _, g := range p.memberRuns {
+		if g.r == r && g.assignment.ReporterProject == project {
+			grants = append(grants, g)
+		}
+	}
+	p.mu.Unlock()
+	sort.Slice(grants, func(i, j int) bool { return grants[i].id < grants[j].id })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, g := range grants {
+		if i := memberIndex(r.record.Task, g.id); i >= 0 && r.record.Task.Members[i].Live() {
+			out = append(out, "member "+g.id+" ("+r.record.Task.Members[i].Name+"): "+p.memberReportCommand(g))
+		}
+	}
+	return out
 }
 
 // Member updates change the card without overwriting the lead's overall status.
@@ -265,7 +329,8 @@ func (p *PublicProgress) reportMember(g *taskMemberRun, req PublicProgressReques
 	case "failed", "cancelled":
 		m.Status, m.EndedAt = req.Kind, now
 	}
-	p.memberEvent(r, m.Name+": "+m.Summary, req.Kind != "update" && req.Kind != "start")
+	p.memberEvent(r, m.Name+": "+m.Summary, true)
+	r.record.Task.Events[len(r.record.Task.Events)-1].ReporterProject = m.ReporterProject
 	if err := p.save(r); err != nil {
 		r.record.Task = old
 		return "", err

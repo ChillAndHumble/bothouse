@@ -16,16 +16,20 @@ import (
 )
 
 type progressREST struct {
+	botID       string
+	seenAuth    []string
 	messages    map[string][]*discordgo.Message
 	thread      bool
 	loseACK     bool
 	failHistory bool
+	postStatus  int // non-zero: reply to POST /messages with this HTTP status
 	sends       int
 	guild       string
 	channelType discordgo.ChannelType
 }
 
 func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.seenAuth = append(r.seenAuth, req.Header.Get("Authorization"))
 	if err := req.Context().Err(); err != nil {
 		return nil, err
 	}
@@ -55,8 +59,15 @@ func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
 		if data.AllowedMentions == nil || len(data.AllowedMentions.Parse) > 0 || len(data.AllowedMentions.Users) > 0 {
 			return nil, errors.New("mentions not suppressed")
 		}
+		if r.postStatus != 0 {
+			b, _ := json.Marshal(map[string]any{"code": 50001, "message": "Missing Access"})
+			return &http.Response{StatusCode: r.postStatus, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(b))), Request: req}, nil
+		}
 		r.sends++
 		m := &discordgo.Message{ID: fmt.Sprint(r.sends + 100), ChannelID: channel, Author: &discordgo.User{ID: "bot"}, Embeds: data.Embeds, Timestamp: time.Now()}
+		if r.botID != "" {
+			m.Author.ID = r.botID
+		}
 		r.messages[channel] = append([]*discordgo.Message{m}, r.messages[channel]...)
 		body = m
 		if r.loseACK {
@@ -80,6 +91,84 @@ func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	b, _ := json.Marshal(body)
 	return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(b))), Request: req}, nil
+}
+
+func TestPublicTaskWorkerUsesOwnAccountSameThread(t *testing.T) {
+	transport := &progressREST{messages: map[string][]*discordgo.Message{}}
+	newPlatform := func(id, token string) *Platform {
+		session, err := discordgo.New(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session.Client = &http.Client{Transport: transport}
+		session.MaxRestRetries = 0
+		return &Platform{session: session, botID: id}
+	}
+	lead, worker := newPlatform("lead", "Bot fixture-lead"), newPlatform("worker", "Bot fixture-worker")
+	task := &core.Task{ID: "task-member", Title: "Task", ChannelID: "room", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	transport.botID = "lead"
+	if err := lead.EnsureTaskCard(context.Background(), task, core.LangEnglish); err != nil {
+		t.Fatal(err)
+	}
+	for _, auth := range transport.seenAuth {
+		if auth != "Bot fixture-lead" {
+			t.Fatal("card used wrong account")
+		}
+	}
+	transport.seenAuth = nil
+	transport.botID, transport.loseACK = "worker", true
+	ev := core.TaskEvent{ID: "task-member:2", Summary: "gjiang: Started", ReporterProject: "gjiang", Timestamp: time.Now(), IsKeyFact: true}
+	if err := worker.PublishTaskFact(context.Background(), task, ev, core.LangEnglish); err == nil {
+		t.Fatal("lost ACK was not surfaced")
+	}
+	if err := worker.PublishTaskFact(context.Background(), task, ev, core.LangEnglish); err != nil {
+		t.Fatal(err)
+	}
+	if transport.sends != 2 || len(transport.messages[task.ThreadID]) != 1 || transport.messages[task.ThreadID][0].Author.ID != "worker" {
+		t.Fatal("worker fact duplicated or sent outside shared thread")
+	}
+	for _, auth := range transport.seenAuth {
+		if auth != "Bot fixture-worker" {
+			t.Fatal("worker fact used creator account")
+		}
+	}
+}
+
+func TestPublicTaskWorkerDetailResumesAfterLostACK(t *testing.T) {
+	transport := &progressREST{messages: map[string][]*discordgo.Message{}, botID: "worker"}
+	session, _ := discordgo.New("Bot fixture-worker")
+	session.Client = &http.Client{Transport: transport}
+	session.MaxRestRetries = 0
+	worker := &Platform{session: session, botID: "worker"}
+	task := &core.Task{ID: "shared-task", ChannelID: "room", ThreadID: "shared-thread"}
+	ev := core.TaskEvent{ID: "shared-task:result", Summary: "Worker result", Detail: strings.Repeat("进展🙂", maxDiscordLen), Timestamp: time.Now()}
+	// Simulate a partial delivery: summary confirmed, first detail POST lost ACK.
+	if err := worker.publishTaskFactPart(context.Background(), task, ev, core.LangEnglish, "cc-task-event:"+ev.ID, ev.Summary); err != nil {
+		t.Fatal(err)
+	}
+	transport.loseACK = true
+	if err := worker.PublishTaskFact(context.Background(), task, ev, core.LangEnglish); err == nil {
+		t.Fatal("lost detail ACK was not surfaced")
+	}
+	if err := worker.PublishTaskFact(context.Background(), task, ev, core.LangEnglish); err != nil {
+		t.Fatal(err)
+	}
+	parts := append([]string{ev.Summary}, core.SplitMessageCodeFenceAware(ev.Detail, maxDiscordLen)...)
+	messages := transport.messages[task.ThreadID]
+	if transport.sends != len(parts) || len(messages) != len(parts) || len(transport.messages[task.ChannelID]) != 0 {
+		t.Fatal("missing detail, duplicate delivery, or escaped shared thread")
+	}
+	for i, part := range parts {
+		m := messages[len(messages)-1-i]
+		if m.Author.ID != "worker" || m.Embeds[0].Description != part {
+			t.Fatal("worker identity or public result text lost")
+		}
+	}
+	for _, auth := range transport.seenAuth {
+		if auth != "Bot fixture-worker" {
+			t.Fatal("detail used creator account")
+		}
+	}
 }
 
 func TestPublicTaskCardLostACKReconciliation(t *testing.T) {
@@ -172,6 +261,26 @@ func TestPublicTaskResultDoesNotClaimAcceptance(t *testing.T) {
 			if strings.HasPrefix(f.Name, "task_") {
 				t.Fatal("missing translation", lang, f.Name)
 			}
+		}
+	}
+}
+
+// Regression (#108 review 2): only a permanent refusal is reported as
+// undeliverable; transient failures keep retrying.
+func TestPublicTaskFactPermanentRefusalClassified(t *testing.T) {
+	for _, tc := range []struct {
+		status    int
+		permanent bool
+	}{{403, true}, {404, true}, {500, false}} {
+		transport := &progressREST{messages: map[string][]*discordgo.Message{}, botID: "worker", postStatus: tc.status}
+		session, _ := discordgo.New("Bot fixture-worker")
+		session.Client = &http.Client{Transport: transport}
+		session.MaxRestRetries = 0
+		p := &Platform{session: session, botID: "worker"}
+		task := &core.Task{ID: "task-refused", ThreadID: "thread", ChannelID: "room"}
+		err := p.PublishTaskFact(context.Background(), task, core.TaskEvent{ID: "task-refused:2", Summary: "x", Timestamp: time.Now(), IsKeyFact: true}, core.LangEnglish)
+		if err == nil || errors.Is(err, core.ErrTaskFactUndeliverable) != tc.permanent {
+			t.Fatalf("status %d: err=%v permanent=%v", tc.status, err, tc.permanent)
 		}
 	}
 }
