@@ -1,7 +1,8 @@
 /**
  * Add/edit dialog for one channel member: name, persona, and either a DSH
  * model (grouped by provider route, as the host lists them) or, when adding, a
- * CLI agent installed on this machine (Claude Code, Codex, Gemini). Submission goes through the
+ * CLI agent installed on this machine (Claude Code, Codex, Gemini), plus one of the built-in
+ * avatars or none (initial badge). Submission goes through the
  * injected action; the host's refusal (name taken, model unavailable) is shown
  * inline and the form keeps its values.
  */
@@ -9,6 +10,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChannelMember, LocalCli, MemberInput, ModelRoute } from './channel-source.ts'
 import type { NS } from './locales.ts'
+import { Avatar } from './Avatar.tsx'
+import { AVATARS } from './avatars.ts'
 import css from './ChannelsPage.module.css'
 
 /** Which member the dialog edits; absent member means "add". */
@@ -44,9 +47,11 @@ export function MemberDialog({ member, listModels, listClis, onSubmit, onClose, 
   const [routes, setRoutes] = useState<readonly ModelRoute[] | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
-  const [type, setType] = useState<MemberType>('dsh')
+  // Editing keeps the member's kind, so changing only its avatar does not turn a CLI member into a model one.
+  const [type, setType] = useState<MemberType>(member?.cli !== undefined ? 'cli' : 'dsh')
   const [clis, setClis] = useState<readonly LocalCli[] | undefined>(undefined)
-  const [cli, setCli] = useState('')
+  const [cli, setCli] = useState<string>(member?.cli ?? '')
+  const [avatar, setAvatar] = useState(member?.avatar !== undefined && (AVATARS as readonly string[]).includes(member.avatar) ? member.avatar : '')
 
   // One read of the host's model catalog per dialog opening.
   useEffect(() => {
@@ -79,8 +84,8 @@ export function MemberDialog({ member, listModels, listClis, onSubmit, onClose, 
     setBusy(true)
     setError(undefined)
     const input: MemberInput = type === 'cli'
-      ? { name: name.trim(), persona, cli }
-      : { name: name.trim(), persona, model: provider !== undefined && model !== undefined ? { provider, model } : null }
+      ? { name: name.trim(), persona, avatar, cli }
+      : { name: name.trim(), persona, avatar, model: provider !== undefined && model !== undefined ? { provider, model } : null }
     onSubmit(input).then(onClose).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason))
     }).finally(() => { setBusy(false) })
@@ -104,6 +109,24 @@ export function MemberDialog({ member, listModels, listClis, onSubmit, onClose, 
           <span>{t('memberName')}</span>
           <input className={css.fieldInput} value={name} maxLength={32} autoFocus onChange={(event) => { setName(event.target.value) }} />
         </label>
+        <div className={css.field}>
+          <span id="member-avatar-label">{t('memberAvatar')}</span>
+          <span className={css.avatarPicker} role="radiogroup" aria-labelledby="member-avatar-label">
+            {['', ...AVATARS].map(slug => (
+              <button
+                key={slug === '' ? 'none' : slug}
+                type="button"
+                role="radio"
+                aria-checked={avatar === slug}
+                className={css.avatarOption}
+                title={slug === '' ? t('memberAvatarNone') : slug}
+                onClick={() => { setAvatar(slug) }}
+              >
+                <Avatar id={member?.id ?? (name.trim() || 'new')} name={name.trim() || '?'} avatar={slug} />
+              </button>
+            ))}
+          </span>
+        </div>
         {member === undefined && (
           <div className={css.field} role="radiogroup" aria-label={t('memberType')}>
             <span>{t('memberType')}</span>
