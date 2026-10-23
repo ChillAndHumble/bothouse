@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -93,17 +94,64 @@ func dshOpenCommand() string {
 	return cmd
 }
 
+// LookDSH returns the executable path for dsh: on PATH or in standard Windows install directories.
+func LookDSH() (string, error) {
+	if p, err := exec.LookPath("dsh"); err == nil {
+		return p, nil
+	}
+	if runtime.GOOS == "windows" {
+		candidates := []string{
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "DeepSeek Harness", "resources", "runtime", "cli", "bin", "dsh.cmd"),
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "DeepSeek Harness", "bin", "dsh.cmd"),
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "DeepSeek Harness", "bin", "dsh.cmd"),
+			filepath.Join(os.Getenv("ProgramFiles"), "DeepSeek Harness", "bin", "dsh.cmd"),
+			filepath.Join(os.Getenv("ProgramFiles(x86)"), "DeepSeek Harness", "bin", "dsh.cmd"),
+			filepath.Join(os.Getenv("APPDATA"), "npm", "dsh.cmd"),
+		}
+		for _, c := range candidates {
+			if c != "" && fileExists(c) {
+				return c, nil
+			}
+		}
+	}
+	return "", errDSHMissing
+}
+
+// LookBash returns the bash executable path: on PATH or in standard Windows Git installations.
+func LookBash() (string, error) {
+	if p, err := exec.LookPath("bash"); err == nil {
+		return p, nil
+	}
+	if runtime.GOOS == "windows" {
+		candidates := []string{
+			`C:\Program Files\Git\bin\bash.exe`,
+			`C:\Program Files\Git\usr\bin\bash.exe`,
+			`C:\Program Files (x86)\Git\bin\bash.exe`,
+			filepath.Join(os.Getenv("ProgramFiles"), "Git", "bin", "bash.exe"),
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "Git", "bin", "bash.exe"),
+		}
+		for _, c := range candidates {
+			if c != "" && fileExists(c) {
+				return c, nil
+			}
+		}
+		return "", errors.New("Windows 环境安装 DSH 插件需要 Bash：请安装 Git for Windows (https://gitforwindows.org) 并将 bin 目录加入环境变量 PATH")
+	}
+	return "", errors.New("bash not found on PATH")
+}
+
 // GetDSHStatus detects dsh and whether the CoNest plugin is in the profile.
 func GetDSHStatus(ctx context.Context) DSHStatus {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	st := DSHStatus{Profile: DSHProfile, OpenCommand: dshOpenCommand(), InstallScript: FindDSHInstallScript()}
-	if _, err := exec.LookPath("dsh"); err != nil {
+	dshBin, err := LookDSH()
+	if err != nil {
 		return st
 	}
 	st.Found = true
 	st.HasDeepSeekKey = dshHasDeepSeekKey()
-	if out, err := exec.CommandContext(ctx, "dsh", "--version").Output(); err == nil {
+	if out, err := exec.CommandContext(ctx, dshBin, "--version").Output(); err == nil {
 		st.Version = strings.TrimSpace(string(out))
 	}
 	dir := filepath.Join(dshHome(), "profiles", DSHProfile)
@@ -130,14 +178,31 @@ func InstallDSHPlugin(ctx context.Context, lang string, onLine func(string)) (DS
 	if script == "" {
 		return GetDSHStatus(ctx), errors.New("dsh/install.sh not found (set BOTHOUSE_DSH_DIR to the repo's dsh directory)")
 	}
-	if _, err := exec.LookPath("dsh"); err != nil {
+	dshBin, err := LookDSH()
+	if err != nil {
 		return GetDSHStatus(ctx), errDSHMissing
+	}
+	bashBin, err := LookBash()
+	if err != nil {
+		return GetDSHStatus(ctx), err
 	}
 	l := "en"
 	if strings.HasPrefix(strings.ToLower(lang), "zh") {
 		l = "zh"
 	}
-	cmd := exec.CommandContext(ctx, "bash", script, DSHProfile, "--lang", l)
+	cmd := exec.CommandContext(ctx, bashBin, script, DSHProfile, "--lang", l)
+	env := os.Environ()
+	var extraPaths []string
+	if d := filepath.Dir(dshBin); d != "" {
+		extraPaths = append(extraPaths, d)
+	}
+	if b := filepath.Dir(bashBin); b != "" {
+		extraPaths = append(extraPaths, b)
+	}
+	if len(extraPaths) > 0 {
+		env = MergeEnv(env, []string{"PATH=" + strings.Join(extraPaths, string(os.PathListSeparator)) + string(os.PathListSeparator) + os.Getenv("PATH")})
+	}
+	cmd.Env = env
 	pr, pw := io.Pipe()
 	cmd.Stdout, cmd.Stderr = pw, pw
 	var out bytes.Buffer
@@ -154,7 +219,7 @@ func InstallDSHPlugin(ctx context.Context, lang string, onLine func(string)) (DS
 		}
 		_, _ = io.Copy(io.Discard, pr)
 	}()
-	err := cmd.Start()
+	err = cmd.Start()
 	if err == nil {
 		err = cmd.Wait()
 	}
