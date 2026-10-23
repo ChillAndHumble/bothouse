@@ -345,11 +345,13 @@ var AgentHookCLIs = []string{"claudecode", "dsh", "gemini"}
 
 // geminiMatchers: the matcher each hook gets in Gemini CLI, whose built-in tool names differ from both Claude
 // Code's and DSH's (https://geminicli.com/docs/hooks/reference "Matchers and tool names": run_shell_command,
-// read_file, write_file, replace, invoke_agent). Matchers there are regular expressions.
+// read_file, write_file, replace, invoke_agent). Matchers there are regular expressions. The sub-agent tool is
+// only invoke_agent: gemini-cli 0.63.0 bundle has AGENT_TOOL_NAME = "invoke_agent", and its "subagent" strings
+// are a role/kind, not a tool name.
 var geminiMatchers = map[string]string{
 	"bash-guard":            "run_shell_command",
 	"param-source-guard":    "write_file|replace",
-	"dispatch-review-guard": "invoke_agent|subagent|write_file|replace",
+	"dispatch-review-guard": "invoke_agent|write_file|replace",
 }
 
 // geminiEvent translates a Claude Code hook event name (what agentHooks registers) into Gemini CLI's name.
@@ -477,8 +479,12 @@ func EnableAgentHooks(o AgentHookOptions) (*AgentHookResult, error) {
 			ev = geminiEvent(h.Event)
 			timeout *= 1000 // Gemini's "timeout" is milliseconds (default 60000), Claude Code's is seconds
 		}
-		g := map[string]any{"hooks": []any{map[string]any{"type": "command",
-			"command": agentHookCommand(python, dir, n, "--role", o.WorkDir), "timeout": timeout}}}
+		hk := map[string]any{"type": "command",
+			"command": agentHookCommand(python, dir, n, "--role", o.WorkDir), "timeout": timeout}
+		if o.CLI == "gemini" {
+			hk["name"] = n // Gemini CLI: "/hooks disable <name>" (hooks docs); without it the command is the id
+		}
+		g := map[string]any{"hooks": []any{hk}}
 		matcher := h.Matcher
 		if o.CLI == "gemini" {
 			if m, ok := geminiMatchers[n]; ok {

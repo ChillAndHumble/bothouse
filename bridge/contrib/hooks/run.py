@@ -40,8 +40,9 @@ this file unchanged. DSH runs the same .claude/settings.json through its officia
 Gemini CLI runs the same hooks through its own protocol (https://geminicli.com/docs/hooks/ and
 /docs/hooks/reference). run.py spots its payload (hook_event_name is a Gemini event name) and:
 1. Tool names become Claude Code's: run_shell_command -> Bash ("is_background" becomes "run_in_background"),
-   write_file -> Write, replace -> Edit, read_file -> Read, invoke_agent/subagent -> Agent. Its other tools
-   keep their names (no hook matches them).
+   write_file -> Write, replace -> Edit, read_file -> Read, invoke_agent -> Agent (gemini-cli 0.63.0 bundle:
+   AGENT_TOOL_NAME = "invoke_agent"; "subagent" there is a role/kind, not a tool). Its other tools keep their
+   names (no hook matches them).
 2. Events become Claude Code's: BeforeTool -> PreToolUse, AfterTool -> PostToolUse, BeforeAgent ->
    UserPromptSubmit, AfterAgent -> Stop (the same "turn ends" moment; fix-claim-guard/promise-guard need it to be
    able to send the agent back to fix its claim, which SessionEnd cannot). session_id/cwd pass through.
@@ -50,8 +51,9 @@ Gemini CLI runs the same hooks through its own protocol (https://geminicli.com/d
    user message and the assistant's final text).
 4. Its output is turned back: a Claude Code deny (hookSpecificOutput.permissionDecision, or decision "block")
    becomes Gemini's {"decision": "deny", "reason": ...}; an additionalContext becomes
-   hookSpecificOutput.additionalContext on BeforeAgent only (the tool hooks have no such field in Gemini's
-   schema, so their hints are dropped). Exit 2 means "block" in both protocols and is passed through; stdout is
+   hookSpecificOutput.additionalContext on BeforeAgent (added to the prompt) and AfterTool (appended to the tool
+   result as <hook_context>; hooks/reference, and gemini-cli 0.63.0 getAdditionalContext() on the AfterTool
+   output). BeforeTool has no such field, so its hints are dropped. Exit 2 means "block" in both protocols and is passed through; stdout is
    otherwise kept JSON-only, as Gemini requires.
 
 stdout / stderr / exit code of the hook are passed through.
@@ -95,8 +97,7 @@ NAMES = {
 GEMINI_EVENTS = {"BeforeTool", "AfterTool", "BeforeAgent", "AfterAgent", "BeforeModel", "AfterModel",
                  "BeforeToolSelection", "SessionStart", "SessionEnd", "Notification", "PreCompress"}
 GEMINI_NAMES = {"run_shell_command": "Bash", "write_file": "Write", "replace": "Edit", "read_file": "Read",
-                "glob": "Glob", "grep_search": "Grep", "list_directory": "LS", "invoke_agent": "Agent",
-                "subagent": "Agent"}
+                "glob": "Glob", "grep_search": "Grep", "list_directory": "LS", "invoke_agent": "Agent"}
 GEMINI_TO_CLAUDE_EVENT = {"BeforeTool": "PreToolUse", "AfterTool": "PostToolUse", "BeforeAgent": "UserPromptSubmit",
                           "AfterAgent": "Stop"}
 STATE = os.path.join(HERE, "state", "dsh-stop.json")
@@ -232,7 +233,7 @@ def gemini_output(out, event):
         reason = hso.get("permissionDecisionReason") or d.get("reason") or "blocked by a bothouse hook"
         return json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False)
     ctx = hso.get("additionalContext")
-    if ctx and event == "BeforeAgent":
+    if ctx and event in ("BeforeAgent", "AfterTool"):
         return json.dumps({"hookSpecificOutput": {"additionalContext": ctx}}, ensure_ascii=False)
     return ""
 

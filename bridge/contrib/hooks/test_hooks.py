@@ -112,6 +112,18 @@ class Hooks(unittest.TestCase):
         if out:
             self.assertIn("reason", d)
 
+    def test_gemini_output_context(self):
+        # Gemini takes hookSpecificOutput.additionalContext on BeforeAgent and AfterTool, not on BeforeTool
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("conest_run", os.path.join(HERE, "run.py"))
+        run = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(run)
+        out = json.dumps({"hookSpecificOutput": {"additionalContext": "hint"}})
+        for ev in ("BeforeAgent", "AfterTool"):
+            self.assertEqual(json.loads(run.gemini_output(out, ev)), {"hookSpecificOutput": {"additionalContext": "hint"}})
+        self.assertEqual(run.gemini_output(out, "BeforeTool"), "")
+        self.assertNotIn("subagent", run.GEMINI_NAMES)
+
     # ---- dispatch-review-guard ----
     def test_dispatch_review_both_clis(self):
         for tool, inp in (("Agent", {"prompt": "改一下 foo"}), ("subagent", {"prompt": "改一下 foo"}),

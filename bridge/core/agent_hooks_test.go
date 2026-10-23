@@ -187,6 +187,13 @@ func TestAgentHooksGemini(t *testing.T) {
 	if !strings.Contains(txt, `"matcher": "run_shell_command"`) || strings.Contains(txt, "Bash|bash|job_output") {
 		t.Fatalf("bash-guard matcher must be Gemini's tool name:\n%s", txt)
 	}
+	// each hook has a name for "/hooks disable <name>"; the sub-agent matcher is only invoke_agent
+	if !strings.Contains(txt, `"name": "bash-guard"`) {
+		t.Fatalf("gemini hooks need a name:\n%s", txt)
+	}
+	if !strings.Contains(txt, `"matcher": "invoke_agent|write_file|replace"`) || strings.Contains(txt, "invoke_agent|subagent") {
+		t.Fatalf("dispatch-review-guard matcher:\n%s", txt)
+	}
 	// Gemini's timeout is milliseconds: bash-guard's 10s becomes 10000
 	if !strings.Contains(txt, `"timeout": 10000`) {
 		t.Fatalf("timeout must be in milliseconds:\n%s", txt)
