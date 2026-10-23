@@ -28,6 +28,9 @@
   `../gate/ctxsvc.py` 把整张板附进每个 bot 每轮的上下文（板子变了才重推，没用过任务板不附）。
   每次增改结束后，在条目所在频道（`CC_SESSION_KEY`）把「还没做完的事」编辑进同一条置顶消息；
   Discord token 读 `DISCORD_BOT_TOKEN` 或 `<GATE_SETUP_DIR>/secrets.env`，读不到只警告。
-- `later <延时如 10m> "<事情>" "<到点要做什么>"`：挂 `cc-connect timer`，并在任务板记一行「下次看 几点」，用户在置顶卡片上看得见。
-- `safe-restart "原因" "重启后接着做的事|无"`：等本轮回复发出再用 launchd 重启 cc-connect，约 2 分钟后用 timer 叫醒本会话接着做。
+- `later <延时如 10m> "<事情>" "<到点要做什么>"`：挂 `cc-connect timer`，并在任务板记一行「下次看 几点」，用户在置顶卡片上看得见。所有角色（主和次）都能用：
+  「谁」按 `CC_PROJECT` 经 `../gate/lead.py` 换成团队文件里的名字（认不出就写项目名）；会话按 `CC_SESSION_KEY`、`CC_SESSION` 顺序取，
+  都没有就报错、不写板；定时挂不上会把刚记的那行撤掉。DSH 运行时会删掉名字含 KEY 的环境变量（dsh-subprocess 过滤
+  `/KEY|PASSWORD|SECRET|TOKEN/i`），所以 DSH 的启动入口要加一行 `export CC_SESSION="${CC_SESSION_KEY:-}"`。
+- `safe-restart "原因" "重启后接着做的事|无"`：等本轮回复发出再用 launchd 重启 cc-connect，约 2 分钟后用 `later` 叫醒本会话接着做（叫醒也上任务板）。
   必填 `CC_LAUNCHD_LABEL`；可选 `CC_LOG`、`CC_RESTART_LOG`、`CC_SIGN_BIN`+`CC_SIGN_ID`（签名检查）、`CC_PRE_RESTART`（重启前检查，失败只警告）。

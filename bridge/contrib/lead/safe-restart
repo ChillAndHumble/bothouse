@@ -10,6 +10,7 @@
 # 用法：safe-restart "原因" ["重启后接着做的事"]
 # 第二个参数：重启后约 2 分钟自动叫醒本会话接着做，免得重启完干等（用户 2026-10-23「为什么看到后续了以后只能搞个定时任务跟踪一下」，起因 12:38 重启后空等 8 分钟）
 set -u
+here=${0:A:h}
 LOG=${CC_LOG:-$HOME/.cc-connect/logs/cc-connect.log}
 OUT=${CC_RESTART_LOG:-${LOG:h}/safe-restart.log}
 LABEL=${CC_LAUNCHD_LABEL:?先设 CC_LAUNCHD_LABEL=<launchd 服务名，形如 com.<你>.cc-connect>}
@@ -27,7 +28,8 @@ if [[ -n ${CC_PRE_RESTART:-} ]]; then
 fi
 start=$(wc -l < $LOG)
 if [[ -n $next ]]; then
-  cc-connect timer add --delay 2m --desc "重启后接着做" --prompt "【重启后接着做】桥刚重启。先查 $LOG 里每个 bot 都有 discord: connected，然后马上做：$next" >/dev/null || echo "⚠️ 重启后叫醒没挂上，重启完要自己接着做" >&2
+  # 走 later：叫醒也上置顶任务板，用户看得见；定时挂不上 later 会自己撤掉那行（用户 2026-10-23「补，我要大家都能这样」）
+  "$here/later" 2m "重启后接着做" "桥刚重启。先查 $LOG 里每个 bot 都有 discord: connected，然后马上做：$next" >/dev/null || echo "⚠️ 重启后叫醒没挂上，重启完要自己接着做" >&2
 fi
 nohup zsh -c '
   for i in {1..60}; do

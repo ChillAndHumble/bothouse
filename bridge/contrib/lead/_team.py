@@ -49,3 +49,9 @@ def token():
     if not out:
         sys.exit(f"读不到 DISCORD_BOT_TOKEN（环境变量或 {env}）")
     return out
+
+
+def name_of(proj):
+    """cc-connect 项目名 → 团队文件里的名字（和群里叫的一致）；认不出就原样返回项目名。later 写任务板「谁」用。"""
+    k = lead.resolve(proj)
+    return lead.NAME[k] if k is not None else proj
