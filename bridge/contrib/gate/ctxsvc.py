@@ -70,5 +70,7 @@ def match_wiki(text, k=TOP_PAGES):
 def context(req):
     # 主角色切换过就附上主/次身份段（lead.py）。cc-connect 按 path 每个会话只推一次，path 里带切换时间，
     # 所以每次切换后每个角色的下一轮各收到一次（用户 2026-10-21「这个我预期可以一句话去换」）
-    who = lead.identity(req.get("bot") or "") if lead else None
-    return {"wiki": ([who] if who else []) + match_wiki(req.get("text") or "")}
+    bot = req.get("bot") or ""
+    who = lead.identity(bot) if lead else None
+    pb = lead.playbook(bot) if lead else None  # 当主的才有：主角色工作手册（lead.playbook）
+    return {"wiki": [x for x in (who, pb) if x] + match_wiki(req.get("text") or "")}
