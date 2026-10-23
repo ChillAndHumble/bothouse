@@ -17,6 +17,8 @@
   board update <编号> <状态> [分支/PR/路径] [谁] [--next 几点看]
   board done <编号>                       # 结束：移出任务板，记进 board-done.jsonl
   --next：下次几点回来看这件事（如 14:30），显示在板上，让用户知道后面还会不会处理。
+    只有 later 能写（它先挂好定时，挂不上就撤掉这行；用环境变量 BOARD_LATER=1 标明），手写 --next 会被拒：
+    板上写了「下次看」却没挂定时，就没人兑现（2026-10-23 PR #81 审查）。
 
 频道卡片（用户 2026-10-23「我这根本感知不到你后面还可以去处理……也没看到有任何sub表」）：
   每次 add/update/done 后，在条目所在频道把「还没做完的事」编辑进同一条置顶消息（不刷屏）。
@@ -232,6 +234,8 @@ def _split_next(argv):
         k = argv.index("--next")
         if k + 1 >= len(argv):
             sys.exit("--next 后面要写几点，比如 --next 14:30")
+        if os.environ.get("BOARD_LATER") != "1":
+            sys.exit("--next 只能由 later 写（它会同时挂定时）：later 10m \"<事情>\" \"<到点要做什么>\"")
         return argv[:k] + argv[k + 2:], argv[k + 1]
     return argv, None
 

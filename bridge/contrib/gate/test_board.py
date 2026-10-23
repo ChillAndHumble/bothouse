@@ -77,7 +77,9 @@ class Card(unittest.TestCase):
         os.environ.pop("CC_SESSION_KEY", None)
 
     def test_post_pin_then_edit_same_message(self):
+        os.environ["BOARD_LATER"] = "1"  # 装作 later 调的
         board.main(["add", "修桥", "PR #1", "写代码", "龙娘", "--next", "14:30"])
+        os.environ.pop("BOARD_LATER")
         self.assertEqual([c[0] for c in self.calls], ["POST", "PUT"])
         self.assertEqual(self.calls[1][1], "/channels/111/pins/m1")
         body = self.calls[0][2]["content"]
@@ -93,6 +95,15 @@ class Card(unittest.TestCase):
         self.calls.clear()
         board.main(["done", "1"])
         self.assertIn("没有进行中的事", self.calls[0][2]["content"])
+
+    def test_next_only_from_later(self):
+        os.environ.pop("BOARD_LATER", None)
+        for argv in (["add", "x", "-", "s", "橘", "--next", "14:30"], ["update", "1", "s", "--next", "14:30"]):
+            with self.assertRaises(SystemExit) as e:
+                board.main(argv)
+            self.assertIn("later", str(e.exception.code))
+        self.assertEqual(board.lines(), [])
+        self.assertEqual(self.calls, [])
 
     def test_deleted_message_reposted(self):
         board.main(["add", "a", "b", "c", "橘"])
