@@ -111,8 +111,10 @@ type libraryState struct {
 	HiddenAvatars  []string `json:"hidden_avatars,omitempty"`
 }
 
-func libraryDir(dataDir string) string         { return filepath.Join(dataDir, "library") }
-func libraryPackDir(dataDir, id string) string { return filepath.Join(libraryDir(dataDir), "packs", id) }
+func libraryDir(dataDir string) string { return filepath.Join(dataDir, "library") }
+func libraryPackDir(dataDir, id string) string {
+	return filepath.Join(libraryDir(dataDir), "packs", id)
+}
 
 func loadLibraryState(dataDir string) libraryState {
 	var s libraryState
@@ -743,7 +745,8 @@ func packEntry(name, prefix string) (string, error) {
 
 // PreviewPack checks a pack zip and unpacks it into staging (nothing is installed yet).
 func PreviewPack(dataDir, lang string, zb []byte) (PackPreview, error) {
-	var pv PackPreview
+	// empty lists, not null: the web UI reads both (a pack may have only personas or only avatars)
+	pv := PackPreview{Personas: []LibraryPersona{}, Avatars: []LibraryAvatar{}}
 	if len(zb) > libraryMaxZip {
 		return pv, fmt.Errorf("pack is larger than %d MiB", libraryMaxZip>>20)
 	}
