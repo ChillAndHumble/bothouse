@@ -72,6 +72,7 @@ type progressPlatform struct {
 type Platform struct {
 	turnSent                   turnSentLog // maomao fork: see turn_sent.go
 	leadReturned               sync.Map    // maomao fork: trigger message ID → time the reply was routed back to the lead
+	cardViews                  cardViews   // maomao fork: 细节/简略 view per card message (card_view.go)
 	token                      string
 	allowFrom                  string
 	permissionApprovers        []string
@@ -1118,6 +1119,10 @@ func reconstructCommand(data discordgo.ApplicationCommandInteractionData) string
 
 func (p *Platform) handleComponentInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, userID, userName string) {
 	data := i.MessageComponentData()
+	if view, ok := parseCardViewCustomID(data.CustomID); ok {
+		p.handleCardViewInteraction(s, i, view)
+		return
+	}
 	command, isPermissionResponse, ok := discordComponentCommand(data.CustomID)
 	if !ok {
 		slog.Debug("discord: unknown component interaction", "custom_id", data.CustomID)
@@ -1514,6 +1519,9 @@ func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content strin
 	case *interactionReplyCtx:
 		p.noteInteractionSent(rc, sent)
 	}
+	if render, ok := subTaskTableRender(content); ok {
+		p.cardViews.remember(sent.ID, render)
+	}
 	return &discordPreviewHandle{channelID: channelID, messageID: sent.ID}, nil
 }
 
@@ -1523,9 +1531,12 @@ func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content
 	if !ok {
 		return fmt.Errorf("discord: invalid preview handle type %T", previewHandle)
 	}
-	_, err := p.session.ChannelMessageEditComplex(buildDiscordPreviewEdit(h.channelID, h.messageID, content))
+	_, err := p.session.ChannelMessageEditComplex(buildDiscordPreviewEditView(h.channelID, h.messageID, content, p.cardViews.mode(h.messageID)))
 	if err != nil {
 		return fmt.Errorf("discord: edit message: %w", err)
+	}
+	if render, ok := subTaskTableRender(content); ok {
+		p.cardViews.remember(h.messageID, render)
 	}
 	return nil
 }
@@ -1537,6 +1548,7 @@ func (p *Platform) DeletePreviewMessage(ctx context.Context, previewHandle any) 
 	if !ok {
 		return fmt.Errorf("discord: invalid preview handle type %T", previewHandle)
 	}
+	p.cardViews.forget(h.messageID)
 	return p.session.ChannelMessageDelete(h.channelID, h.messageID)
 }
 
