@@ -73,6 +73,9 @@ type WizardRole struct {
 	EditPersona   bool            `json:"edit_persona,omitempty"` // an existing bot's persona file is only written when this is true
 	ReplyLanguage string          `json:"reply_language,omitempty"`
 	Provider      *WizardProvider `json:"provider,omitempty"` // nil = the CLI's own local login
+	// Library picks; nil / "" = keep what the state already has for this project.
+	PersonaPreset *string `json:"persona_preset,omitempty"` // library persona slug ("" via pointer = clear)
+	Avatar        *string `json:"avatar,omitempty"`         // library avatar slug ("" via pointer = clear)
 }
 
 type WizardProvider struct {
@@ -299,6 +302,8 @@ type SetupTeamEntry struct {
 	Name      string `json:"name"`
 	BotID     string `json:"bot_id,omitempty"`
 	AgentType string `json:"agent_type,omitempty"`
+	Persona   string `json:"persona,omitempty"` // library persona slug the role was made from
+	Avatar    string `json:"avatar,omitempty"`  // library avatar slug ("" = initial-letter badge)
 }
 
 // JevConfig is <data_dir>/jev.json — read by contrib/gate (scorer) and by
@@ -1346,7 +1351,20 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 		if cloudWeb { // on the platform a bot is known by its mention_id (rh/cloudweb.py user_mention_id)
 			id = r.mentionID
 		}
-		pl.team = append(pl.team, SetupTeamEntry{Project: r.project, Name: r.Name, BotID: id, AgentType: r.AgentType})
+		e := SetupTeamEntry{Project: r.project, Name: r.Name, BotID: id, AgentType: r.AgentType}
+		for _, old := range append(append([]SetupTeamEntry{}, state.Team...), state.CloudWebTeam...) {
+			if old.Project == r.project { // not passed = keep what the state has
+				e.Persona, e.Avatar = old.Persona, old.Avatar
+				break
+			}
+		}
+		if r.PersonaPreset != nil {
+			e.Persona = *r.PersonaPreset
+		}
+		if r.Avatar != nil {
+			e.Avatar = *r.Avatar
+		}
+		pl.team = append(pl.team, e)
 	}
 
 	// fallback role (unit = bot): one of the team's bots, else the first bot of this run (L3)
