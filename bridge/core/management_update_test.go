@@ -19,6 +19,8 @@ func withUpdateStubs(t *testing.T, cur string, rel *ReleaseInfo, checkErr, apply
 	oldV, oldC, oldA := CurrentVersion, updateCheckFn, selfUpdateFn
 	t.Cleanup(func() { CurrentVersion, updateCheckFn, selfUpdateFn = oldV, oldC, oldA })
 	CurrentVersion = cur
+	resetUpdateCheckCache()
+	t.Cleanup(resetUpdateCheckCache)
 	applied := &[]string{}
 	updateCheckFn = func(string, bool) (*ReleaseInfo, error) { return rel, checkErr }
 	selfUpdateFn = func(tag string, _ bool) error { *applied = append(*applied, tag); return applyErr }
@@ -242,5 +244,32 @@ func TestInstallScriptReinstallsOnLockChange(t *testing.T) {
 	run()
 	if n := installs(); n != 2 {
 		t.Fatalf("changed lockfile: installs = %d, want 2", n)
+	}
+}
+
+// The rollback note must reach the page even when the GitHub check fails, and the restart poll
+// (?local=1) must not call GitHub at all; repeated checks are served from the cache.
+func TestHandleUpdate_LastResultAndCache(t *testing.T) {
+	withUpdateStubs(t, "v0.1.4", nil, errors.New("rate limited"), nil)
+	calls := 0
+	updateCheckFn = func(string, bool) (*ReleaseInfo, error) { calls++; return nil, errors.New("rate limited") }
+	old := UpdateStateDir
+	UpdateStateDir = t.TempDir()
+	t.Cleanup(func() { UpdateStateDir = old })
+	writeUpdateResult(UpdateStateDir, UpdateResult{Status: "rolled_back", From: "v0.1.4", To: "v0.1.5"})
+
+	h := (&ManagementServer{}).handleUpdate
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/api/v1/update?local=1", nil))
+	if calls != 0 || !strings.Contains(rec.Body.String(), "rolled_back") {
+		t.Fatalf("local poll: calls=%d body=%s", calls, rec.Body.String())
+	}
+	_, d := callMgmt(t, h, http.MethodGet)
+	if d["last_result"] == nil || d["error"] == "" {
+		t.Fatalf("check error dropped last_result: %v", d)
+	}
+	callMgmt(t, h, http.MethodGet)
+	if calls != 1 {
+		t.Fatalf("check not cached: %d calls", calls)
 	}
 }

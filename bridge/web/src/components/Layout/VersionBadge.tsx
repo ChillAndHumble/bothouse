@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw, ExternalLink, AlertCircle, Clock, Undo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getUpdate, applyUpdate, ackUpdate, type UpdateInfo, type UpdateFailReason } from '@/api/update';
+import { getUpdate, getUpdateLocal, applyUpdate, ackUpdate, type UpdateInfo, type UpdateFailReason } from '@/api/update';
 import { getStatus } from '@/api/status';
 
 // Reconnect poll while the program restarts after an update. A restart takes about 10 s
@@ -62,10 +62,10 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
             window.location.reload();
           } else if (s.version === from) {
             // Old version answering: either not restarted yet, or the self-check rolled back.
-            getUpdate().then(i => {
+            getUpdateLocal().then(i => {
               if (i.last_result) {
                 window.clearInterval(timer.current);
-                setInfo(i);
+                setInfo({ ...i, latest: info.latest, has_update: info.has_update, download_url: info.download_url });
                 showLastResult(i);
               }
             }).catch(() => {});

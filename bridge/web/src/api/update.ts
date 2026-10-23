@@ -22,5 +22,7 @@ export interface UpdateApplyResult {
 }
 
 export const getUpdate = () => api.get<UpdateInfo>('/update');
+// Local state only (rollback note), no GitHub check: used while polling during a restart.
+export const getUpdateLocal = () => api.get<UpdateInfo>('/update', { local: '1' });
 export const applyUpdate = () => api.post<UpdateApplyResult>('/update/apply');
 export const ackUpdate = () => api.post<{ status: string }>('/update/ack');

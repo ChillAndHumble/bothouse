@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
 // releasesPage is where users download a release by hand when the in-app update fails.
@@ -27,6 +28,37 @@ func downloadPage(r *ReleaseInfo) string {
 	return releasesPage
 }
 
+// updateCheckTTL: how long a GitHub update check (result or error) is reused.
+// 来源：用户没给数；GitHub 未登录 API 每 IP 每小时限 60 次（GitHub REST 文档 rate limit），
+// 取 10 分钟，每个进程每小时最多 6 次，留给同一 IP 上别的工具。
+const updateCheckTTL = 10 * time.Minute
+
+var updateCheckCache struct {
+	sync.Mutex
+	at  time.Time
+	cur string
+	rel *ReleaseInfo
+	err error
+}
+
+func cachedUpdateCheck(cur string) (*ReleaseInfo, error) {
+	c := &updateCheckCache
+	c.Lock()
+	defer c.Unlock()
+	if c.cur == cur && !c.at.IsZero() && time.Since(c.at) < updateCheckTTL {
+		return c.rel, c.err
+	}
+	c.rel, c.err = updateCheckFn(cur, false)
+	c.at, c.cur = time.Now(), cur
+	return c.rel, c.err
+}
+
+func resetUpdateCheckCache() {
+	updateCheckCache.Lock()
+	updateCheckCache.at = time.Time{}
+	updateCheckCache.Unlock()
+}
+
 // GET /api/v1/update → current version, latest version, whether an update exists.
 func (m *ManagementServer) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -42,13 +74,24 @@ func (m *ManagementServer) handleUpdate(w http.ResponseWriter, r *http.Request) 
 		"download_url": releasesPage,
 		"error":        "",
 	}
+	// The rollback note is local state: report it whatever the GitHub check does (offline and
+	// rate-limited are exactly when an update tends to fail).
+	if lr := ReadUpdateResult(UpdateStateDir); lr != nil && lr.Status != "ok" {
+		resp["last_result"] = lr
+	}
+	// ?local=1: the page polling during a restart only wants local state, no GitHub call.
+	if r.URL.Query().Get("local") == "1" {
+		resp["latest"] = ""
+		mgmtJSON(w, http.StatusOK, resp)
+		return
+	}
 	if isDevVersion(cur) {
 		resp["dev"] = true
 		resp["error"] = "开发版不检查更新 / development build: update check disabled"
 		mgmtJSON(w, http.StatusOK, resp)
 		return
 	}
-	rel, err := updateCheckFn(cur, false)
+	rel, err := cachedUpdateCheck(cur)
 	if err != nil {
 		resp["error"] = err.Error()
 		mgmtJSON(w, http.StatusOK, resp)
@@ -60,9 +103,6 @@ func (m *ManagementServer) handleUpdate(w http.ResponseWriter, r *http.Request) 
 		resp["download_url"] = downloadPage(rel)
 	} else {
 		resp["latest"] = cur
-	}
-	if lr := ReadUpdateResult(UpdateStateDir); lr != nil && lr.Status != "ok" {
-		resp["last_result"] = lr
 	}
 	mgmtJSON(w, http.StatusOK, resp)
 }
