@@ -95,6 +95,14 @@ func RefreshEmbeddedDSH(targetDir, version string) (bool, error) {
 	if old, err := os.ReadFile(stamp); err == nil && string(old) == version {
 		return false, nil
 	}
+	// One refresh at a time per plugin dir (two starts, or a leftover from before a restart).
+	unlock, ok := lockDSHRefresh(targetDir)
+	if !ok {
+		slog.Info("dsh refresh: another refresh is running, skipped", "dir", targetDir)
+		return false, nil
+	}
+	defer unlock()
+	cleanStaleStaging(targetDir)
 	sub, err := fs.Sub(embeddedDSH, "dsh_bundle")
 	if err != nil {
 		return false, err
@@ -185,6 +193,7 @@ var installCollabDeps = func(dir string) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, pnpm, "install", "--frozen-lockfile", "--config.minimum-release-age=0")
 	cmd.Dir = dir
+	ownProcessGroup(cmd) // on timeout kill pnpm and everything it started, not just pnpm
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		tail := string(out)
@@ -196,19 +205,66 @@ var installCollabDeps = func(dir string) error {
 	return nil
 }
 
+const (
+	dshRefreshLock = ".refresh.lock"
+	stagingPrefix  = ".collab-staging-"
+	prevPrefix     = ".collab-prev-"
+)
+
+// lockDSHRefresh takes <targetDir>/.refresh.lock (O_EXCL, holds our PID). A lock whose PID is
+// dead — or is our own PID, left by the process we exec'd from — is stale and taken over.
+func lockDSHRefresh(targetDir string) (func(), bool) {
+	p := filepath.Join(targetDir, dshRefreshLock)
+	for i := 0; i < 2; i++ {
+		f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			fmt.Fprint(f, os.Getpid())
+			f.Close()
+			return func() { _ = os.Remove(p) }, true
+		}
+		if !os.IsExist(err) {
+			return nil, false
+		}
+		if b, rerr := os.ReadFile(p); rerr == nil {
+			var pid int
+			if _, serr := fmt.Sscan(strings.TrimSpace(string(b)), &pid); serr == nil && pid > 0 && pid != os.Getpid() && processAlive(pid) {
+				return nil, false
+			}
+		}
+		_ = os.Remove(p)
+	}
+	return nil, false
+}
+
+// cleanStaleStaging removes staging / prev dirs of earlier runs (called under the lock, so none
+// of them is in use by a live refresh), plus the fixed names used before.
+func cleanStaleStaging(targetDir string) {
+	ents, err := os.ReadDir(targetDir)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		n := e.Name()
+		if n == ".collab-staging" || n == ".collab-prev" || strings.HasPrefix(n, stagingPrefix) || strings.HasPrefix(n, prevPrefix) {
+			_ = os.RemoveAll(filepath.Join(targetDir, n))
+		}
+	}
+}
+
 // refreshCollabStaged builds the new collab next to the old one and swaps it in:
-//  1. copy the installed collab (without node_modules) to .collab-staging — keeps any user files
+//  1. copy the installed collab (without node_modules) to .collab-staging-<pid>-<ns> — keeps any user files
 //  2. lay the new bundle files over it (keepIfExists files stay)
 //  3. pnpm install there, write the deps stamp
-//  4. collab → .collab-prev, staging → collab (renamed back if the second rename fails)
+//  4. collab → .collab-prev-<pid>-<ns>, staging → collab (renamed back if the second rename fails)
 //
 // Any failure before step 4 only removes the staging directory.
 func refreshCollabStaged(sub fs.FS, targetDir string, deps []byte) (err error) {
 	live := filepath.Join(targetDir, "collab")
-	stage := filepath.Join(targetDir, ".collab-staging")
-	prev := filepath.Join(targetDir, ".collab-prev")
-	_ = os.RemoveAll(stage)
-	_ = os.RemoveAll(prev)
+	// Unique per run: a pnpm left over from a killed run keeps writing into its own staging dir,
+	// never into the one that becomes collab.
+	tag := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+	stage := filepath.Join(targetDir, stagingPrefix+tag)
+	prev := filepath.Join(targetDir, prevPrefix+tag)
 	defer func() {
 		if err != nil {
 			_ = os.RemoveAll(stage)

@@ -2,9 +2,12 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -118,5 +121,43 @@ func TestRefreshDSH_NoNodeModulesNoInstall(t *testing.T) {
 	n := withInstall(t, func(string) error { return nil })
 	if ok, err := RefreshEmbeddedDSH(dir, "v0.1.5"); !ok || err != nil || *n != 0 {
 		t.Fatalf("got %v %v installs=%d", ok, err, *n)
+	}
+}
+
+// Two refreshes never share a staging dir; a live lock holder makes the second one skip; a stale
+// lock and leftover staging dirs from a killed run are cleaned up.
+func TestRefreshDSH_LockAndUniqueStaging(t *testing.T) {
+	dir := installedDSH(t)
+	// leftovers of a killed run (orphaned pnpm wrote here)
+	for _, d := range []string{".collab-staging", stagingPrefix + "1-2", prevPrefix + "1-2"} {
+		_ = os.MkdirAll(filepath.Join(dir, d, "node_modules"), 0o755)
+	}
+	// live holder: our parent process
+	if err := os.WriteFile(filepath.Join(dir, dshRefreshLock), []byte(fmt.Sprint(os.Getppid())), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	n := withInstall(t, func(stage string) error {
+		if !strings.HasPrefix(filepath.Base(stage), stagingPrefix) {
+			t.Errorf("stage %s not unique", stage)
+		}
+		return nil
+	})
+	if ok, err := RefreshEmbeddedDSH(dir, "v0.1.5"); ok || err != nil || *n != 0 {
+		t.Fatalf("ran while locked: %v %v installs=%d", ok, err, *n)
+	}
+	// stale holder (dead pid)
+	dead := exec.Command("true")
+	if err := dead.Run(); err != nil {
+		t.Skip("no true binary")
+	}
+	_ = os.WriteFile(filepath.Join(dir, dshRefreshLock), []byte(fmt.Sprint(dead.Process.Pid)), 0o644)
+	if ok, err := RefreshEmbeddedDSH(dir, "v0.1.5"); !ok || err != nil || *n != 1 {
+		t.Fatalf("stale lock not taken over: %v %v installs=%d", ok, err, *n)
+	}
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), ".collab-") || e.Name() == dshRefreshLock {
+			t.Errorf("%s left behind", e.Name())
+		}
 	}
 }
