@@ -12,7 +12,7 @@ at=$(date -v+${mins}M '+%H:%M')
 id=$(BOARD_LATER=1 "$here/board" add "$what" "-" "等着，${at} 回来接着做" "${CC_PROJECT:-?}" --next "$at" | grep -oE '[0-9]+' | head -1 || true)
 [[ -n $id ]] || { echo "任务板没记上，定时没挂" >&2; exit 1; }
 # 卡片上有这行 ⇔ 定时真挂上了：timer 失败就把刚记的这行撤掉再报错
-cc-connect timer add --delay "$delay" --desc "$what" --prompt "【later 到点】任务板 #$id「$what」：$todo。做完 board done $id；没做完 board update $id 写进度和下次时间。" >/dev/null || {
+cc-connect timer add --delay "$delay" --desc "$what" --prompt "【later 到点】任务板 #$id「$what」：$todo。做完 board done $id；没做完先 board done $id，再用 later 挂下一次（写进度和回来时间）。" >/dev/null || {
   "$here/board" done "$id" >/dev/null || true
   echo "定时没挂上，已从任务板撤掉 #$id" >&2; exit 1; }
 echo "已挂：$at 回来，任务板 #$id"
