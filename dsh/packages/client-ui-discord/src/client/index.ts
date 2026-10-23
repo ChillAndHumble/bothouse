@@ -26,7 +26,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const PANEL_ID = 'channels' as MainPanelId
 
 /** Required browser services. */
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'layout']
 
 /**
  * Register the channel dictionaries, the main panel, and its sidebar entry.
@@ -56,7 +56,7 @@ export function apply(ctx: ClientContext): void {
       inject: injected,
     }, ChannelsPage)
     // Deep link: the setup wizard opens `…#channels` (bridge core/setup_dsh_configure.go dshChannelsHash).
-    // ui-layout provides ctx.layout before it declares the `main` slot, so it is live here.
+    // ctx.layout is the ui-layout service (`provide('layout')`), so it must be in `inject`.
     if (location.hash === `#${PANEL_ID}`) ctx.layout.selectPanel(PANEL_ID)
     return dispose
   })

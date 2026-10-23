@@ -1360,7 +1360,11 @@ const en = {
 // src/client/index.ts
 const PANEL_ID = "channels";
 /** Required browser services. */
-const inject = ["slots", "locale"];
+const inject = [
+	"slots",
+	"locale",
+	"layout"
+];
 /**
 * Register the channel dictionaries, the main panel, and its sidebar entry.
 * @param ctx - Client root context.
