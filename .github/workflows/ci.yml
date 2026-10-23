@@ -75,6 +75,7 @@ jobs:
         with:
           node-version: '24'
       - run: node --test ../integrations/dsh-public-output/*.test.mjs
+      - run: node --test ../integrations/dsh-acp-subtasks/*.test.mjs
       # collab imports @agentclientprotocol/sdk; install from the committed lockfile like dsh/install.sh does
       - run: npx -y pnpm@10 install --frozen-lockfile
         working-directory: dsh/collab

@@ -26,6 +26,10 @@ type progressREST struct {
 	sends       int
 	guild       string
 	channelType discordgo.ChannelType
+	components  []string // raw components of each POST
+	edits       []string // raw body of each PATCH
+	callbacks   []string // raw body of each interaction callback
+	anyMentions bool     // accept sends that do not suppress mentions (preview cards)
 }
 
 func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -52,11 +56,16 @@ func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
 			body = []any{}
 		}
 	case req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/messages"):
-		var data discordgo.MessageSend
+		// Components are interfaces discordgo cannot decode; keep them raw.
+		var data struct {
+			Embeds          []*discordgo.MessageEmbed         `json:"embeds"`
+			AllowedMentions *discordgo.MessageAllowedMentions `json:"allowed_mentions"`
+			Components      json.RawMessage                   `json:"components"`
+		}
 		if err := json.NewDecoder(req.Body).Decode(&data); err != nil {
 			return nil, err
 		}
-		if data.AllowedMentions == nil || len(data.AllowedMentions.Parse) > 0 || len(data.AllowedMentions.Users) > 0 {
+		if !r.anyMentions && (data.AllowedMentions == nil || len(data.AllowedMentions.Parse) > 0 || len(data.AllowedMentions.Users) > 0) {
 			return nil, errors.New("mentions not suppressed")
 		}
 		if r.postStatus != 0 {
@@ -64,6 +73,7 @@ func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: r.postStatus, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(b))), Request: req}, nil
 		}
 		r.sends++
+		r.components = append(r.components, string(data.Components))
 		m := &discordgo.Message{ID: fmt.Sprint(r.sends + 100), ChannelID: channel, Author: &discordgo.User{ID: "bot"}, Embeds: data.Embeds, Timestamp: time.Now()}
 		if r.botID != "" {
 			m.Author.ID = r.botID
@@ -75,7 +85,14 @@ func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, errors.New("lost successful POST response")
 		}
 	case req.Method == "PATCH":
+		raw, _ := io.ReadAll(req.Body)
+		r.edits = append(r.edits, string(raw))
 		body = &discordgo.Message{ID: "101", ChannelID: channel}
+	case req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/callback"):
+		raw, _ := io.ReadAll(req.Body)
+		r.callbacks = append(r.callbacks, string(raw))
+		code = 204
+		body = nil
 	case strings.HasSuffix(req.URL.Path, "/threads"):
 		r.thread = true
 		body = &discordgo.Channel{ID: "101", Type: discordgo.ChannelTypeGuildPublicThread}

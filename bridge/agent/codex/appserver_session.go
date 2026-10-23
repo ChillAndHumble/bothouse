@@ -159,6 +159,7 @@ type appServerRequestUserInputAnswer struct {
 }
 
 type appServerSession struct {
+	subTaskTracker
 	url           string
 	workDir       string
 	model         string
@@ -1023,6 +1024,7 @@ func (s *appServerSession) Alive() bool {
 }
 
 func (s *appServerSession) Close() error {
+	s.CloseSubTasks()
 	s.alive.Store(false)
 	s.cancel()
 
@@ -1054,6 +1056,7 @@ func (s *appServerSession) Close() error {
 }
 
 func (s *appServerSession) readLoop(r io.Reader) {
+	defer s.CloseSubTasks()
 	defer s.wg.Done()
 	scanner := bufio.NewScanner(r)
 	scanBuf := make([]byte, 0, 64*1024)
@@ -1189,6 +1192,9 @@ func (s *appServerSession) handleResponse(resp rpcResponseEnvelope) {
 }
 
 func (s *appServerSession) handleNotification(method string, paramsRaw json.RawMessage) {
+	if s.handleChildNotification(method, paramsRaw) {
+		return
+	}
 	// maomao fork: one app-server process can run more than our thread — codex's memory
 	// consolidation runs as its own thread in the same process. Its items used to be relayed
 	// as this bot's reply, and its idle status ended our turn early (2026-10-16 龙娘 posted
@@ -1362,9 +1368,9 @@ func (s *appServerSession) handleItemStarted(item map[string]any) {
 		s.emit(core.Event{Type: core.EventToolUse, ToolName: "Sleep", ToolInput: (time.Duration(ms) * time.Millisecond).String()})
 
 	case "collabAgentToolCall":
+		updateCollaborationSubTasks(&s.subTaskTracker, item)
 		tool, _ := item["tool"].(string)
-		prompt, _ := item["prompt"].(string)
-		s.emit(core.Event{Type: core.EventToolUse, ToolName: strings.TrimSuffix("Agent:"+tool, ":"), ToolInput: prompt})
+		s.emit(core.Event{Type: core.EventToolUse, ToolName: strings.TrimSuffix("Agent:"+tool, ":")})
 	}
 }
 
@@ -1500,6 +1506,7 @@ func (s *appServerSession) handleItemCompleted(item map[string]any) {
 		s.emit(core.Event{Type: core.EventToolResult, ToolName: "ImageGen", ToolResult: truncate(strings.TrimSpace(result), 500), ToolStatus: strings.TrimSpace(status), ToolSuccess: &success})
 
 	case "collabAgentToolCall":
+		updateCollaborationSubTasks(&s.subTaskTracker, item)
 		tool, _ := item["tool"].(string)
 		status, _ := item["status"].(string)
 		success := appServerToolSuccess(status, nil)
