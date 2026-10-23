@@ -71,6 +71,17 @@ test('installer validates version/seam before modifying, backs up and is idempot
   assert.equal(await readFile(file + '.before-bothouse-subtasks', 'utf8'), source);
   assert.equal(await apply(pkg), false);
   assert.match(await readFile(file, 'utf8'), /attachSubagentUpdates\(ctx/);
+  // npm can replace index.js while leaving our recovery copy behind.
+  await writeFile(file, source);
+  assert.equal(await apply(pkg), true);
+  assert.equal(await readFile(file + '.before-bothouse-subtasks', 'utf8'), source);
+  assert.equal(await apply(pkg), false);
+  // A different upstream source must not overwrite an older recovery copy.
+  const upgraded = source + '// different upstream build\n';
+  await writeFile(file, upgraded);
+  await assert.rejects(apply(pkg), /backup.*differs/i);
+  assert.equal(await readFile(file, 'utf8'), upgraded);
+  assert.equal(await readFile(file + '.before-bothouse-subtasks', 'utf8'), source);
 });
 
 test('verification copy of an installed package retains its imported lifecycle helper', async () => {

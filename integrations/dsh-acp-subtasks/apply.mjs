@@ -27,8 +27,18 @@ export async function apply(target) {
   const updated = 'import { carrierKeyOf as bothouseCarrierKeyOf } from ' + JSON.stringify(pathToFileURL(scope).href) + ';\n' +
     'import { attachSubagentUpdates } from "./bothouse-subtasks.mjs";\n' +
     original.replace(hook, marker + '\n\tattachSubagentUpdates(ctx, { carrierKeyOf: bothouseCarrierKeyOf, ownedRecord, notify, agents: ctx.agents });\n' + hook);
-  // Exclusive backup: never overwrite an earlier installation's recovery copy.
-  await writeFile(file + '.before-bothouse-subtasks', original, { flag: 'wx' });
+  // Reuse an identical recovery copy after npm/pnpm replaces index.js.
+  // Never overwrite a different upstream version's rollback target.
+  const backup = file + '.before-bothouse-subtasks';
+  try {
+    const saved = await readFile(backup, 'utf8');
+    if (saved !== original) {
+      throw new Error('Existing bothouse subagent backup differs; review or move it manually before reinstalling');
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    await writeFile(backup, original, { flag: 'wx' });
+  }
   await copyFile(helper, resolve(pkg, 'lib/bothouse-subtasks.mjs'));
   await writeFile(file, updated);
   return true;

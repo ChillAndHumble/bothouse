@@ -121,6 +121,31 @@ func (t *SubTaskTracker) notifyLocked() {
 	}
 }
 
+// StopSubTasks settles the current process's live rows without ending the
+// session's tracker. A later process can report a new batch on the same channel.
+func (t *SubTaskTracker) StopSubTasks() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return
+	}
+	if t.stopSubTasksLocked() {
+		t.notifyLocked()
+	}
+}
+
+func (t *SubTaskTracker) stopSubTasksLocked() bool {
+	changed := false
+	for i := range t.tasks {
+		if t.tasks[i].Live() {
+			t.tasks[i].Status = SubTaskStopped
+			t.tasks[i].EndedAt = time.Now()
+			changed = true
+		}
+	}
+	return changed
+}
+
 // CloseSubTasks settles live rows and wakes the final table render. Safe when
 // process exit races explicit session Close or a late native notification.
 func (t *SubTaskTracker) CloseSubTasks() {
@@ -129,12 +154,7 @@ func (t *SubTaskTracker) CloseSubTasks() {
 	if t.closed {
 		return
 	}
-	for i := range t.tasks {
-		if t.tasks[i].Live() {
-			t.tasks[i].Status = SubTaskStopped
-			t.tasks[i].EndedAt = time.Now()
-		}
-	}
+	t.stopSubTasksLocked()
 	t.closed = true
 	close(t.channelLocked())
 }

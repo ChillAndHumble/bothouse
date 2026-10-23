@@ -5,7 +5,7 @@
 ## 能力与安装
 
 - **Codex app_server**：桥接直接读取 collabAgentToolCall 的子线程 ID、agentsStates，并监听已知子线程的 turn 状态。父会话结束一轮后仍可更新表格。
-- **Codex exec**：读取对应的 collab_tool_call。只反映 CLI 实际输出的状态；exec 进程退出到下一次启动之间没有持续事件流，不能承诺这一段实时更新。需要持续观察后台子 Agent 时使用 app_server。
+- **Codex exec**：读取对应的 collab_tool_call。只反映 CLI 实际输出的状态；exec 进程退出时把仍活动的行标为 stopped，保留已完成/失败的结果和可复用的跟踪表。下一次进程可重新激活子 Agent；两次启动之间没有持续事件流，不能承诺这一段实时更新。需要持续观察后台子 Agent 时使用 app_server。
 - **DSH 经 ACP 接入**：桥接支持下述元数据扩展；DSH 的 ACP 包还需要本目录转发层。仅升级桥接不能让未转发事件的 DSH 出现表格。
 - **其他 ACP 服务端、原生 dsh hook 适配器、Antigravity**：本次未增加各自的状态采集。普通 ACP 工具名不会被猜成子 Agent。
 
@@ -19,7 +19,7 @@ node /path/to/bothouse/integrations/dsh-acp-subtasks/apply.mjs /path/to/dsh-acp
 
 只支持已验证的 @deepseek-ai/dsh-acp **0.1.5-rc.3 / 0.2.1-rc.2**；未知版本或源码位置不匹配会拒绝修改。脚本保留 lib/index.js.before-bothouse-subtasks，重复执行不重复挂钩。原生作用域依赖通过 dsh-subagent 解析，兼容 pnpm 的依赖隔离。安装会在下一次 ACP 进程启动后生效，脚本不会重启任何服务。
 
-npm/pnpm install 或升级可能覆盖转发层；升级后重新验证再安装。回滚时将保留的备份复制回 lib/index.js，在计划好的维护窗口重新启动 ACP。不要覆盖已经存在的恢复副本。
+npm/pnpm install 或升级可能覆盖转发层；升级后重新验证再安装。若保留的备份与当前上游文件相同，安装器会复用它并可直接重装；若两者不同，安装器会拒绝覆盖恢复副本，需要先人工核对。回滚时将保留的备份复制回 lib/index.js，在计划好的维护窗口重新启动 ACP。不需要手动删除恢复副本。
 
 Discord 使用 progress_style = "card"；配置了 aux_channels 时表格随进展发送至日志频道。没有实际子 Agent 就没有表格。子 Agent 是否获准启动仍遵循原来的项目规则。
 

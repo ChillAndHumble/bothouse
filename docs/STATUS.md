@@ -1,5 +1,7 @@
 # 能力与验证状态
 
+2026-10-23 Issue #86 审核补改：DSH 安装器复用内容相同的恢复副本，拒绝覆盖不同副本；Codex exec 在普通与严格输入路径的进程退出后停止活动子 Agent 行，保留终态和 tracker 通知通道供下一轮复用。两处回归均已验证改前失败、改后通过，目标 race、构建/vet 与两版本 DSH 运行时副本校验通过；最终全量和 CI 见 PR #91。未部署。
+
 2026-10-23 Issue #86：Codex（app_server / exec）与 DSH（ACP 原生生命周期扩展）接入独立子进程表，复用渲染；补齐身份/代次隔离、后台跨轮与关闭状态。适配器回归旧 main 红、实现绿；目标 race、构建/vet 与 DSH 两版本真实运行时副本校验通过。macOS 全量 48 个测试包通过，仅安装向导 TestSetupCLIsHint 失败，改前 main 同样复现。子 Agent 审出旧 turn 完成覆盖新回合、send_input 重派未重开、等待标记未采集三项 P2，已补先红后绿回归修复；最终复审/CI 见 [PR #91](https://github.com/zuiho-kai/bothouse/pull/91)。未部署、未做真实模型/Discord 验收；DSH 需另安装转发层，exec 无跨进程实时事件。用法和边界见[说明](../integrations/dsh-acp-subtasks/README.md)。
 
 2026-10-23：下载入口收敛为 Mac universal dmg 一份、Windows x64 exe 一份、Linux x64/arm64 两份；安装和自更新按相同命名并校验 SHA256SUMS。Go 沙箱全量、CUJ、回归、vet、actionlint、shell 语法及 Linux 安装测试通过；v0.1.2 发布替换与 Mac 验收以 /tmp/rename/result4.md 为准。

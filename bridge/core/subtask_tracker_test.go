@@ -41,6 +41,7 @@ func TestSubTaskTrackerBatchResumeAndClosure(t *testing.T) {
 			defer wg.Done()
 			s.UpdateSubTask(SubTask{ID: "c", Status: SubTaskWaiting}, false)
 			s.SubTasks()
+			s.StopSubTasks()
 			s.CloseSubTasks()
 		}()
 	}
