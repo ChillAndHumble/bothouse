@@ -14,7 +14,7 @@ Then open the web UI with `dsh --profile web` and click "Channels" in the sideba
 
 ## Requirements
 
-- DSH 0.2.x (from `0.2.1-rc.2`, see `dsh --version`) and Node.js 22.12 or later. Tested on 0.2.1-rc.2 only; the page is prebuilt against the DSH 0.2 client packages, so the range stops before 0.3 and needs re-testing there.
+- DSH 0.2.x (from `0.2.1-rc.2`, see `dsh --version`) and Node.js 22.12 or later. Tested on 0.2.1-rc.2 only; no compatibility promise for the DSH plugin API was found and the page is prebuilt against the DSH 0.2 client packages, so the range stops before 0.3.
 - Model members: configure the model and its key in DSH settings first.
 - CLI members: install and sign in to Claude Code, Codex or the Gemini CLI, with the command on PATH.
 - Channel messages are stored in `~/.conest-collab/collab.sqlite3`; set `CONEST_COLLAB_DATA` before starting DSH to use another directory.
