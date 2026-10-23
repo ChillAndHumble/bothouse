@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -330,5 +331,56 @@ func TestUpdateGuard_RollbackTellsChat(t *testing.T) {
 	n := ConsumeRestartNotify(spec.StateDir)
 	if n == nil || n.SessionKey != "discord:c1:u1" || n.Text != "新版 v0.1.5 没能启动，已退回 v0.1.4" {
 		t.Fatalf("notify %+v", n)
+	}
+}
+
+// Management off: the update still gets a self-check, probing the local socket's /version.
+func TestUpdateEntry_NoManagementUsesSocket(t *testing.T) {
+	_, got := armFixture(t, nil)
+	activeMgmt.Store(nil)
+	oldSock, _ := activeAPISocket.Load().(string)
+	t.Cleanup(func() { activeAPISocket.Store(oldSock) })
+	activeAPISocket.Store("/tmp/bh-test/api.sock")
+	rec := httptest.NewRecorder()
+	handleSocketUpdate(rec, httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(`{"tag":"v0.1.5"}`)))
+	if len(*got) != 1 || (*got)[0].SocketPath != "/tmp/bh-test/api.sock" || (*got)[0].StatusURL != "" {
+		t.Fatalf("guard %+v", *got)
+	}
+	takeRestart(t)
+}
+
+// Neither management nor socket: undo the replacement, do not restart unguarded.
+func TestUpdateEntry_NoProbeUndoes(t *testing.T) {
+	spec, got := armFixture(t, nil)
+	activeMgmt.Store(nil)
+	oldSock, _ := activeAPISocket.Load().(string)
+	t.Cleanup(func() { activeAPISocket.Store(oldSock) })
+	activeAPISocket.Store("")
+	rec := httptest.NewRecorder()
+	handleSocketUpdate(rec, httptest.NewRequest(http.MethodPost, "/update", strings.NewReader(`{"tag":"v0.1.5"}`)))
+	if len(*got) != 0 || len(RestartCh) != 0 || readFile(t, spec.Exe) != "OLD" {
+		t.Fatalf("restarted unguarded: guards=%d restarts=%d", len(*got), len(RestartCh))
+	}
+}
+
+func TestProbeSocketVersion(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "bhver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "api.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(handleSocketVersion)}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	old := CurrentVersion
+	t.Cleanup(func() { CurrentVersion = old })
+	CurrentVersion = "v0.1.5"
+	if v := probeStatusVersion(updateGuardSpec{SocketPath: sock}); v != "v0.1.5" {
+		t.Fatalf("got %q", v)
 	}
 }

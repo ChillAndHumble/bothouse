@@ -63,6 +63,7 @@ func TestHandleUpdate_UpToDateAndDev(t *testing.T) {
 
 func TestHandleUpdateApply_SuccessRestarts(t *testing.T) {
 	applied := withUpdateStubs(t, "v0.1.4", &ReleaseInfo{TagName: "v0.1.5"}, nil, nil)
+	stubGuardOK(t)
 	for len(RestartCh) > 0 {
 		<-RestartCh
 	}
@@ -156,6 +157,7 @@ func TestUpgradePathKeepsUserData(t *testing.T) {
 
 	// 1) update via the web API (binary swap stubbed — never touch the real executable)
 	withUpdateStubs(t, "v0.1.4", &ReleaseInfo{TagName: "v0.1.5"}, nil, nil)
+	stubGuardOK(t)
 	if _, d := callMgmt(t, (&ManagementServer{}).handleUpdateApply, http.MethodPost); d["status"] != "restarting" {
 		t.Fatalf("apply: %v", d)
 	}
@@ -272,4 +274,15 @@ func TestHandleUpdate_LastResultAndCache(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("check not cached: %d calls", calls)
 	}
+}
+
+// stubGuardOK: a restart always goes through the self-check; stub it (never start a real guard,
+// never touch the test binary).
+func stubGuardOK(t *testing.T) {
+	t.Helper()
+	spec := guardFixture(t)
+	oldStart, oldBackup, oldExe := startUpdateGuard, lastBinaryBackup, updateExePath
+	t.Cleanup(func() { startUpdateGuard, lastBinaryBackup, updateExePath = oldStart, oldBackup, oldExe })
+	lastBinaryBackup, updateExePath = spec.Backup, func() string { return spec.Exe }
+	startUpdateGuard = func(updateGuardSpec) error { return nil }
 }

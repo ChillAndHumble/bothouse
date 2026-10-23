@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -51,7 +53,9 @@ var UpdateStateDir string
 // updateGuardSpec is handed to the guard process through the environment (keeps the token off
 // the command line).
 type updateGuardSpec struct {
-	StatusURL  string   `json:"status_url"`
+	StatusURL string `json:"status_url"`
+	// SocketPath: local API socket, probed via GET /version when StatusURL is empty (management off).
+	SocketPath string   `json:"socket_path,omitempty"`
 	Token      string   `json:"token"`
 	Want       string   `json:"want"`
 	Old        string   `json:"old"`
@@ -195,15 +199,35 @@ func (o *guardOps) fill() {
 	}
 }
 
+// activeAPISocket is the local API socket path (set when the socket listens): the self-check
+// probes it when the management HTTP server is off.
+var activeAPISocket atomic.Value // string
+
+// handleSocketVersion: GET /version on the local socket → {"version": "..."}.
+func handleSocketVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": CurrentVersion})
+}
+
 func probeStatusVersion(spec updateGuardSpec) string {
-	req, err := http.NewRequest(http.MethodGet, spec.StatusURL, nil)
+	url, c := spec.StatusURL, &http.Client{Timeout: 3 * time.Second}
+	if url == "" {
+		if spec.SocketPath == "" {
+			return ""
+		}
+		sock := spec.SocketPath
+		c.Transport = &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+		}}
+		url = "http://unix/version"
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return ""
 	}
 	if spec.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+spec.Token)
 	}
-	c := &http.Client{Timeout: 3 * time.Second}
 	resp, err := c.Do(req)
 	if err != nil {
 		return ""
@@ -319,15 +343,24 @@ var activeMgmt atomic.Pointer[ManagementServer]
 // be started, the replacement is undone and an error is returned: never restart unguarded into
 // a version that might not come up.
 func armUpdateGuard(m *ManagementServer, want string, notify *RestartRequest) error {
-	if m == nil {
-		slog.Warn("update: management api not running, restarting without self-check")
-		return nil
-	}
-	spec := m.guardSpec(want)
+	spec := m.guardSpec(want) // m nil (management off): probe the local socket instead
 	spec.Notify = notify
-	if spec.Backup == "" {
-		slog.Warn("update: no backup path, restarting without self-check")
-		return nil
+	var why error
+	switch {
+	case spec.Backup == "":
+		why = errors.New("no backup of the old binary")
+	case spec.StatusURL == "" && spec.SocketPath == "":
+		why = errors.New("neither management api nor local socket to check the new version")
+	}
+	if why != nil {
+		// Never restart unguarded: undo the replacement, same as a guard that cannot start.
+		slog.Error("update: cannot self-check, undoing update", "error", why)
+		if spec.Backup != "" {
+			if uerr := undoReplace(spec); uerr != nil {
+				slog.Error("update: undo failed", "error", uerr)
+			}
+		}
+		return errors.Join(errUpdateRestart, why)
 	}
 	if err := startUpdateGuard(spec); err != nil {
 		slog.Error("update: start self-check failed, undoing update", "error", err)
@@ -361,14 +394,10 @@ var updateExePath = func() string {
 }
 
 func (m *ManagementServer) guardSpec(want string) updateGuardSpec {
-	host := m.host
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
 	exe := updateExePath()
-	return updateGuardSpec{
-		StatusURL:  fmt.Sprintf("http://%s/api/v1/status", joinHostPort(host, m.port)),
-		Token:      m.token,
+	sock, _ := activeAPISocket.Load().(string)
+	spec := updateGuardSpec{
+		SocketPath: sock,
 		Want:       want,
 		Old:        CurrentVersion,
 		Exe:        exe,
@@ -379,6 +408,15 @@ func (m *ManagementServer) guardSpec(want string) updateGuardSpec {
 		TimeoutSec: int(UpdateGuardTimeout / time.Second),
 		GraceSec:   int(updateGuardGrace / time.Second),
 	}
+	if m != nil {
+		host := m.host
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "127.0.0.1"
+		}
+		spec.StatusURL = fmt.Sprintf("http://%s/api/v1/status", joinHostPort(host, m.port))
+		spec.Token = m.token
+	}
+	return spec
 }
 
 func joinHostPort(host string, port int) string {
