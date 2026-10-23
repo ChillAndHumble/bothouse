@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { ChannelActions, ChannelMember, ChannelMessage, ChannelSnapshot } from './channel-source.ts'
 import { activeMention, applyMention, insertMention, rankMembers } from './mention-complete.ts'
 import { MemberDialog } from './MemberDialog.tsx'
+import { Avatar } from './Avatar.tsx'
 import type { NS } from './locales.ts'
 import css from './ChannelsPage.module.css'
 
@@ -22,22 +23,6 @@ export interface ChannelsInjected extends ChannelActions {
 export type ChannelsPageProps = PropsRuntime<'main'> & InjectFace<ChannelsInjected> & PropsLocale<typeof NS>
 
 type T = TranslateNS<typeof NS>
-
-const PALETTE = ['#5865f2', '#eb459e', '#3ba55c', '#faa61a', '#ed4245', '#00a8fc', '#9b59b6', '#e67e22']
-
-function color(id: string): string {
-  let h = 7
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return PALETTE[h % PALETTE.length] as string
-}
-
-function Avatar({ id, name, small }: { id: string; name: string; small?: boolean }) {
-  return (
-    <span className={small === true ? `${css.avatar} ${css.avatarSmall}` : css.avatar} style={{ background: color(id) }} aria-hidden>
-      {(name || id).slice(0, 1)}
-    </span>
-  )
-}
 
 const CLI_TAG = { claude: 'kindClaude', codex: 'kindCodex', gemini: 'kindGemini' } as const
 
@@ -55,7 +40,7 @@ function MessageRow({ message, member, t }: { message: ChannelMessage; member: C
   }
   return (
     <div className={message.author_kind === 'system' ? `${css.message} ${css.system}` : css.message}>
-      <Avatar id={message.author} name={message.name} />
+      <Avatar id={message.author} name={message.name} avatar={member?.avatar} />
       <div className={css.messageBody}>
         <div className={css.messageHead}>
           <span className={css.author}>{message.name}</span>
@@ -97,7 +82,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }: {
             onClick={() => { onPick(m) }}
           >
             <span className={css.memberAvatar}>
-              <Avatar id={m.id} name={m.name} small />
+              <Avatar id={m.id} name={m.name} avatar={m.avatar} small />
               <span className={css.presence} />
             </span>
             <span className={css.memberText}>
@@ -344,7 +329,7 @@ export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listMo
                     onClick={() => { choose(m) }}
                   >
                     <span className={css.memberAvatar}>
-                      <Avatar id={m.id} name={m.name} small />
+                      <Avatar id={m.id} name={m.name} avatar={m.avatar} small />
                       {m.online && <span className={css.presence} />}
                     </span>
                     <span className={css.mentionName}>{m.name}</span>

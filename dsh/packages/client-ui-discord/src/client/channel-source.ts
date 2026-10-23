@@ -41,6 +41,8 @@ export interface ChannelMember {
   readonly persona?: string
   /** DSH members only: created in the UI (editable) rather than the config file. */
   readonly editable?: boolean
+  /** Built-in avatar slug or a bot's http(s) image URL; absent means the initial badge. */
+  readonly avatar?: string
 }
 
 /** Fields the UI can set on a DSH member. */
@@ -48,6 +50,8 @@ export interface DshMemberInput {
   readonly name: string
   readonly model: MemberModel | null
   readonly persona: string
+  /** Built-in avatar slug, or '' for the initial badge. */
+  readonly avatar?: string
 }
 
 /** A member backed by a CLI agent installed on this machine (Claude Code, Codex, Gemini). */
@@ -56,6 +60,8 @@ export interface CliMemberInput {
   readonly persona: string
   /** CLI id as listed by `GET /collab/api/clis`. */
   readonly cli: string
+  /** Built-in avatar slug, or '' for the initial badge. */
+  readonly avatar?: string
 }
 
 /** Body of `POST /collab/api/members` / `PATCH /collab/api/members/:id`. */
