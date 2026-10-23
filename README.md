@@ -192,3 +192,5 @@ Contributors: start with [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGEN
 bothouse is licensed under [MIT](LICENSE). See [LICENSING.md](LICENSING.md) (Chinese) for details.
 
 The bundled upstream bridge retains its MIT notice in [bridge/LICENSE-MIT-upstream](bridge/LICENSE-MIT-upstream). Thanks to its authors and contributors. See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for dependency licenses.
+
+- DSH 频道路线图：发图片、回复引用。

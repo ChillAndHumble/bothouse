@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
  factory: (require) => {
  var module = { exports: {} };
  var exports = module.exports;
-(function(){var s=document.createElement('style');s.setAttribute('data-dsh-plugin',"dsh-experimental-client-ui-discord");s.textContent=".qqdApW_page {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  padding-top: var(--dsh-frame-top-clearance, 0px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  grid-template-columns: 220px minmax(0, 1fr) 240px;\n  font-size: 14px;\n  line-height: 1.5;\n  display: grid;\n}\n\n.qqdApW_notice {\n  max-width: 480px;\n  color: var(--dsw-alias-label-secondary);\n  text-align: center;\n  grid-column: 1 / -1;\n  place-self: center;\n  padding: 24px;\n}\n\n.qqdApW_rooms, .qqdApW_members {\n  background: var(--dsw-alias-bg-layer-2);\n  min-height: 0;\n  padding: 8px 8px 16px;\n  overflow-y: auto;\n}\n\n.qqdApW_groupTitle {\n  color: var(--dsw-alias-label-tertiary);\n  letter-spacing: .02em;\n  margin: 12px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.qqdApW_room {\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.qqdApW_room:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_room:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qqdApW_roomActive {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_hash {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 16px;\n}\n\n.qqdApW_chat {\n  flex-direction: column;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n}\n\n.qqdApW_chatHead {\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  align-items: center;\n  gap: 6px;\n  height: 44px;\n  padding: 0 16px;\n  font-weight: 600;\n  display: flex;\n}\n\n.qqdApW_log {\n  flex: 1;\n  min-height: 0;\n  padding: 8px 0 12px;\n  overflow-y: auto;\n}\n\n.qqdApW_empty {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 24px 16px;\n}\n\n.qqdApW_message {\n  grid-template-columns: 36px minmax(0, 1fr);\n  gap: 12px;\n  padding: 6px 16px;\n  display: grid;\n}\n\n.qqdApW_message:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_system .qqdApW_text {\n  color: var(--dsw-alias-label-tertiary);\n  font-style: italic;\n}\n\n.qqdApW_avatar {\n  corner-shape: round;\n  color: #fff;\n  border-radius: 50%;\n  place-items: center;\n  width: 36px;\n  height: 36px;\n  font-weight: 700;\n  display: grid;\n}\n\n.qqdApW_avatarSmall {\n  width: 28px;\n  height: 28px;\n  font-size: 12px;\n}\n\n.qqdApW_messageBody {\n  min-width: 0;\n}\n\n.qqdApW_messageHead {\n  align-items: baseline;\n  gap: 6px;\n  display: flex;\n}\n\n.qqdApW_author {\n  font-weight: 600;\n}\n\n.qqdApW_time {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n.qqdApW_tag {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-primary-inverted);\n  background: var(--dsw-alias-state-business-primary);\n  white-space: nowrap;\n  padding: 0 4px;\n  font-size: 10px;\n  font-weight: 600;\n}\n\n.qqdApW_text {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.qqdApW_card {\n  border-left: 4px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-2);\n  margin-top: 4px;\n  padding: 6px 10px;\n}\n\n.qqdApW_card[data-state=\"failed\"] {\n  border-left-color: var(--dsw-alias-state-error-primary);\n}\n\n.qqdApW_cardTitle {\n  font-size: 13px;\n  font-weight: 600;\n}\n\n.qqdApW_working {\n  min-height: 20px;\n  color: var(--dsw-alias-label-tertiary);\n  padding: 0 16px;\n  font-size: 12px;\n}\n\n.qqdApW_composer {\n  padding: 0 16px 16px;\n  position: relative;\n}\n\n.qqdApW_composerRow {\n  align-items: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.qqdApW_mentionButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 40px;\n  height: 40px;\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  cursor: pointer;\n  flex: none;\n  font-size: 18px;\n  font-weight: 600;\n}\n\n.qqdApW_mentionButton:hover:not(:disabled) {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_mentionButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qqdApW_mentionPopup {\n  z-index: 2;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-base);\n  max-height: 320px;\n  box-shadow: var(--dsw-elevation-panel, 0 8px 24px #0000003d);\n  flex-direction: column;\n  padding: 6px;\n  display: flex;\n  position: absolute;\n  bottom: calc(100% - 8px);\n  left: 16px;\n  right: 16px;\n}\n\n.qqdApW_mentionPopup > [role=\"listbox\"] {\n  min-height: 0;\n  overflow-y: auto;\n}\n\n.qqdApW_mentionTitle {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 4px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.qqdApW_mentionItem {\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  align-items: center;\n  gap: 10px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.qqdApW_mentionActive {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_mentionName {\n  font-weight: 600;\n}\n\n.qqdApW_mentionMeta {\n  color: var(--dsw-alias-label-tertiary);\n  margin-left: auto;\n  font-size: 12px;\n}\n\n.qqdApW_mentionHint {\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-tertiary);\n  padding: 6px 8px 2px;\n  font-size: 11px;\n}\n\n.qqdApW_sendError {\n  color: var(--dsw-alias-state-error-primary);\n  margin-bottom: 6px;\n  font-size: 12px;\n}\n\n.qqdApW_input {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 100%;\n  max-height: 40vh;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  resize: none;\n  field-sizing: content;\n  padding: 10px 14px;\n}\n\n.qqdApW_input:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qqdApW_member {\n  border-radius: var(--dsw-radius-sm);\n  min-width: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  flex: 1;\n  align-items: center;\n  gap: 10px;\n  padding: 5px 8px;\n  display: flex;\n}\n\n.qqdApW_member:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_member:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qqdApW_offline {\n  opacity: .5;\n}\n\n.qqdApW_memberAvatar {\n  position: relative;\n}\n\n.qqdApW_presence {\n  border: 2px solid var(--dsw-alias-bg-layer-2);\n  corner-shape: round;\n  background: #23a55a;\n  border-radius: 50%;\n  width: 10px;\n  height: 10px;\n  position: absolute;\n  bottom: -2px;\n  right: -2px;\n}\n\n.qqdApW_offline .qqdApW_presence {\n  background: var(--dsw-alias-label-tertiary);\n}\n\n.qqdApW_memberText {\n  flex-direction: column;\n  min-width: 0;\n  display: flex;\n}\n\n.qqdApW_memberName {\n  align-items: center;\n  gap: 6px;\n  display: flex;\n}\n\n.qqdApW_memberStatus {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n@media (width <= 900px) {\n  .qqdApW_page {\n    grid-template-columns: minmax(0, 1fr);\n  }\n\n  .qqdApW_rooms, .qqdApW_members {\n    display: none;\n  }\n}\n\n.qqdApW_groupHead {\n  justify-content: space-between;\n  align-items: center;\n  padding-right: 4px;\n  display: flex;\n}\n\n.qqdApW_iconButton {\n  border-radius: var(--dsw-radius-sm);\n  width: 22px;\n  height: 22px;\n  color: var(--dsw-alias-label-tertiary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  font-size: 16px;\n  line-height: 1;\n}\n\n.qqdApW_iconButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_roomInput, .qqdApW_fieldInput {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  font: inherit;\n  padding: 6px 8px;\n}\n\n.qqdApW_roomInput {\n  margin: 2px 0 6px;\n}\n\n.qqdApW_roomInput:focus-visible, .qqdApW_fieldInput:focus-visible, .qqdApW_iconButton:focus-visible, .qqdApW_linkButton:focus-visible, .qqdApW_addMemberButton:focus-visible, .qqdApW_primaryButton:focus-visible, .qqdApW_secondaryButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qqdApW_addMemberButton {\n  border: 1px dashed var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  margin: 4px 0;\n  padding: 7px 8px;\n}\n\n.qqdApW_addMemberButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_memberRow {\n  border-radius: var(--dsw-radius-sm);\n  align-items: center;\n  display: flex;\n  position: relative;\n}\n\n.qqdApW_memberRow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qqdApW_memberRow .qqdApW_member:hover {\n  background: none;\n}\n\n.qqdApW_memberModel {\n  color: var(--dsw-alias-label-tertiary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  font-size: 11px;\n  overflow: hidden;\n}\n\n.qqdApW_memberActions {\n  color: var(--dsw-alias-label-tertiary);\n  opacity: 0;\n  flex: none;\n  gap: 4px;\n  padding-right: 6px;\n  font-size: 12px;\n  display: flex;\n}\n\n.qqdApW_memberRow:hover .qqdApW_memberActions, .qqdApW_memberRow:focus-within .qqdApW_memberActions {\n  opacity: 1;\n}\n\n.qqdApW_linkButton {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  padding: 2px 4px;\n  font-size: 12px;\n}\n\n.qqdApW_linkButton:hover {\n  color: var(--dsw-alias-label-primary);\n  text-decoration: underline;\n}\n\n.qqdApW_dialogBackdrop {\n  z-index: 10;\n  background: #00000073;\n  place-items: center;\n  padding: 16px;\n  display: grid;\n  position: fixed;\n  inset: 0;\n}\n\n.qqdApW_dialog {\n  border-radius: var(--dsw-radius-lg);\n  width: min(460px, 100%);\n  max-height: calc(100vh - 32px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-elevation-panel, 0 12px 32px #0000004d);\n  flex-direction: column;\n  gap: 12px;\n  padding: 20px;\n  display: flex;\n  overflow-y: auto;\n}\n\n.qqdApW_dialogTitle {\n  margin: 0;\n  font-size: 16px;\n}\n\n.qqdApW_field {\n  color: var(--dsw-alias-label-secondary);\n  flex-direction: column;\n  gap: 4px;\n  font-size: 12px;\n  display: flex;\n}\n\n.qqdApW_field textarea {\n  resize: vertical;\n}\n\n.qqdApW_choiceRow {\n  flex-wrap: wrap;\n  gap: 12px;\n  display: flex;\n}\n\n.qqdApW_choice {\n  color: var(--dsw-alias-label-primary, inherit);\n  cursor: pointer;\n  align-items: center;\n  gap: 4px;\n  font-size: 13px;\n  display: inline-flex;\n}\n\n.qqdApW_dialogActions {\n  justify-content: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.qqdApW_primaryButton, .qqdApW_secondaryButton {\n  border-radius: var(--dsw-radius-sm);\n  font: inherit;\n  cursor: pointer;\n  padding: 7px 14px;\n}\n\n.qqdApW_primaryButton {\n  color: #fff;\n  background: var(--dsw-alias-state-business-primary);\n  border: 0;\n}\n\n.qqdApW_primaryButton:disabled {\n  cursor: not-allowed;\n  opacity: .5;\n}\n\n.qqdApW_secondaryButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  background: none;\n}\n";document.head.appendChild(s)})();
+(function(){var s=document.createElement('style');s.setAttribute('data-dsh-plugin',"dsh-experimental-client-ui-discord");s.textContent=".qGOlGq_page {\n  width: 100%;\n  height: 100%;\n  min-height: 0;\n  padding-top: var(--dsh-frame-top-clearance, 0px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  grid-template-columns: 220px minmax(0, 1fr) 240px;\n  font-size: 14px;\n  line-height: 1.5;\n  display: grid;\n}\n\n.qGOlGq_notice {\n  max-width: 480px;\n  color: var(--dsw-alias-label-secondary);\n  text-align: center;\n  grid-column: 1 / -1;\n  place-self: center;\n  padding: 24px;\n}\n\n.qGOlGq_rooms, .qGOlGq_members {\n  background: var(--dsw-alias-bg-layer-2);\n  min-height: 0;\n  padding: 8px 8px 16px;\n  overflow-y: auto;\n}\n\n.qGOlGq_groupTitle {\n  color: var(--dsw-alias-label-tertiary);\n  letter-spacing: .02em;\n  margin: 12px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.qGOlGq_room {\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.qGOlGq_room:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_room:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_roomActive {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_hash {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 16px;\n}\n\n.qGOlGq_chat {\n  flex-direction: column;\n  min-width: 0;\n  min-height: 0;\n  display: flex;\n}\n\n.qGOlGq_chatHead {\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  align-items: center;\n  gap: 6px;\n  height: 44px;\n  padding: 0 16px;\n  font-weight: 600;\n  display: flex;\n}\n\n.qGOlGq_log {\n  flex: 1;\n  min-height: 0;\n  padding: 8px 0 12px;\n  overflow-y: auto;\n}\n\n.qGOlGq_empty {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 24px 16px;\n}\n\n.qGOlGq_message {\n  grid-template-columns: 36px minmax(0, 1fr);\n  gap: 12px;\n  padding: 6px 16px;\n  display: grid;\n}\n\n.qGOlGq_message:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_system .qGOlGq_text {\n  color: var(--dsw-alias-label-tertiary);\n  font-style: italic;\n}\n\n.qGOlGq_avatar {\n  corner-shape: round;\n  color: #fff;\n  border-radius: 50%;\n  place-items: center;\n  width: 36px;\n  height: 36px;\n  font-weight: 700;\n  display: grid;\n}\n\n.qGOlGq_avatarSmall {\n  width: 28px;\n  height: 28px;\n  font-size: 12px;\n}\n\n.qGOlGq_messageBody {\n  min-width: 0;\n}\n\n.qGOlGq_messageHead {\n  align-items: baseline;\n  gap: 6px;\n  display: flex;\n}\n\n.qGOlGq_author {\n  font-weight: 600;\n}\n\n.qGOlGq_time {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n.qGOlGq_tag {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-primary-inverted);\n  background: var(--dsw-alias-state-business-primary);\n  white-space: nowrap;\n  padding: 0 4px;\n  font-size: 10px;\n  font-weight: 600;\n}\n\n.qGOlGq_text {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.qGOlGq_card {\n  border-left: 4px solid var(--dsw-alias-state-business-primary);\n  border-radius: var(--dsw-radius-sm);\n  background: var(--dsw-alias-bg-layer-2);\n  margin-top: 4px;\n  padding: 6px 10px;\n}\n\n.qGOlGq_card[data-state=\"failed\"] {\n  border-left-color: var(--dsw-alias-state-error-primary);\n}\n\n.qGOlGq_cardTitle {\n  font-size: 13px;\n  font-weight: 600;\n}\n\n.qGOlGq_working {\n  min-height: 20px;\n  color: var(--dsw-alias-label-tertiary);\n  padding: 0 16px;\n  font-size: 12px;\n}\n\n.qGOlGq_composer {\n  padding: 0 16px 16px;\n  position: relative;\n}\n\n.qGOlGq_composerRow {\n  align-items: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.qGOlGq_mentionButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 40px;\n  height: 40px;\n  color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  cursor: pointer;\n  flex: none;\n  font-size: 18px;\n  font-weight: 600;\n}\n\n.qGOlGq_mentionButton:hover:not(:disabled) {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_mentionButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_mentionPopup {\n  z-index: 2;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  background: var(--dsw-alias-bg-base);\n  max-height: 320px;\n  box-shadow: var(--dsw-elevation-panel, 0 8px 24px #0000003d);\n  flex-direction: column;\n  padding: 6px;\n  display: flex;\n  position: absolute;\n  bottom: calc(100% - 8px);\n  left: 16px;\n  right: 16px;\n}\n\n.qGOlGq_mentionPopup > [role=\"listbox\"] {\n  min-height: 0;\n  overflow-y: auto;\n}\n\n.qGOlGq_mentionTitle {\n  color: var(--dsw-alias-label-tertiary);\n  padding: 4px 8px 6px;\n  font-size: 12px;\n  font-weight: 600;\n}\n\n.qGOlGq_mentionItem {\n  border-radius: var(--dsw-radius-sm);\n  cursor: pointer;\n  align-items: center;\n  gap: 10px;\n  padding: 6px 8px;\n  display: flex;\n}\n\n.qGOlGq_mentionActive {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_mentionName {\n  font-weight: 600;\n}\n\n.qGOlGq_mentionMeta {\n  color: var(--dsw-alias-label-tertiary);\n  margin-left: auto;\n  font-size: 12px;\n}\n\n.qGOlGq_mentionHint {\n  border-top: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-tertiary);\n  padding: 6px 8px 2px;\n  font-size: 11px;\n}\n\n.qGOlGq_sendError {\n  color: var(--dsw-alias-state-error-primary);\n  margin-bottom: 6px;\n  font-size: 12px;\n}\n\n.qGOlGq_input {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-md);\n  width: 100%;\n  max-height: 40vh;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-layer-2);\n  font: inherit;\n  resize: none;\n  field-sizing: content;\n  padding: 10px 14px;\n}\n\n.qGOlGq_input:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_member {\n  border-radius: var(--dsw-radius-sm);\n  min-width: 0;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  flex: 1;\n  align-items: center;\n  gap: 10px;\n  padding: 5px 8px;\n  display: flex;\n}\n\n.qGOlGq_member:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_member:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_offline {\n  opacity: .5;\n}\n\n.qGOlGq_memberAvatar {\n  position: relative;\n}\n\n.qGOlGq_presence {\n  border: 2px solid var(--dsw-alias-bg-layer-2);\n  corner-shape: round;\n  background: #23a55a;\n  border-radius: 50%;\n  width: 10px;\n  height: 10px;\n  position: absolute;\n  bottom: -2px;\n  right: -2px;\n}\n\n.qGOlGq_offline .qGOlGq_presence {\n  background: var(--dsw-alias-label-tertiary);\n}\n\n.qGOlGq_memberText {\n  flex-direction: column;\n  min-width: 0;\n  display: flex;\n}\n\n.qGOlGq_memberName {\n  align-items: center;\n  gap: 6px;\n  display: flex;\n}\n\n.qGOlGq_memberStatus {\n  color: var(--dsw-alias-label-tertiary);\n  font-size: 12px;\n}\n\n@media (width <= 900px) {\n  .qGOlGq_page {\n    grid-template-columns: minmax(0, 1fr);\n  }\n\n  .qGOlGq_rooms, .qGOlGq_members {\n    display: none;\n  }\n}\n\n.qGOlGq_groupHead {\n  justify-content: space-between;\n  align-items: center;\n  padding-right: 4px;\n  display: flex;\n}\n\n.qGOlGq_iconButton {\n  border-radius: var(--dsw-radius-sm);\n  width: 22px;\n  height: 22px;\n  color: var(--dsw-alias-label-tertiary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  font-size: 16px;\n  line-height: 1;\n}\n\n.qGOlGq_iconButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_roomInput, .qGOlGq_fieldInput {\n  box-sizing: border-box;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  font: inherit;\n  padding: 6px 8px;\n}\n\n.qGOlGq_roomInput {\n  margin: 2px 0 6px;\n}\n\n.qGOlGq_roomInput:focus-visible, .qGOlGq_fieldInput:focus-visible, .qGOlGq_iconButton:focus-visible, .qGOlGq_linkButton:focus-visible, .qGOlGq_addMemberButton:focus-visible, .qGOlGq_primaryButton:focus-visible, .qGOlGq_secondaryButton:focus-visible {\n  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color);\n}\n\n.qGOlGq_addMemberButton {\n  border: 1px dashed var(--dsw-alias-border-l2);\n  border-radius: var(--dsw-radius-sm);\n  width: 100%;\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  margin: 4px 0;\n  padding: 7px 8px;\n}\n\n.qGOlGq_addMemberButton:hover {\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_memberRow {\n  border-radius: var(--dsw-radius-sm);\n  align-items: center;\n  display: flex;\n  position: relative;\n}\n\n.qGOlGq_memberRow:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.qGOlGq_memberRow .qGOlGq_member:hover {\n  background: none;\n}\n\n.qGOlGq_memberModel {\n  color: var(--dsw-alias-label-tertiary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  font-size: 11px;\n  overflow: hidden;\n}\n\n.qGOlGq_memberActions {\n  color: var(--dsw-alias-label-tertiary);\n  opacity: 0;\n  flex: none;\n  gap: 4px;\n  padding-right: 6px;\n  font-size: 12px;\n  display: flex;\n}\n\n.qGOlGq_memberRow:hover .qGOlGq_memberActions, .qGOlGq_memberRow:focus-within .qGOlGq_memberActions {\n  opacity: 1;\n}\n\n.qGOlGq_linkButton {\n  border-radius: var(--dsw-radius-xs);\n  color: var(--dsw-alias-label-secondary);\n  font: inherit;\n  cursor: pointer;\n  background: none;\n  border: 0;\n  padding: 2px 4px;\n  font-size: 12px;\n}\n\n.qGOlGq_linkButton:hover {\n  color: var(--dsw-alias-label-primary);\n  text-decoration: underline;\n}\n\n.qGOlGq_dialogBackdrop {\n  z-index: 10;\n  background: #00000073;\n  place-items: center;\n  padding: 16px;\n  display: grid;\n  position: fixed;\n  inset: 0;\n}\n\n.qGOlGq_dialog {\n  border-radius: var(--dsw-radius-lg);\n  width: min(460px, 100%);\n  max-height: calc(100vh - 32px);\n  color: var(--dsw-alias-label-primary);\n  background: var(--dsw-alias-bg-base);\n  box-shadow: var(--dsw-elevation-panel, 0 12px 32px #0000004d);\n  flex-direction: column;\n  gap: 12px;\n  padding: 20px;\n  display: flex;\n  overflow-y: auto;\n}\n\n.qGOlGq_dialogTitle {\n  margin: 0;\n  font-size: 16px;\n}\n\n.qGOlGq_field {\n  color: var(--dsw-alias-label-secondary);\n  flex-direction: column;\n  gap: 4px;\n  font-size: 12px;\n  display: flex;\n}\n\n.qGOlGq_field textarea {\n  resize: vertical;\n}\n\n.qGOlGq_choiceRow {\n  flex-wrap: wrap;\n  gap: 12px;\n  display: flex;\n}\n\n.qGOlGq_choice {\n  color: var(--dsw-alias-label-primary, inherit);\n  cursor: pointer;\n  align-items: center;\n  gap: 4px;\n  font-size: 13px;\n  display: inline-flex;\n}\n\n.qGOlGq_dialogActions {\n  justify-content: flex-end;\n  gap: 8px;\n  display: flex;\n}\n\n.qGOlGq_primaryButton, .qGOlGq_secondaryButton {\n  border-radius: var(--dsw-radius-sm);\n  font: inherit;\n  cursor: pointer;\n  padding: 7px 14px;\n}\n\n.qGOlGq_primaryButton {\n  color: #fff;\n  background: var(--dsw-alias-state-business-primary);\n  border: 0;\n}\n\n.qGOlGq_primaryButton:disabled {\n  cursor: not-allowed;\n  opacity: .5;\n}\n\n.qGOlGq_secondaryButton {\n  border: 1px solid var(--dsw-alias-border-l2);\n  color: var(--dsw-alias-label-primary);\n  background: none;\n}\n\n.qGOlGq_memberFailed .qGOlGq_memberStatus {\n  color: var(--dsw-alias-state-error-primary, #ed4245);\n}\n\n.qGOlGq_memberFailed .qGOlGq_presence {\n  background: #ed4245;\n}\n";document.head.appendChild(s)})();
 Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 let react_jsx_runtime = require("react/jsx-runtime");
@@ -371,68 +371,69 @@ function insertMention(text, caret, member) {
 }
 // src/client/ChannelsPage.module.css
 var ChannelsPage_module_default = {
-	"addMemberButton": "qqdApW_addMemberButton",
-	"author": "qqdApW_author",
-	"avatar": "qqdApW_avatar",
-	"avatarSmall": "qqdApW_avatarSmall",
-	"card": "qqdApW_card",
-	"cardTitle": "qqdApW_cardTitle",
-	"chat": "qqdApW_chat",
-	"chatHead": "qqdApW_chatHead",
-	"choice": "qqdApW_choice",
-	"choiceRow": "qqdApW_choiceRow",
-	"composer": "qqdApW_composer",
-	"composerRow": "qqdApW_composerRow",
-	"dialog": "qqdApW_dialog",
-	"dialogActions": "qqdApW_dialogActions",
-	"dialogBackdrop": "qqdApW_dialogBackdrop",
-	"dialogTitle": "qqdApW_dialogTitle",
-	"empty": "qqdApW_empty",
-	"field": "qqdApW_field",
-	"fieldInput": "qqdApW_fieldInput",
-	"groupHead": "qqdApW_groupHead",
-	"groupTitle": "qqdApW_groupTitle",
-	"hash": "qqdApW_hash",
-	"iconButton": "qqdApW_iconButton",
-	"input": "qqdApW_input",
-	"linkButton": "qqdApW_linkButton",
-	"log": "qqdApW_log",
-	"member": "qqdApW_member",
-	"memberActions": "qqdApW_memberActions",
-	"memberAvatar": "qqdApW_memberAvatar",
-	"memberModel": "qqdApW_memberModel",
-	"memberName": "qqdApW_memberName",
-	"memberRow": "qqdApW_memberRow",
-	"members": "qqdApW_members",
-	"memberStatus": "qqdApW_memberStatus",
-	"memberText": "qqdApW_memberText",
-	"mentionActive": "qqdApW_mentionActive",
-	"mentionButton": "qqdApW_mentionButton",
-	"mentionHint": "qqdApW_mentionHint",
-	"mentionItem": "qqdApW_mentionItem",
-	"mentionMeta": "qqdApW_mentionMeta",
-	"mentionName": "qqdApW_mentionName",
-	"mentionPopup": "qqdApW_mentionPopup",
-	"mentionTitle": "qqdApW_mentionTitle",
-	"message": "qqdApW_message",
-	"messageBody": "qqdApW_messageBody",
-	"messageHead": "qqdApW_messageHead",
-	"notice": "qqdApW_notice",
-	"offline": "qqdApW_offline",
-	"page": "qqdApW_page",
-	"presence": "qqdApW_presence",
-	"primaryButton": "qqdApW_primaryButton",
-	"room": "qqdApW_room",
-	"roomActive": "qqdApW_roomActive",
-	"roomInput": "qqdApW_roomInput",
-	"rooms": "qqdApW_rooms",
-	"secondaryButton": "qqdApW_secondaryButton",
-	"sendError": "qqdApW_sendError",
-	"system": "qqdApW_system",
-	"tag": "qqdApW_tag",
-	"text": "qqdApW_text",
-	"time": "qqdApW_time",
-	"working": "qqdApW_working"
+	"addMemberButton": "qGOlGq_addMemberButton",
+	"author": "qGOlGq_author",
+	"avatar": "qGOlGq_avatar",
+	"avatarSmall": "qGOlGq_avatarSmall",
+	"card": "qGOlGq_card",
+	"cardTitle": "qGOlGq_cardTitle",
+	"chat": "qGOlGq_chat",
+	"chatHead": "qGOlGq_chatHead",
+	"choice": "qGOlGq_choice",
+	"choiceRow": "qGOlGq_choiceRow",
+	"composer": "qGOlGq_composer",
+	"composerRow": "qGOlGq_composerRow",
+	"dialog": "qGOlGq_dialog",
+	"dialogActions": "qGOlGq_dialogActions",
+	"dialogBackdrop": "qGOlGq_dialogBackdrop",
+	"dialogTitle": "qGOlGq_dialogTitle",
+	"empty": "qGOlGq_empty",
+	"field": "qGOlGq_field",
+	"fieldInput": "qGOlGq_fieldInput",
+	"groupHead": "qGOlGq_groupHead",
+	"groupTitle": "qGOlGq_groupTitle",
+	"hash": "qGOlGq_hash",
+	"iconButton": "qGOlGq_iconButton",
+	"input": "qGOlGq_input",
+	"linkButton": "qGOlGq_linkButton",
+	"log": "qGOlGq_log",
+	"member": "qGOlGq_member",
+	"memberActions": "qGOlGq_memberActions",
+	"memberAvatar": "qGOlGq_memberAvatar",
+	"memberFailed": "qGOlGq_memberFailed",
+	"memberModel": "qGOlGq_memberModel",
+	"memberName": "qGOlGq_memberName",
+	"memberRow": "qGOlGq_memberRow",
+	"members": "qGOlGq_members",
+	"memberStatus": "qGOlGq_memberStatus",
+	"memberText": "qGOlGq_memberText",
+	"mentionActive": "qGOlGq_mentionActive",
+	"mentionButton": "qGOlGq_mentionButton",
+	"mentionHint": "qGOlGq_mentionHint",
+	"mentionItem": "qGOlGq_mentionItem",
+	"mentionMeta": "qGOlGq_mentionMeta",
+	"mentionName": "qGOlGq_mentionName",
+	"mentionPopup": "qGOlGq_mentionPopup",
+	"mentionTitle": "qGOlGq_mentionTitle",
+	"message": "qGOlGq_message",
+	"messageBody": "qGOlGq_messageBody",
+	"messageHead": "qGOlGq_messageHead",
+	"notice": "qGOlGq_notice",
+	"offline": "qGOlGq_offline",
+	"page": "qGOlGq_page",
+	"presence": "qGOlGq_presence",
+	"primaryButton": "qGOlGq_primaryButton",
+	"room": "qGOlGq_room",
+	"roomActive": "qGOlGq_roomActive",
+	"roomInput": "qGOlGq_roomInput",
+	"rooms": "qGOlGq_rooms",
+	"secondaryButton": "qGOlGq_secondaryButton",
+	"sendError": "qGOlGq_sendError",
+	"system": "qGOlGq_system",
+	"tag": "qGOlGq_tag",
+	"text": "qGOlGq_text",
+	"time": "qGOlGq_time",
+	"working": "qGOlGq_working"
 };
 // src/client/MemberDialog.tsx
 /**
@@ -722,7 +723,7 @@ function KindTag({ kind, cli, t }) {
 	});
 	return null;
 }
-function MessageRow({ message, member, t }) {
+function MessageRow({ message, member, t, onConfigure }) {
 	let card;
 	if (message.card !== null) try {
 		card = JSON.parse(message.card);
@@ -757,13 +758,22 @@ function MessageRow({ message, member, t }) {
 			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: ChannelsPage_module_default.card,
 				"data-state": card.state,
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: ChannelsPage_module_default.cardTitle,
-					children: card.title
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: ChannelsPage_module_default.text,
-					children: message.text
-				})]
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: ChannelsPage_module_default.cardTitle,
+						children: card.title
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: ChannelsPage_module_default.text,
+						children: message.text
+					}),
+					card.action === "configure-model" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: ChannelsPage_module_default.secondaryButton,
+						onClick: onConfigure,
+						children: t("configureModel")
+					})
+				]
 			})]
 		})]
 	});
@@ -774,7 +784,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }) {
 		className: ChannelsPage_module_default.groupTitle,
 		children: title
 	}), members.map((m) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-		className: m.online ? ChannelsPage_module_default.memberRow : `${ChannelsPage_module_default.memberRow} ${ChannelsPage_module_default.offline}`,
+		className: `${ChannelsPage_module_default.memberRow} ${m.error ? ChannelsPage_module_default.memberFailed : m.online ? "" : ChannelsPage_module_default.offline}`,
 		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 			type: "button",
 			className: ChannelsPage_module_default.member,
@@ -788,7 +798,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }) {
 					id: m.id,
 					name: m.name,
 					small: true
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: ChannelsPage_module_default.presence })]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: m.error ? `${ChannelsPage_module_default.presence} ${ChannelsPage_module_default.errorPresence}` : ChannelsPage_module_default.presence })]
 			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 				className: ChannelsPage_module_default.memberText,
 				children: [
@@ -802,7 +812,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }) {
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: ChannelsPage_module_default.memberStatus,
-						children: busy.has(m.id) ? t("working") : m.online ? t("online") : t("offline")
+						children: m.error ? t("memberFailed") : busy.has(m.id) ? t("working") : m.online ? t("online") : t("offline")
 					}),
 					m.kind === "dsh" && m.cli === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: ChannelsPage_module_default.memberModel,
@@ -839,7 +849,7 @@ function MemberGroup({ title, members, busy, onPick, onEdit, onRemove, t }) {
 * @param props - framework, injected, and locale shares.
 * @returns the three-column channel view.
 */
-function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, listClis, addMember, updateMember, removeMember, t }) {
+function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, listClis, addMember, updateMember, removeMember, renderSlot, t }) {
 	const state = useChannels((snapshot) => snapshot);
 	const [drafts, setDrafts] = (0, react.useState)({});
 	const [errors, setErrors] = (0, react.useState)({});
@@ -855,6 +865,8 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 	const [highlight, setHighlight] = (0, react.useState)(0);
 	const pendingCaret = (0, react.useRef)(void 0);
 	const [dialog, setDialog] = (0, react.useState)(void 0);
+	const [modelsOpen, setModelsOpen] = (0, react.useState)(false);
+	const [drawer, setDrawer] = (0, react.useState)(void 0);
 	const [newRoom, setNewRoom] = (0, react.useState)(void 0);
 	const [roomError, setRoomError] = (0, react.useState)(void 0);
 	const [memberError, setMemberError] = (0, react.useState)(void 0);
@@ -906,6 +918,7 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 		setDraft(next.text, next.caret);
 	};
 	const pickFromList = (member) => {
+		setDrawer(void 0);
 		const next = insertMention(draft, caret, member);
 		setDraft(next.text, next.caret);
 	};
@@ -993,9 +1006,17 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 	};
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 		className: ChannelsPage_module_default.page,
+		onKeyDown: (event) => {
+			if (event.key === "Escape") setDrawer(void 0);
+		},
 		children: [
+			drawer !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				className: ChannelsPage_module_default.drawerBackdrop,
+				"aria-label": t("closeDrawer"),
+				onClick: () => setDrawer(void 0)
+			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("nav", {
-				className: ChannelsPage_module_default.rooms,
+				className: drawer === "rooms" ? `${ChannelsPage_module_default.rooms} ${ChannelsPage_module_default.drawerOpen}` : ChannelsPage_module_default.rooms,
 				"aria-label": t("rooms"),
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1050,6 +1071,7 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 						"aria-current": r.id === state.roomId,
 						onClick: () => {
 							stickRef.current = true;
+							setDrawer(void 0);
 							selectRoom(r.id);
 						},
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -1065,11 +1087,33 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 						className: ChannelsPage_module_default.chatHead,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: ChannelsPage_module_default.hash,
-							"aria-hidden": true,
-							children: "#"
-						}), room?.name]
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: ChannelsPage_module_default.mobileButton,
+								"aria-label": t("showRooms"),
+								"aria-expanded": drawer === "rooms",
+								onClick: () => setDrawer(drawer === "rooms" ? void 0 : "rooms"),
+								children: "☰"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: ChannelsPage_module_default.hash,
+								"aria-hidden": true,
+								children: "#"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: ChannelsPage_module_default.roomName,
+								children: room?.name
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: ChannelsPage_module_default.mobileButton,
+								"aria-label": t("showMembers"),
+								"aria-expanded": drawer === "members",
+								onClick: () => setDrawer(drawer === "members" ? void 0 : "members"),
+								children: t("membersButton")
+							})
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						ref: logRef,
@@ -1086,7 +1130,11 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 						}) : state.messages.map((m) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(MessageRow, {
 							message: m,
 							member: byId.get(m.author),
-							t
+							t,
+							openModelSettings,
+							onConfigure: () => {
+								setModelsOpen(true);
+							}
 						}, m.id))
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -1134,7 +1182,7 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 														id: m.id,
 														name: m.name,
 														small: true
-													}), m.online && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: ChannelsPage_module_default.presence })]
+													}), m.online && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: m.error ? `${ChannelsPage_module_default.presence} ${ChannelsPage_module_default.errorPresence}` : ChannelsPage_module_default.presence })]
 												}),
 												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 													className: ChannelsPage_module_default.mentionName,
@@ -1147,7 +1195,7 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 												}),
 												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 													className: ChannelsPage_module_default.mentionMeta,
-													children: busy.has(m.id) ? t("working") : m.online ? `@${m.id}` : t("offline")
+													children: m.error ? t("memberFailed") : busy.has(m.id) ? t("working") : m.online ? `@${m.id}` : t("offline")
 												})
 											]
 										}, m.id))
@@ -1201,12 +1249,13 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 				]
 			}),
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
-				className: ChannelsPage_module_default.members,
+				className: drawer === "members" ? `${ChannelsPage_module_default.members} ${ChannelsPage_module_default.drawerOpen}` : ChannelsPage_module_default.members,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 						type: "button",
 						className: ChannelsPage_module_default.addMemberButton,
 						onClick: () => {
+							setDrawer(void 0);
 							setDialog(null);
 						},
 						children: ["+ ", t("addMember")]
@@ -1236,6 +1285,31 @@ function ChannelsPage({ useChannels, selectRoom, send, createRoom, listModels, l
 					})
 				]
 			}),
+			modelsOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: ChannelsPage_module_default.dialogBackdrop,
+				onClick: () => {
+					setModelsOpen(false);
+				},
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+					className: ChannelsPage_module_default.dialog,
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-label": t("configureModel"),
+					onClick: (event) => {
+						event.stopPropagation();
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: ChannelsPage_module_default.secondaryButton,
+						onClick: () => {
+							setModelsOpen(false);
+						},
+						children: t("close")
+					}), renderSlot("settings.section", { close: () => {
+						setModelsOpen(false);
+					} }, { only: "models" })]
+				})
+			}),
 			dialog !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(MemberDialog, {
 				member: dialog ?? void 0,
 				listModels,
@@ -1256,13 +1330,20 @@ const NS = "discord-channels";
 /** Simplified Chinese dictionary and key source. */
 const zh = {
 	panel: "频道",
+	configureModel: "去配置模型",
+	memberFailed: "出错",
+	showRooms: "打开频道列表",
+	showMembers: "打开成员列表",
+	closeDrawer: "关闭列表",
+	membersButton: "成员",
 	rooms: "文字频道",
 	agents: "Agent — {count}",
 	humans: "真人 — {count}",
 	online: "在线",
+	close: "关闭",
 	offline: "离线",
-	working: "正在处理…",
-	workingList: "{names} 正在处理…",
+	working: "忙",
+	workingList: "{names} 正在输入…",
 	kindDsh: "DSH",
 	kindBot: "Agent",
 	kindClaude: "Claude Code",
@@ -1308,13 +1389,20 @@ const zh = {
 /** English dictionary. */
 const en = {
 	panel: "Channels",
+	configureModel: "Configure model",
+	memberFailed: "Error",
+	showRooms: "Open channels",
+	showMembers: "Open members",
+	closeDrawer: "Close list",
+	membersButton: "Members",
 	rooms: "Text channels",
 	agents: "Agents — {count}",
 	humans: "People — {count}",
 	online: "Online",
+	close: "Close",
 	offline: "Offline",
-	working: "Working…",
-	workingList: "{names} working…",
+	working: "Busy",
+	workingList: "{names} typing…",
 	kindDsh: "DSH",
 	kindBot: "Agent",
 	kindClaude: "Claude Code",
@@ -1393,7 +1481,11 @@ function apply(ctx) {
 			name: "main",
 			key: PANEL_ID,
 			locale: NS,
-			inject: injected
+			inject: injected,
+			children: { "settings.section": {
+				kind: "list",
+				scope: "root"
+			} }
 		}, ChannelsPage);
 		if (location.hash === `#${PANEL_ID}`) ctx.layout.selectPanel(PANEL_ID);
 		return dispose;

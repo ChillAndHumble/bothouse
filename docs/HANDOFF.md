@@ -1,3 +1,5 @@
+2026-10-23：feat/dsh-ux-chat 在 f8f57ac 上补频道成员错误提示、红色出错状态、模型设置入口、正在输入与忙状态；collab node --test 通过。用户限时交回：手机抽屉、截图及浏览器设置入口验证未完成，图片和回复引用记入 README 路线图。保留 layout 深链注入；未部署。
+
 # 共栖当前交接
 
 2026-10-23：Issue #52，分支 feat/wizard-theme。安装向导增加白底蓝紫强调色的明亮风格，保留黑底荧光绿深色；右上角按钮通过 cc_theme 记住用户选择。Setup 隐藏管理侧栏，新增品牌欢迎区与圆角卡片。前端 lint、7 项 Vitest、构建与沙箱 Go 全量（49 个包）通过；临时 HOME=/tmp/themetest 下构建二进制的真实向导通过 Chromium 桌面/手机检查。截图、配色 wiki 行号和验证说明见 [wizard-theme](verification/wizard-theme.md)，draft PR 与最终验证结果记录在 /tmp/theme/result.md。单一 Agent 实现与自查，未部署、未合并，没有操作发布目录。

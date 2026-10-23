@@ -5,7 +5,7 @@ import { Store } from './store.mjs';
 import { Hub } from './hub.mjs';
 import { forDisplay, forMember, mentions, nameCalled } from './mentions.mjs';
 import { CloudWebGateway, CAPABILITIES, progressCard, PROGRESS_PREFIX } from './cloudweb.mjs';
-import { DshMembers, finalText, describeReason } from './dsh-member.mjs';
+import { DshMembers, finalText, describeReason, friendlyFailure } from './dsh-member.mjs';
 import { resolveConfig } from './plugin.mjs';
 import { Roster } from './roster.mjs';
 import { promptText } from './dsh-member.mjs';
@@ -336,6 +336,8 @@ test('DSH member: a failed admission reports the error and leaves no stale watch
   const last = hub.store.page(1, undefined, 1)[0];
   assert.equal(last.author_kind, 'system');
   assert.match(last.text, /inbox closed/);
+  assert.match(hub.memberView().find(m => m.id === 'ds').error, /inbox closed/);
+  assert.equal(JSON.parse(last.card).action, 'configure-model');
   assert.equal(hub.thinking.get(1).has('ds'), false);
 });
 
@@ -691,4 +693,33 @@ test('roster: wizard roles are imported once, existing names skipped', async () 
   assert.equal(existsSync(file), false);
   assert.equal(existsSync(join(dir, 'wizard-members.imported.json')), true);
   assert.deepEqual(await roster.importWizard(file), []);
+});
+
+
+test('member failure publishes actionable error and clears it on retry', () => {
+  const hub = makeHub();
+  const members = fakeDsh().attach(hub, [{ id: 'ds', name: 'DeepSeek' }]);
+  const trigger = hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: 'hello' }).message;
+  const job = hub.store.addJob('ds', 1, trigger.id);
+  members.fail(job.id, 'No API key configured');
+  assert.match(hub.memberView().find(m => m.id === 'ds').error, /没有配置.*Key/);
+  assert.equal(hub.memberView().find(m => m.id === 'ds').online, false);
+  const notice = hub.store.page(1, undefined, 1)[0];
+  assert.equal(JSON.parse(notice.card).action, 'configure-model');
+  hub.setThinking(1, 'ds', true);
+  assert.equal(hub.memberView().find(m => m.id === 'ds').error, undefined);
+});
+
+test('member errors explain setup failures and publish error presence', () => {
+  assert.match(friendlyFailure('no API key configured'), /API Key/);
+  assert.match(friendlyFailure('model not found'), /模型暂时不可用/);
+  assert.match(friendlyFailure('CLI login required'), /登录/);
+  assert.match(friendlyFailure('process exited 1'), /CLI/);
+  assert.match(friendlyFailure('inbox closed'), /原始错误：inbox closed/);
+  const hub = makeHub();
+  hub.setMember({ id: 'ds', name: 'DeepSeek', kind: 'dsh', online: true });
+  hub.setError('ds', 'missing key');
+  assert.equal(hub.memberView().find(m => m.id === 'ds').error, 'missing key');
+  hub.setError('ds', undefined);
+  assert.equal(hub.memberView().find(m => m.id === 'ds').error, undefined);
 });
