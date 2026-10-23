@@ -236,7 +236,7 @@ SWITCH = os.path.join(".claude", "conest-hooks.json")
 
 def hook_names():
     return sorted(f[:-3] for f in os.listdir(HERE)
-                  if f.endswith(".py") and f not in ("run.py", "doc-ok.py", "dshlog.py", "ctxsvc.py", "wiki_search.py")
+                  if f.endswith(".py") and f not in ("run.py", "doc-ok.py", "dshlog.py", "dsh-cc-compat.py", "lessons.py", "ctxsvc.py", "wiki_search.py")
                   and not f.startswith("test_"))
 
 
@@ -357,7 +357,7 @@ def main():
     if "all" in off or name in off:
         sys.exit(0)  # switched off for this role (run.py off): pass without running the hook
     tool = payload.get("tool_name")
-    dsh = isinstance(tool, str) and (tool in NAMES or tool == "str_replace_editor")
+    dsh = isinstance(tool, str) and (tool in NAMES or tool in ("str_replace_editor", "job_output"))
     if dsh:
         payload["tool_name"], payload["tool_input"] = tool_input(tool, payload.get("tool_input"))
     stop = payload.get("hook_event_name") == "Stop"
@@ -376,6 +376,17 @@ def main():
         sys.stderr.write(f"dispatch-review-guard: DSH session log not found under {dsh_home()}/sessions, "
                          "main-session edit check skipped\n")
         payload["agent_id"] = payload.get("session_id") or "unknown"
+
+    if dsh or OPTS["dsh_global"]:
+        payload["dsh"] = True
+        if path and payload.get("hook_event_name") == "PreToolUse":
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("dsh_compat", os.path.join(HERE, "dsh-cc-compat.py"))
+            compat = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(compat)
+            lines = read_lines(path)
+            payload["dsh_busy"] = compat.busy(lines)
+            payload["dsh_turn"] = dict(compat.turn_calls(lines), sub=sub)
 
     tmp, turn, sid = None, None, payload.get("session_id") or ""
     if stop and path:

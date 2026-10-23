@@ -98,4 +98,4 @@ python3 -I bridge/contrib/hooks/test_promise_guard.py    # promise-guard 的句�
 cd bridge && go test -tags no_web ./core -run 'TestAgentHooks|TestWithHookRules|TestApplyWizardNewClaudeRoleGetsHooks'
 ```
 
-`test_promise_guard.py` 里有两条和时钟、本机 `~/.bothouse/crons/jobs.json` 有关（`test_day_outing_next_passes`、`test_repeat_of_earlier_timer_passes`），换了机器或时间可能失败，所以没进 CI。
+`test_promise_guard.py` 用固定时钟、临时 HOME 和定时任务夹具。新增 `test_bash_guard_nowait.py`、`test_bash_guard_speed.py` 可直接通过 python3 -I 运行；只把命令作为 hook 输入，不执行被测 shell 命令。DSH 辅助文件不单独注册，既有 run.py 复用它的会话字段读取。

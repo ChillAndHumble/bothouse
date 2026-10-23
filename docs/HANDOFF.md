@@ -719,3 +719,9 @@ PR #10只补充工作流文档、PR模板及仓库设置，已合并；Issue #3�
 - 明确接纳失败的503带 submission=not_sent；companion 按此证据提示未发送，普通503/丢失确认仍只查回执。存储故障不能证明历史请求未发送，不带该标记。
 - ACP合成协议与启动失败测试先红后绿；竞态/CUJ通过，companion476通过/3跳过。Go全量/vet/build见PR最新验证记录。真实CLI、设备、频道未测试。
 - #135旧产物与校验和保留，#139依旧草稿；早上需重新构建匹配服务，夜间未部署、未重启、未刷板。
+
+## 2026-10-23：本机 hook 同步（Issue #59）
+
+同步前台等待、DSH sleep/轮询/只读查询规则、教训表提示、派活拒绝说明和承诺回放测试。保留 HOOK_PROXY/GATE_WIKI/HOOK_RESEARCHER_DIRS 等通用配置；DSH 辅助文件复用随包日志读取器，既有 run.py 接入会话字段并保留角色开关与 Stop 处理，不另注册兼容 hook。bash-guard matcher 增加 job_output。研究派活按已配置目录要求 researcher，未扩大为所有目录。测试夹具不读取作者定时任务。
+
+Python 等待回归：main 的 bash-guard 对 18 个应拦案例放行，更新后通过。验证日志见 /tmp/hooksync；本分支仅实现与自查，draft PR 待独立验收，未部署。

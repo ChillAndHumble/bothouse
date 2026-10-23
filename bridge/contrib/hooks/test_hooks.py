@@ -245,9 +245,8 @@ class Hooks(unittest.TestCase):
 
     def test_wiki_ingest_passes(self):
         # the wiki's ingest in DSH (cwd <role>/wiki/.ingest-work): the role's hooks must not refuse its scratch writes
-        # the role sits outside dispatch-review-guard's free dirs (/tmp, /private/tmp, ~/.claude), as a real role does:
-        # on Linux mkdtemp is under /tmp, where every write passes anyway and the "refused without the flag" half
-        # failed (CI on main 6ae16ce). The real home (not the test's HOME) is never a free dir; removed below.
+        # Only the payload file_path is outside free dirs. The test never writes it;
+        # all real fixtures stay under the caller's isolated HOME, including /tmp.
         base = tempfile.mkdtemp(prefix=".conest-test-ingest-", dir=os.path.expanduser("~"))
         role = os.path.join(base, "ingestrole")
         work = os.path.join(role, "wiki", ".ingest-work")
@@ -257,7 +256,7 @@ class Hooks(unittest.TestCase):
             json.dump({role: {"hooks": ["dispatch-review-guard"], "dsh_home": self.env["DSH_HOME"]}}, f)
         self.session("ingest1", [], compress=False)
         p = {"hook_event_name": "PreToolUse", "session_id": "ingest1", "transcript_path": "", "tool_name": "write",
-             "cwd": work, "tool_input": {"file_path": os.path.join(work, "draft.md"), "content": "x"}}
+             "cwd": work, "tool_input": {"file_path": "/work/ingest/draft.md", "content": "x"}}
         try:
             def run(env):
                 return subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "--conest-hook",
@@ -284,6 +283,33 @@ class Hooks(unittest.TestCase):
         self.assertIn("infra/vps.md", out)
         self.assertEqual(self.run_hook("wiki-context", p, env), "")  # same page, same session: once
         self.assertEqual(self.run_hook("wiki-context", dict(p, session_id="w2"), dict(env, CC_PROJECT="bot")), "")
+
+
+    def test_new_wait_rules_through_installed_runner(self):
+        for tool, command, blocked in (("Bash", "sleep 60", True), ("Bash", "sleep 5", False),
+                                       ("bash", "sleep 5", True)):
+            payload = {"hook_event_name": "PreToolUse", "tool_name": tool,
+                       "tool_input": {"command": command}, "transcript_path": ""}
+            self.assertEqual(self.denied(self.run_hook("bash-guard", payload)), blocked)
+
+    def test_lessons_without_wiki_search_hit(self):
+        wiki = os.path.join(self.tmp, "lessons-wiki")
+        os.makedirs(wiki, exist_ok=True)
+        with open(os.path.join(wiki, "rule-candidates-recurrence.md"), "w") as f:
+            f.write("## 关键事实\n- 先核事实：3 次\n  - 10-22 abcdef12「先核实再回复」\n")
+        env = dict(self.env, GATE_WIKI=wiki)
+        p = {"hook_event_name": "UserPromptSubmit", "session_id": "lessons-test", "prompt": "hello"}
+        self.assertIn("教训表", self.run_hook("wiki-context", p, env))
+        self.assertEqual(self.run_hook("wiki-context", p, env), "")
+        self.assertEqual(self.run_hook("wiki-context", dict(p, session_id="ingest"), dict(env, WIKI_INGEST="1")), "")
+
+    def test_research_dispatch_keeps_configurable_directory(self):
+        p = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": "/project",
+             "tool_input": {"prompt": "【免审:调研】查官方说明"}, "transcript_path": "/missing"}
+        env = dict(self.env, HOOK_RESEARCHER_DIRS="/project")
+        self.assertTrue(self.denied(self.run_hook("dispatch-review-guard", p, env)))
+        p["tool_input"]["subagent_type"] = "researcher"
+        self.assertEqual(self.run_hook("dispatch-review-guard", p, env), "")
 
 
 if __name__ == "__main__":

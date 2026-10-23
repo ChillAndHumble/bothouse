@@ -91,7 +91,7 @@ func TestAgentHooksOnOffKeepsUserContent(t *testing.T) {
 	if !strings.Contains(string(b), "my-own-hook") || !strings.Contains(string(b), `"model": "opus"`) {
 		t.Fatalf("user content lost:\n%s", b)
 	}
-	if !strings.Contains(string(b), `"matcher": "Bash|bash"`) {
+	if !strings.Contains(string(b), `"matcher": "Bash|bash|job_output"`) {
 		t.Fatalf("bash-guard must match both CLIs' tool names:\n%s", b)
 	}
 	p, _ := os.ReadFile(filepath.Join(wd, "CLAUDE.md"))

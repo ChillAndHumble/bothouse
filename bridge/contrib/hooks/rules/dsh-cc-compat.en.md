@@ -1,0 +1,1 @@
+DSH compatibility helper, not a separately registered hook. run.py retains role switches, tool names and Stop conversion, and reuses turn/busy metadata helpers. Session logs use packaged dshlog.py with no author-local dependency. CLI: python3 dsh-cc-compat.py --sessions <DSH_HOME>/sessions <hook.py>.

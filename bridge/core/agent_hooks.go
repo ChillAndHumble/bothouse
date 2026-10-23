@@ -39,7 +39,7 @@ type agentHook struct {
 // …; dsh-base/cordis.patch.yml). Both match a word-and-pipe pattern exactly (dsh-hook-protocol matchesMatcher).
 // Timeouts follow the author's own hooks.json / settings.json for these hooks.
 var agentHooks = []agentHook{
-	{"bash-guard", "PreToolUse", "Bash|bash", 10},
+	{"bash-guard", "PreToolUse", "Bash|bash|job_output", 10},
 	{"param-source-guard", "PreToolUse", "Edit|Write|MultiEdit|edit|write|str_replace_editor", 10},
 	{"dispatch-review-guard", "PreToolUse",
 		"Agent|Task|Edit|Write|MultiEdit|NotebookEdit|subagent|subagent_fork|workflow|edit|write|str_replace_editor", 10},
