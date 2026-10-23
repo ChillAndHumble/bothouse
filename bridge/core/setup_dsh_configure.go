@@ -28,6 +28,7 @@ type DSHMember struct {
 	Name    string `json:"name"`
 	CLI     string `json:"cli,omitempty"` // claude | codex | gemini (collab roster.mjs CLIS); empty = DSH model
 	Persona string `json:"persona,omitempty"`
+	Avatar  string `json:"avatar,omitempty"`
 }
 
 // DSHConfigureRequest is the body of POST /setup/dsh/configure.
