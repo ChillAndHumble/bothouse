@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { attachSubagentUpdates } from './lifecycle.mjs';
 import { apply } from './apply.mjs';
+import { copyInstallation } from './verify-native.mjs';
+import { pathToFileURL } from 'node:url';
 import { mkdtemp, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,4 +71,17 @@ test('installer validates version/seam before modifying, backs up and is idempot
   assert.equal(await readFile(file + '.before-bothouse-subtasks', 'utf8'), source);
   assert.equal(await apply(pkg), false);
   assert.match(await readFile(file, 'utf8'), /attachSubagentUpdates\(ctx/);
+});
+
+test('verification copy of an installed package retains its imported lifecycle helper', async () => {
+  const source = await mkdtemp(join(tmpdir(), 'bothouse-installed-subtasks-'));
+  await mkdir(join(source, 'lib'));
+  await mkdir(join(source, 'node_modules'));
+  await writeFile(join(source, 'package.json'), JSON.stringify({ type: 'module' }));
+  const entrypoint = '// bothouse: native subagent lifecycle v1\nexport { installed } from "./bothouse-subtasks.mjs";\n';
+  await writeFile(join(source, 'lib/index.js'), entrypoint);
+  await writeFile(join(source, 'lib/bothouse-subtasks.mjs'), 'export const installed = true;\n');
+  const copied = await copyInstallation(source);
+  assert.equal((await import(pathToFileURL(join(copied, 'lib/index.js')))).installed, true);
+  assert.equal(await readFile(join(source, 'lib/index.js'), 'utf8'), entrypoint);
 });
