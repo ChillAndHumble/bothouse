@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -47,7 +48,8 @@ type TaskMemberAssignment struct {
 type TaskMemberGrant struct {
 	TaskID        string `json:"task_id"`
 	MemberID      string `json:"member_id"`
-	ReportCommand string `json:"report_command"`
+	ReportCommand string `json:"report_command,omitempty"`
+	ReportVia     string `json:"report_via,omitempty"` // set when the token goes only to the member's own bot
 	LeadNextSeq   int64  `json:"lead_next_seq"`
 }
 
@@ -85,7 +87,7 @@ func (p *PublicProgress) AssignMember(req TaskMemberAssignment) (*TaskMemberGran
 	}
 	p.transitionMu.Lock()
 	defer p.transitionMu.Unlock()
-	r, key, err := p.lockAssignmentRun(req)
+	r, key, resume, err := p.lockAssignmentRun(req)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +150,11 @@ func (p *PublicProgress) AssignMember(req TaskMemberAssignment) (*TaskMemberGran
 		r.stopped = p.runs[req.Run].stopped
 		r.reportBase = old.LastSeq
 	}
+	if resume {
+		// The lead continued its resume candidate by id before reporting; adopt
+		// it like Report does, so the RESUME_NOTE sequence keeps working.
+		p.runs[req.Run] = r
+	}
 	if p.memberRuns == nil {
 		p.memberRuns = map[string]*taskMemberRun{}
 	}
@@ -169,7 +176,7 @@ func (p *PublicProgress) AssignMember(req TaskMemberAssignment) (*TaskMemberGran
 // Caller holds transitionMu. Explicit ids may adopt a closed, resumable card;
 // a batch always starts fresh, even after ordinary progress continued an old
 // card. Ownership is published only after the assignment is durably saved.
-func (p *PublicProgress) lockAssignmentRun(req TaskMemberAssignment) (*publicRun, string, error) {
+func (p *PublicProgress) lockAssignmentRun(req TaskMemberAssignment) (*publicRun, string, bool, error) {
 	p.mu.Lock()
 	source := p.runs[req.Run]
 	key := "batch:" + req.BatchID
@@ -190,19 +197,19 @@ func (p *PublicProgress) lockAssignmentRun(req TaskMemberAssignment) (*publicRun
 	}
 	p.mu.Unlock()
 	if source == nil {
-		return nil, key, errors.New("only the lead's active run may assign members")
+		return nil, key, false, errors.New("only the lead's active run may assign members")
 	}
 	source.mu.Lock()
 	if source.record.Closed || source.record.Accepted || source.record.Task.SessionKey != req.SessionKey || (source.stopped != nil && source.stopped()) {
 		source.mu.Unlock()
-		return nil, key, errors.New("task is not active for this run and session")
+		return nil, key, false, errors.New("task is not active for this run and session")
 	}
 	if req.TaskID == source.record.Task.ID && source.record.Task.Seq > 0 {
 		if IsTerminalState(source.record.Task.State) {
 			source.mu.Unlock()
-			return nil, key, errors.New("task is terminal")
+			return nil, key, false, errors.New("task is terminal")
 		}
-		return source, key, nil
+		return source, key, false, nil
 	}
 	if target == nil && req.TaskID == "" {
 		t := source.record.Task
@@ -210,26 +217,66 @@ func (p *PublicProgress) lockAssignmentRun(req TaskMemberAssignment) (*publicRun
 		target = &publicRun{publisher: source.publisher, stopped: source.stopped, record: progressRecord{Platform: source.record.Platform, Lang: source.record.Lang, Reports: map[int64]string{}, Task: &Task{ID: "task-" + randomProgressID(8), SessionKey: req.SessionKey, ChannelID: t.ChannelID, Origin: t.Origin}}}
 		owned = true
 	}
+	resume := req.TaskID != "" && target != nil && target == source.candidate && source.record.Task.Seq == 0
 	source.mu.Unlock()
 	if target == nil {
-		return nil, key, errors.New("unknown task")
+		return nil, key, false, errors.New("unknown task")
 	}
 	target.mu.Lock()
 	if target.record.Task.SessionKey != req.SessionKey || target.record.Accepted || IsTerminalState(target.record.Task.State) ||
 		(!owned && (!target.record.Closed || !resumableTask(target.record.Task, target.record.Accepted, time.Now()))) {
 		target.mu.Unlock()
-		return nil, key, errors.New("task is not active for this run and session")
+		return nil, key, false, errors.New("task is not active for this run and session")
 	}
-	return target, key, nil
+	return target, key, resume, nil
 }
 
+// A member bound to another bot publishes under that bot's account, so its
+// report token is a credential for that identity: it is never returned to the
+// creator, only placed in the task relay prompt that bot itself receives.
 func (p *PublicProgress) memberGrant(g *taskMemberRun) *TaskMemberGrant {
+	grant := &TaskMemberGrant{TaskID: g.r.record.Task.ID, MemberID: g.id, LeadNextSeq: g.leadNextSeq}
+	if g.assignment.ReporterProject != p.project {
+		grant.ReportVia = "task relay to " + g.assignment.ReporterProject
+		return grant
+	}
+	grant.ReportCommand = p.memberReportCommand(g)
+	return grant
+}
+
+func (p *PublicProgress) memberReportCommand(g *taskMemberRun) string {
 	command := "bothouse"
 	if path, err := os.Executable(); err == nil {
 		command = path
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
-	return &TaskMemberGrant{TaskID: g.r.record.Task.ID, MemberID: g.id, LeadNextSeq: g.leadNextSeq, ReportCommand: quote(command) + " progress --project " + quote(p.project) + " --session " + quote(g.assignment.SessionKey) + " --data-dir " + quote(p.dataDir) + " --run " + g.token}
+	return quote(command) + " progress --project " + quote(p.project) + " --session " + quote(g.assignment.SessionKey) + " --data-dir " + quote(p.dataDir) + " --run " + g.token
+}
+
+// relayMemberCommands returns report commands for live members of r owned by
+// project, for inclusion only in a task relay delivered to that project.
+func (p *PublicProgress) relayMemberCommands(r *publicRun, project string) []string {
+	if project == p.project {
+		return nil
+	}
+	p.mu.Lock()
+	var grants []*taskMemberRun
+	for _, g := range p.memberRuns {
+		if g.r == r && g.assignment.ReporterProject == project {
+			grants = append(grants, g)
+		}
+	}
+	p.mu.Unlock()
+	sort.Slice(grants, func(i, j int) bool { return grants[i].id < grants[j].id })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []string
+	for _, g := range grants {
+		if i := memberIndex(r.record.Task, g.id); i >= 0 && r.record.Task.Members[i].Live() {
+			out = append(out, "member "+g.id+" ("+r.record.Task.Members[i].Name+"): "+p.memberReportCommand(g))
+		}
+	}
+	return out
 }
 
 // Member updates change the card without overwriting the lead's overall status.
@@ -244,8 +291,11 @@ func (p *PublicProgress) reportMember(g *taskMemberRun, req PublicProgressReques
 	r := g.r
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Not gated on r.stopped(): the lead's turn ending (idle timeout, recycle,
+	// stop) must not orphan members. The grant itself is the lifetime; it is
+	// revoked on terminal state, acceptance and restart.
 	if req.SessionKey != g.assignment.SessionKey || (req.TaskID != "" && req.TaskID != r.record.Task.ID) || r.record.Accepted ||
-		IsTerminalState(r.record.Task.State) || (r.stopped != nil && r.stopped()) {
+		IsTerminalState(r.record.Task.State) {
 		return "", errors.New("member report is not active for this task and session")
 	}
 	b, _ := json.Marshal(req)
