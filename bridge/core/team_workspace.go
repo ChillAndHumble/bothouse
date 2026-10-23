@@ -1,10 +1,11 @@
 package core
 
-// Team mode D (Discord side): every chat channel of the team lead gets a 「工作区1」
-// channel in the same category, so the chat channel stays free for talking with the
-// user while big work moves to a workspace. More workspaces (「工作区n+1」) are only
-// created on request — by the lead or by the role doing the work (POST
-// /team/workspace/new, `bothouse workspace new`), never automatically.
+// Team mode D: a chat channel of the team lead gets workspace channels in the same
+// category, so the chat channel stays free for talking with the user while big work moves
+// to a workspace. Workspaces are only created on request — by the lead or by the role doing
+// the work (POST /team/workspace/new, `bothouse workspace new`), never automatically: the
+// first request makes 「工作区1」, later ones 「工作区n+1」 (team mode E, user 2026-10-24 on
+// creating 工作区1 when the lead first sees a channel:「先不用，干活了再建」).
 //
 // Source: user 2026-10-24 00:50「默认给我们频道建立工作区1，我们预期是一个频道管理全部工作……
 // 如果工作区1频道繁忙的话，在聊天的频道会新建工作区n+1去分配工作……这个由工作角色或者主角色决定」;
@@ -39,16 +40,19 @@ type TeamChannel struct {
 var ErrNotTeamChannel = errors.New("not a guild text channel")
 
 // ErrTeamWorkspacePermanent marks a platform error that retrying will not fix (Discord 4xx
-// other than 429: no Manage Channels permission, channel deleted). The chat is then not
+// other than 429: no Manage Channels permission, channel deleted; Feishu: no im:chat). Each
+// platform maps its own errors to it. The chat is then not
 // retried until restart (code review of PR #135, item 2: no request flood per message).
 var ErrTeamWorkspacePermanent = errors.New("permanent platform error")
 
-// ErrTeamWorkspaceNotLeadChat: "new" was asked for a channel that is not a Discord chat
-// channel of the team lead (code review of PR #135, item 3).
-var ErrTeamWorkspaceNotLeadChat = errors.New("not a discord chat channel of the team lead")
+// ErrTeamWorkspaceNotLeadChat: "new" was asked for a channel that is not a chat channel of
+// the team lead on a platform with workspaces (code review of PR #135, item 3).
+var ErrTeamWorkspaceNotLeadChat = errors.New("not a chat channel of the team lead on a platform with workspaces")
 
-// TeamWorkspaceChannels is implemented by platforms that can create workspace
-// channels (only Discord for now).
+// TeamWorkspaceChannels is implemented by platforms that can create workspace channels
+// (Discord, Feishu, cloud_web; team mode E, user 01:26「应该支持我们现有的dsh，discord，飞书，
+// 自建平台」). Naming, n+1, backfill, the on/off switch and the lead check stay in core; the
+// platform of a chat is the first segment of its session key ("<platform>:<id>").
 type TeamWorkspaceChannels interface {
 	// TeamGuildChannels returns channelID itself and every text channel of its guild.
 	// It returns ErrNotTeamChannel (wrapped) when channelID is not a guild text channel.
@@ -61,7 +65,9 @@ type TeamWorkspaceChannels interface {
 const (
 	teamWorkspaceFile   = "team_workspaces.json"
 	teamWorkspacePrefix = "工作区" // naming 「工作区n」: user 00:50「工作区1」「工作区n+1」
-	teamWorkspacePlat   = "discord"
+	// teamWorkspaceBarePlat is the platform of a bare channel ID (no "<platform>:"), the
+	// form team mode D's API and the unified exit already accept for Discord.
+	teamWorkspaceBarePlat = "discord"
 )
 
 // 「工作区」 without a number is the name the old ws-handoff script used. A second chat channel in
@@ -69,12 +75,6 @@ const (
 // 「<chat channel name>-工作区n」 instead, so two channels never share a workspace name
 // (PM decision 2026-10-24 on team mode D, item 4: avoid same-name confusion).
 var teamWorkspaceName = regexp.MustCompile(`^(?:(.+)-)?` + teamWorkspacePrefix + `(\d*)$`)
-
-// Retry while the platform is still connecting at start (same bound as the board retirement).
-var (
-	teamWorkspaceStartTries = 30
-	teamWorkspaceStartEvery = 10 * time.Second
-)
 
 // TeamWorkspace is one workspace channel of a chat channel.
 type TeamWorkspace struct {
@@ -84,13 +84,18 @@ type TeamWorkspace struct {
 }
 
 type teamWorkspaceState struct {
-	// Parents: "discord:<chat channel id>" → its workspaces in creation order.
+	// Parents: "<platform>:<chat channel id>" → its workspaces in creation order.
 	Parents map[string][]TeamWorkspace `json:"parents"`
 }
 
 type teamWorkspaces struct {
-	mu   sync.Mutex
-	seen map[string]bool // chat keys handled since start (ensured or not eligible)
+	mu       sync.Mutex
+	inflight map[string]bool  // chat keys with an operation running (one per chat at a time)
+	failed   map[string]error // chat keys with a permanent platform error, not retried until restart
+}
+
+func newTeamWorkspaces() *teamWorkspaces {
+	return &teamWorkspaces{inflight: map[string]bool{}, failed: map[string]error{}}
 }
 
 // teamWorkspaceStore serializes every read/write of the state files of this process.
@@ -135,10 +140,11 @@ func saveTeamWorkspacesLocked(path string, st *teamWorkspaceState) error {
 	return AtomicWriteFile(path, out, 0o600)
 }
 
-// teamChatKey normalizes "discord:123", "discord:123:user" or a bare "123" to "discord:123".
+// teamChatKey normalizes "<platform>:123", "<platform>:123:user" to "<platform>:123" and a
+// bare Discord "123" to "discord:123".
 func teamChatKey(channel string) string {
 	if !strings.Contains(channel, ":") {
-		return teamWorkspacePlat + ":" + channel
+		return teamWorkspaceBarePlat + ":" + channel
 	}
 	return chatOf(channel)
 }
@@ -191,7 +197,7 @@ func (e *Engine) TeamWorkspacesOf(channel string) []TeamWorkspace {
 }
 
 // SetTeamWorkspaces turns team mode D on or off. It only acts on the team lead
-// (team_status_inject); on start it backfills 「工作区1」 for the lead's existing channels.
+// (team_status_inject) and creates nothing by itself.
 func (e *Engine) SetTeamWorkspaces(on bool) {
 	if !on || !e.isTeamLead() {
 		e.teamWS = nil
@@ -200,43 +206,22 @@ func (e *Engine) SetTeamWorkspaces(on bool) {
 	if e.teamWS != nil {
 		return
 	}
-	e.teamWS = &teamWorkspaces{seen: map[string]bool{}}
-	go e.backfillTeamWorkspaces()
+	e.teamWS = newTeamWorkspaces()
 }
 
-func (e *Engine) teamWorkspacePlatform() (TeamWorkspaceChannels, bool) {
-	p, ok := e.platformForName(teamWorkspacePlat).(TeamWorkspaceChannels)
+// teamWorkspacePlatform returns the platform of chat ("<platform>:<id>") when it can have
+// workspaces.
+func (e *Engine) teamWorkspacePlatform(chat string) (TeamWorkspaceChannels, bool) {
+	name, _, found := strings.Cut(chat, ":")
+	if !found || name == "" {
+		return nil, false
+	}
+	p, ok := e.platformForName(name).(TeamWorkspaceChannels)
 	return p, ok
 }
 
-// backfillTeamWorkspaces ensures 「工作区1」 for every Discord channel the lead already has a
-// session in. Channels that fail because the platform is not connected yet are retried.
-func (e *Engine) backfillTeamWorkspaces() {
-	tick := time.NewTicker(teamWorkspaceStartEvery)
-	defer tick.Stop()
-	for try := 0; try < teamWorkspaceStartTries; try++ {
-		if e.teamWS == nil {
-			return
-		}
-		pending := 0
-		for _, chat := range e.teamLeadChats() {
-			if err := e.ensureTeamWorkspace(chat); err != nil {
-				pending++
-				slog.Warn("team workspace: ensure failed, will retry", "chat", chat, "error", err)
-			}
-		}
-		if pending == 0 {
-			return
-		}
-		select {
-		case <-e.ctx.Done():
-			return
-		case <-tick.C:
-		}
-	}
-}
-
-// teamLeadChats lists the distinct Discord chats ("discord:<id>") of the lead's sessions.
+// teamLeadChats lists the distinct chats ("<platform>:<id>") of the lead's sessions on
+// platforms that can have workspaces.
 func (e *Engine) teamLeadChats() []string {
 	if e.sessions == nil {
 		return nil
@@ -244,11 +229,11 @@ func (e *Engine) teamLeadChats() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, k := range e.sessions.UserKeys() {
-		if !strings.HasPrefix(k, teamWorkspacePlat+":") {
+		c := chatOf(k)
+		if seen[c] {
 			continue
 		}
-		c := chatOf(k)
-		if !seen[c] {
+		if _, ok := e.teamWorkspacePlatform(c); ok {
 			seen[c] = true
 			out = append(out, c)
 		}
@@ -269,70 +254,25 @@ func (e *Engine) isTeamLeadChat(chat string) bool {
 	return false
 }
 
-// teamWorkspaceNoteChat ensures 「工作区1」 for a channel the lead sees for the first time.
-func (e *Engine) teamWorkspaceNoteChat(sessionKey string) {
-	ws := e.teamWS
-	if ws == nil || !strings.HasPrefix(sessionKey, teamWorkspacePlat+":") {
-		return
-	}
-	chat := chatOf(sessionKey)
-	ws.mu.Lock()
-	done := ws.seen[chat]
-	ws.mu.Unlock()
-	if done {
-		return
-	}
-	go func() {
-		if err := e.ensureTeamWorkspace(chat); err != nil {
-			slog.Warn("team workspace: ensure failed", "chat", chat, "error", err)
-		}
-	}()
-}
-
-// ensureTeamWorkspace makes sure chat has 「工作区1」. A nil error means done (created,
-// already there, or the channel cannot have workspaces).
-func (e *Engine) ensureTeamWorkspace(chat string) error {
-	ws := e.teamWS
-	if ws == nil {
-		return nil
-	}
-	ws.mu.Lock()
-	if ws.seen[chat] {
-		ws.mu.Unlock()
-		return nil
-	}
-	ws.mu.Unlock()
-	_, created, err := e.teamWorkspaceOp(chat, false)
-	if errors.Is(err, ErrTeamWorkspacePermanent) {
-		slog.Warn("team workspace: permanent failure, not retrying until restart", "chat", chat, "error", err)
-		err = nil
-	}
-	if errors.Is(err, ErrNotTeamChannel) || errors.Is(err, errTeamIsWorkspace) {
-		err = nil
-	}
-	if err != nil {
-		return err
-	}
-	ws.mu.Lock()
-	ws.seen[chat] = true
-	ws.mu.Unlock()
-	if created != nil {
-		slog.Info("team workspace: created", "chat", chat, "name", created.Name, "id", created.ID)
-	}
-	return nil
-}
-
 var teamWorkspaceOpMu sync.Mutex
 
 var errTeamIsWorkspace = errors.New("channel is a workspace")
 
-// NewTeamWorkspace creates the next workspace 「工作区n+1」 of the chat channel of
-// sessionKey. Called from a workspace channel, it adds to that workspace's chat channel.
+// ErrTeamWorkspaceBusy: an operation for the same chat channel is already running.
+var ErrTeamWorkspaceBusy = errors.New("a workspace is already being created for this chat channel")
+
+// NewTeamWorkspace creates the next workspace of the chat channel of sessionKey: 「工作区1」
+// when it has none (or adopts an unclaimed one), else 「工作区n+1」. Called from a workspace
+// channel, it adds to that workspace's chat channel. Only one call per chat channel runs at
+// a time (ErrTeamWorkspaceBusy), and after a permanent platform error the chat is not
+// retried until restart, so the platform's failure note (Feishu) goes out once (code review
+// of PR #139, item 2).
 func (e *Engine) NewTeamWorkspace(sessionKey string) (parent string, w TeamWorkspace, err error) {
-	if e.teamWS == nil {
+	ws := e.teamWS
+	if ws == nil {
 		return "", TeamWorkspace{}, fmt.Errorf("team workspaces are off for project %q (team_workspaces, lead only)", e.name)
 	}
-	if !strings.HasPrefix(sessionKey, teamWorkspacePlat+":") {
+	if _, ok := e.teamWorkspacePlatform(chatOf(sessionKey)); !ok {
 		return "", TeamWorkspace{}, fmt.Errorf("team workspace: session key %q: %w", sessionKey, ErrTeamWorkspaceNotLeadChat)
 	}
 	chat := chatOf(sessionKey)
@@ -342,7 +282,40 @@ func (e *Engine) NewTeamWorkspace(sessionKey string) (parent string, w TeamWorks
 	if !e.isTeamLeadChat(chat) {
 		return chat, TeamWorkspace{}, fmt.Errorf("team workspace: %s: %w", chat, ErrTeamWorkspaceNotLeadChat)
 	}
-	_, created, err := e.teamWorkspaceOp(chat, true)
+	ws.mu.Lock()
+	if ferr := ws.failed[chat]; ferr != nil {
+		ws.mu.Unlock()
+		return chat, TeamWorkspace{}, fmt.Errorf("team workspace: %s: failed earlier, restart to retry: %w", chat, ferr)
+	}
+	if ws.inflight[chat] {
+		ws.mu.Unlock()
+		return chat, TeamWorkspace{}, fmt.Errorf("team workspace: %s: %w", chat, ErrTeamWorkspaceBusy)
+	}
+	ws.inflight[chat] = true
+	ws.mu.Unlock()
+	// Cleared by defer so a panic in platform code (recovered by net/http) does not leave
+	// the chat busy until restart.
+	defer func() {
+		ws.mu.Lock()
+		delete(ws.inflight, chat)
+		ws.mu.Unlock()
+	}()
+	list, created, err := e.teamWorkspaceOp(chat, true)
+	if errors.Is(err, ErrTeamWorkspacePermanent) {
+		ws.mu.Lock()
+		ws.failed[chat] = err
+		ws.mu.Unlock()
+		slog.Warn("team workspace: permanent failure, not retrying until restart", "chat", chat, "error", err)
+	}
+	if err == nil && created == nil {
+		// Adopted an existing unclaimed 「工作区1」: that is the workspace of this first request.
+		for _, x := range list {
+			if teamWorkspaceNum(x.Name) == 1 {
+				return chat, x, nil
+			}
+		}
+		return chat, TeamWorkspace{}, fmt.Errorf("team workspace: %s: nothing created", chat)
+	}
 	if errors.Is(err, errTeamIsWorkspace) {
 		err = fmt.Errorf("team workspace: %s is itself a workspace channel; call this from its chat channel", chat)
 	}
@@ -356,9 +329,9 @@ func (e *Engine) NewTeamWorkspace(sessionKey string) (parent string, w TeamWorks
 // 「工作区1」 (next=false) or creates the next 「工作区n+1」 (next=true). It returns the
 // workspaces after the operation and the one it created (nil if none).
 func (e *Engine) teamWorkspaceOp(chat string, next bool) ([]TeamWorkspace, *TeamWorkspace, error) {
-	plat, ok := e.teamWorkspacePlatform()
+	plat, ok := e.teamWorkspacePlatform(chat)
 	if !ok || e.dataDir == "" {
-		return nil, nil, fmt.Errorf("team workspace: no discord platform or data dir")
+		return nil, nil, fmt.Errorf("team workspace: %s: no platform with workspaces or no data dir", chat)
 	}
 	// One operation at a time, from listing the guild to saving, so two calls never both
 	// create 「工作区1」 or read a guild listing taken before the other's create.
@@ -385,7 +358,7 @@ func (e *Engine) teamWorkspaceOp(chat string, next bool) ([]TeamWorkspace, *Team
 	if name == "" {
 		return list, nil, nil
 	}
-	// The Discord request runs without teamWorkspaceStore.mu, so WorkspaceParent (reply path,
+	// The platform request runs without teamWorkspaceStore.mu, so WorkspaceParent (reply path,
 	// team mode C) never waits on the network; teamWorkspaceOpMu keeps operations serial.
 	c, err := plat.CreateTeamWorkspaceChannel(ctx, self.ID, name)
 	if err != nil {
@@ -420,8 +393,13 @@ func teamWorkspacePlan(path, chat string, self TeamChannel, guild []TeamChannel,
 	defer teamWorkspaceStore.mu.Unlock()
 	st := loadTeamWorkspacesLocked(path)
 
+	// Channel IDs are only unique within a platform, so only this platform's records count.
+	plat, _, _ := strings.Cut(chat, ":")
 	claimed := map[string]string{} // workspace id → parent chat
 	for parent, list := range st.Parents {
+		if p, _, _ := strings.Cut(parent, ":"); p != plat {
+			continue
+		}
 		for _, w := range list {
 			claimed[w.ID] = parent
 		}
@@ -471,8 +449,9 @@ func teamWorkspacePlan(path, chat string, self TeamChannel, guild []TeamChannel,
 		}
 	}
 	// Adopt an unclaimed 「工作区1」 (with this chat's prefix) already in the same category
-	// (e.g. made by ws-handoff).
-	if !hasNum(1) {
+	// (e.g. made by ws-handoff); adopting counts as this request's workspace.
+	had1 := hasNum(1)
+	if !had1 {
 		for _, c := range guild {
 			p, n := teamWorkspaceNameParts(c.Name)
 			if c.ParentID == self.ParentID && c.ID != self.ID && claimed[c.ID] == "" && n == 1 && p == prefix {
@@ -487,7 +466,7 @@ func teamWorkspacePlan(path, chat string, self TeamChannel, guild []TeamChannel,
 	switch {
 	case !hasNum(1):
 		name = prefix + teamWorkspacePrefix + "1"
-	case next:
+	case next && had1:
 		// n+1 over this chat's workspaces and every same-prefix 「工作区n」 in the category,
 		// so names don't clash.
 		top := 0
