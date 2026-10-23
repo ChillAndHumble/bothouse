@@ -52,8 +52,8 @@ export class Hub {
   }
 
   memberView() {
-    return this.memberList().map(({ id, name, kind, online, model, cli, persona, source }) => ({
-      id, name, kind, online: online !== false,
+    return this.memberList().map(({ id, name, kind, online, model, cli, persona, avatar, source }) => ({
+      id, name, kind, online: online !== false, ...(avatar ? { avatar } : {}),
       ...(kind === 'dsh' ? { model: model ?? null, ...(cli ? { cli } : {}), persona: persona ?? '', editable: source === 'ui' } : {}),
     }));
   }

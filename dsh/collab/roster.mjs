@@ -3,6 +3,7 @@
 // unique across every channel member (DSH members and cc-connect bots alike)
 // because @-mentions are matched by name.
 import { CollabError } from './store.mjs';
+import { checkAvatar } from './avatars.mjs';
 
 const MAX_NAME = 32;
 const MAX_PERSONA = 4000;
@@ -19,6 +20,7 @@ export function rowToMember(row) {
     ...(row.provider && row.model ? { model: { provider: row.provider, model: row.model } } : {}),
     ...(row.cli ? { cli: row.cli } : {}),
     persona: row.persona ?? '',
+    ...(row.avatar ? { avatar: row.avatar } : {}),
     source: row.source,
   };
 }
@@ -93,11 +95,13 @@ export class Roster {
     if (clash !== undefined) throw new CollabError('conflict', `name ${name} is already used by ${clash.name}`);
     const persona = String(input?.persona ?? '');
     if (persona.length > MAX_PERSONA) throw new CollabError('invalid', `persona exceeds ${MAX_PERSONA} characters`);
+    let avatar;
+    try { avatar = checkAvatar(input?.avatar); } catch (error) { throw new CollabError('invalid', error.message); }
     if (input?.cli != null) {
       // A local CLI member brings its own model; no provider route to check.
       const cli = String(input.cli);
       if (!CLIS.includes(cli)) throw new CollabError('invalid', `cli must be one of ${CLIS.join(', ')}`);
-      return { name, persona, cli };
+      return { name, persona, avatar, cli };
     }
     let model;
     if (input?.model != null) {
@@ -113,7 +117,7 @@ export class Roster {
       }
       model = { provider, model: id };
     }
-    return { name, persona, ...(model === undefined ? {} : { model }) };
+    return { name, persona, avatar, ...(model === undefined ? {} : { model }) };
   }
 
   /** A stable, unused member id derived from the name (ASCII) or a short random suffix. */

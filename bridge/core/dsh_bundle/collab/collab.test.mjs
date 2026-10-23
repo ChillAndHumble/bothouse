@@ -647,10 +647,10 @@ test('store: a v3 database gains the cli column and keeps its members', async ()
   const path = join(mkdtempSync(join(tmpdir(), 'collab-')), 'v3.sqlite3');
   const s = new Store(path);
   s.addMember({ id: 'old', name: 'Old', model: { provider: 'relay', model: 'm1' } });
-  s.db.exec('ALTER TABLE members DROP COLUMN cli; PRAGMA user_version = 3');
+  s.db.exec('ALTER TABLE members DROP COLUMN avatar; ALTER TABLE members DROP COLUMN cli; PRAGMA user_version = 3');
   s.close();
   const up = new Store(path);
-  assert.equal(up.db.prepare('PRAGMA user_version').get().user_version, 4);
+  assert.equal(up.db.prepare('PRAGMA user_version').get().user_version, 5);
   assert.equal(up.member('old').cli, null);
   assert.equal(up.member('old').model, 'm1');
   assert.equal(up.addMember({ id: 'gm', name: 'GM', cli: 'gemini' }).cli, 'gemini');
@@ -671,4 +671,58 @@ test('clis: detection lists installed CLIs in order; handler answers GET with [{
   assert.equal(res.status, 405);
   const real = await detectClis();
   for (const c of real) assert.ok(c.path.startsWith('/'), `real which gives absolute path for ${c.cli}`);
+});
+
+test('store: a v4 database gains the avatar column and keeps its members', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const path = join(mkdtempSync(join(tmpdir(), 'collab-')), 'v4.sqlite3');
+  const s = new Store(path);
+  s.addMember({ id: 'old', name: 'Old', cli: 'claude' });
+  s.db.exec('ALTER TABLE members DROP COLUMN avatar; PRAGMA user_version = 4');
+  s.close();
+  const up = new Store(path);
+  assert.equal(up.db.prepare('PRAGMA user_version').get().user_version, 5);
+  assert.equal(up.member('old').avatar, null);
+  assert.equal(up.member('old').cli, 'claude');
+  assert.equal(up.addMember({ id: 'w', name: 'W', avatar: 'whale' }).avatar, 'whale');
+  up.close();
+});
+
+test('avatars: members pick one of the five built-in avatars; it survives reload and reaches memberView', async () => {
+  const { AVATARS, avatarImage } = await import('./avatars.mjs');
+  assert.deepEqual(AVATARS, ['orange', 'whale', 'dragon', 'rainbow', 'lanxi']);
+  for (const slug of AVATARS) assert.equal(avatarImage(slug).subarray(1, 4).toString(), 'PNG');
+  assert.equal(avatarImage('../plugin'), undefined);
+  const hub = makeHub();
+  const members = fakeDsh().attach(hub, []);
+  const roster = new Roster(hub, members, fakeLlm());
+  roster.load([{ id: 'ds', name: 'DeepSeek', avatar: 'whale' }]);
+  assert.equal(hub.memberView().find(m => m.id === 'ds').avatar, 'whale');
+  const cc = await roster.create({ name: 'CC', cli: 'claude', avatar: 'orange' });
+  assert.equal(cc.avatar, 'orange');
+  assert.equal(hub.memberView().find(m => m.id === 'cc').avatar, 'orange');
+  await assert.rejects(roster.create({ name: 'Bad', avatar: 'robot' }), /avatar must be one of/);
+  await assert.rejects(roster.create({ name: 'Bad', avatar: 'https://example.com/a.png' }), /avatar must be one of/);
+  const plain = await roster.update('cc', { name: 'CC', cli: 'claude', avatar: '' });
+  assert.equal(plain.avatar, undefined, 'clearing the avatar falls back to the initial badge');
+  assert.equal('avatar' in hub.memberView().find(m => m.id === 'cc'), false);
+  await roster.update('cc', { name: 'CC', cli: 'claude', avatar: 'dragon' });
+  const reloaded = fakeDsh().attach(makeHubFrom(hub.store), []);
+  new Roster(reloaded.hub, reloaded, fakeLlm()).load([]);
+  assert.equal(reloaded.hub.memberView().find(m => m.id === 'cc').avatar, 'dragon');
+  assert.throws(() => resolveConfig({ dataDir: '/d', workspacePath: '/w', dshMembers: [{ id: 'x', name: 'X', avatar: 'nope' }] }, {}), /avatar must be/);
+});
+
+test('cloud-web: a bot announces its avatar as a slug or http(s) URL; junk is dropped', () => {
+  const hub = makeHub();
+  const gw = new CloudWebGateway(hub, { token: 't', logger: quiet });
+  connect(gw, 'bot=ju&name=橘&avatar=orange');
+  connect(gw, 'bot=pack&name=Pack&avatar=' + encodeURIComponent('http://127.0.0.1:9820/api/v1/library/avatar-image/senpai'));
+  connect(gw, 'bot=junk&name=Junk&avatar=' + encodeURIComponent('javascript:alert(1)'));
+  const view = Object.fromEntries(hub.memberView().map(m => [m.id, m.avatar]));
+  assert.equal(view.ju, 'orange');
+  assert.equal(view.pack, 'http://127.0.0.1:9820/api/v1/library/avatar-image/senpai');
+  assert.equal(view.junk, undefined);
 });
