@@ -1558,7 +1558,11 @@ function apply(ctx) {
 			name: "main",
 			key: PANEL_ID,
 			locale: NS,
-			inject: injected
+			inject: injected,
+			children: { "settings.section": {
+				kind: "list",
+				scope: "root"
+			} }
 		}, ChannelsPage);
 		if (location.hash === `#${PANEL_ID}`) ctx.layout.selectPanel(PANEL_ID);
 		return dispose;
