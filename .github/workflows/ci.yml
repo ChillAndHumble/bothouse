@@ -36,6 +36,8 @@ jobs:
 
   wiki-windows:
     # the role wikis and nightly reflection run on Windows too (sub-wiki.py, llmwiki/filelock.py: msvcrt there)
+    # Windows 机重新在线后改成 self-hosted windows runner（GitHub 托管机因账号扣款失败不可用，2026-10-23 先关掉）。
+    if: false
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:
