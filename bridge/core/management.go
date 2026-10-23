@@ -218,6 +218,7 @@ func (m *ManagementServer) Start() {
 			slog.Error("management api server error", "error", err)
 		}
 	}()
+	activeMgmt.Store(m)
 	slog.Info("management api started", "port", m.port)
 }
 
@@ -227,6 +228,9 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	// System
 	mux.HandleFunc(prefix+"/status", m.wrap(m.handleStatus))
 	mux.HandleFunc(prefix+"/restart", m.wrap(m.handleRestart))
+	mux.HandleFunc(prefix+"/update", m.wrap(m.handleUpdate))
+	mux.HandleFunc(prefix+"/update/apply", m.wrap(m.handleUpdateApply))
+	mux.HandleFunc(prefix+"/update/ack", m.wrap(m.handleUpdateAck))
 	mux.HandleFunc(prefix+"/reload", m.wrap(m.handleReload))
 	mux.HandleFunc(prefix+"/config", m.wrap(m.handleConfig))
 	mux.HandleFunc(prefix+"/settings", m.wrap(m.handleGlobalSettings))

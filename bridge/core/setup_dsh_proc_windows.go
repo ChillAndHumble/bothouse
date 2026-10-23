@@ -26,3 +26,6 @@ func stopProcess(pid int) {
 		_ = p.Kill()
 	}
 }
+
+// ownProcessGroup: Windows has no process groups to kill this way; the context kills pnpm.
+func ownProcessGroup(cmd *exec.Cmd) {}
