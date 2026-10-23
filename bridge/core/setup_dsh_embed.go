@@ -1,11 +1,17 @@
 package core
 
 import (
+	"bytes"
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 //go:embed all:dsh_bundle
@@ -93,9 +99,22 @@ func RefreshEmbeddedDSH(targetDir, version string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// Dependencies changed (collab package.json / pnpm-lock.yaml): install them now in a staged
+	// copy and swap it in, so a failed install leaves the old plugin and its node_modules as they
+	// were. On failure nothing else is refreshed and .version stays old (retried next start).
+	staged := false
+	if newDeps, changed := collabDepsChanged(sub, targetDir); changed {
+		if err := refreshCollabStaged(sub, targetDir, newDeps); err != nil {
+			return false, fmt.Errorf("dsh plugin dependencies changed but reinstall failed, kept the old plugin: %w", err)
+		}
+		staged = true
+	}
 	err = fs.WalkDir(sub, ".", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if staged && path == "collab" && d.IsDir() {
+			return fs.SkipDir // already in place from the staged copy
 		}
 		dest := filepath.Join(targetDir, path)
 		if d.IsDir() {
@@ -124,4 +143,171 @@ func RefreshEmbeddedDSH(targetDir, version string) (bool, error) {
 		return true, err
 	}
 	return true, nil
+}
+
+// collabDepsStamp is written by install.sh (and by the staged refresh): a copy of
+// collab/package.json + collab/pnpm-lock.yaml as they were when node_modules was installed.
+const collabDepsStamp = ".bothouse-deps"
+
+func embeddedCollabDeps(sub fs.FS) []byte {
+	pkg, _ := fs.ReadFile(sub, "collab/package.json")
+	lock, _ := fs.ReadFile(sub, "collab/pnpm-lock.yaml")
+	return append(append([]byte{}, pkg...), lock...)
+}
+
+// collabDepsChanged: deps were installed (node_modules exists) and the embedded package.json /
+// lockfile differ from what they were installed from. No node_modules = never installed; that
+// is install.sh's job (the wizard), not the refresh's.
+func collabDepsChanged(sub fs.FS, targetDir string) ([]byte, bool) {
+	nm := filepath.Join(targetDir, "collab", "node_modules")
+	if fi, err := os.Stat(nm); err != nil || !fi.IsDir() {
+		return nil, false
+	}
+	want := embeddedCollabDeps(sub)
+	have, err := os.ReadFile(filepath.Join(nm, collabDepsStamp))
+	if err == nil && bytes.Equal(have, want) {
+		return nil, false
+	}
+	return want, true
+}
+
+// dshDepsInstallTimeout bounds pnpm install. 来源：无给数；refresh 在后台跑、不挡启动，
+// 取 10 分钟让慢网络能装完，又不会让卡住的 pnpm 永远占着。
+var dshDepsInstallTimeout = 10 * time.Minute
+
+// installCollabDeps runs the same install as install.sh's deps step. Swappable in tests.
+var installCollabDeps = func(dir string) error {
+	pnpm, err := exec.LookPath("pnpm")
+	if err != nil {
+		return fmt.Errorf("pnpm not found on PATH: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), dshDepsInstallTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, pnpm, "install", "--frozen-lockfile", "--config.minimum-release-age=0")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		tail := string(out)
+		if len(tail) > 800 {
+			tail = tail[len(tail)-800:]
+		}
+		return fmt.Errorf("pnpm install: %w: %s", err, strings.TrimSpace(tail))
+	}
+	return nil
+}
+
+// refreshCollabStaged builds the new collab next to the old one and swaps it in:
+//  1. copy the installed collab (without node_modules) to .collab-staging — keeps any user files
+//  2. lay the new bundle files over it (keepIfExists files stay)
+//  3. pnpm install there, write the deps stamp
+//  4. collab → .collab-prev, staging → collab (renamed back if the second rename fails)
+//
+// Any failure before step 4 only removes the staging directory.
+func refreshCollabStaged(sub fs.FS, targetDir string, deps []byte) (err error) {
+	live := filepath.Join(targetDir, "collab")
+	stage := filepath.Join(targetDir, ".collab-staging")
+	prev := filepath.Join(targetDir, ".collab-prev")
+	_ = os.RemoveAll(stage)
+	_ = os.RemoveAll(prev)
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(stage)
+		}
+	}()
+	if err := copyTreeExcept(live, stage, "node_modules"); err != nil {
+		return fmt.Errorf("stage copy: %w", err)
+	}
+	collabSub, err := fs.Sub(sub, "collab")
+	if err != nil {
+		return err
+	}
+	err = fs.WalkDir(collabSub, ".", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		dest := filepath.Join(stage, path)
+		if d.IsDir() {
+			return os.MkdirAll(dest, 0o755)
+		}
+		if keepIfExists(path) {
+			if _, err := os.Stat(dest); err == nil {
+				return nil
+			}
+		}
+		data, err := fs.ReadFile(collabSub, path)
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0o644)
+		if filepath.Ext(path) == ".sh" {
+			mode = 0o755
+		}
+		return os.WriteFile(dest, data, mode)
+	})
+	if err != nil {
+		return fmt.Errorf("stage files: %w", err)
+	}
+	if err := installCollabDeps(stage); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(stage, "node_modules"), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "node_modules", collabDepsStamp), deps, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(live, prev); err != nil {
+		return fmt.Errorf("move old plugin aside: %w", err)
+	}
+	if err := os.Rename(stage, live); err != nil {
+		if rerr := os.Rename(prev, live); rerr != nil {
+			slog.Error("dsh refresh: could not put the old plugin back", "error", rerr)
+		}
+		return fmt.Errorf("swap in new plugin: %w", err)
+	}
+	if err := os.RemoveAll(prev); err != nil {
+		slog.Warn("dsh refresh: old plugin copy left behind", "path", prev, "error", err)
+	}
+	return nil
+}
+
+// copyTreeExcept copies src to dst, skipping top-level entries named skip. Symlinks are copied
+// as links.
+func copyTreeExcept(src, dst, skip string) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		if rel == skip || strings.HasPrefix(rel, skip+string(filepath.Separator)) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		dest := filepath.Join(dst, rel)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		switch {
+		case d.IsDir():
+			return os.MkdirAll(dest, info.Mode().Perm()|0o700)
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(p)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(target, dest)
+		default:
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(dest, data, info.Mode().Perm())
+		}
+	})
 }
