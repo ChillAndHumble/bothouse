@@ -273,3 +273,35 @@ func TestCodexSubTasksChildWaitingFlag(t *testing.T) {
 		t.Fatal("late active status reopened terminal child")
 	}
 }
+
+func TestCodexSubTasksDuplicateWaitDoesNotEndNewDispatch(t *testing.T) {
+	s := &subTaskTracker{}
+	item := func(tool, id, status string) map[string]any {
+		return map[string]any{"tool": tool, "id": id, "status": "completed", "receiverThreadIds": []any{"child"}, "agentsStates": map[string]any{"child": map[string]any{"status": status}}}
+	}
+	updateCollaborationSubTasks(s, item("spawnAgent", "spawn-1", "running"))
+	wait := item("wait", "wait-1", "completed")
+	updateCollaborationSubTasks(s, wait)
+	updateCollaborationSubTasks(s, item("sendInput", "send-2", "running"))
+	updateCollaborationSubTasks(s, wait)
+	_, rows, _ := s.SubTasks()
+	if rows[0].Status != core.SubTaskRunning {
+		t.Fatalf("duplicate wait-1 changed new send-2 to %s", rows[0].Status)
+	}
+}
+func TestCodexSubTasksLateUnknownStartDoesNotReplaceCurrentTurn(t *testing.T) {
+	s := &appServerSession{ctx: context.Background(), events: make(chan core.Event, 20)}
+	s.threadID.Store("parent")
+	s.handleItemCompleted(map[string]any{"type": "collabAgentToolCall", "tool": "spawnAgent", "status": "completed", "receiverThreadIds": []any{"child"}})
+	emit := func(method, turn, status string) {
+		raw, _ := json.Marshal(map[string]any{"threadId": "child", "turn": map[string]any{"id": turn, "status": status}})
+		s.handleNotification(method, raw)
+	}
+	emit("turn/started", "current", "inProgress")
+	emit("turn/started", "old-unseen", "inProgress")
+	emit("turn/completed", "current", "failed")
+	_, rows, _ := s.SubTasks()
+	if rows[0].Status != core.SubTaskFailed {
+		t.Fatalf("old start replaced current turn and dropped its failure: %s", rows[0].Status)
+	}
+}

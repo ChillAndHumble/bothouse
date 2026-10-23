@@ -18,6 +18,12 @@ type subTaskTracker struct {
 	lifecycleMu sync.Mutex        // orders activation bookkeeping with table updates
 	turns       map[string]string // current native turn per child
 	ended       map[string]bool   // completed turn identities, including late arrivals
+	observed    map[collaborationObservation]bool
+}
+
+type collaborationObservation struct {
+	callID, tool, childID, callStatus string
+	status                            core.SubTaskStatus
 }
 
 func (t *subTaskTracker) firstStart(id string) bool {
@@ -90,6 +96,16 @@ func updateCollaborationSubTasks(table *subTaskTracker, item map[string]any) {
 			}
 			mapped = core.SubTaskRunning
 		}
+		if callID != "" {
+			if table.observed == nil {
+				table.observed = make(map[collaborationObservation]bool)
+			}
+			observation := collaborationObservation{callID, tool, id, callStatus, mapped}
+			if table.observed[observation] {
+				continue
+			}
+			table.observed[observation] = true
+		}
 		// Consume every accepted dispatch identity, including terminal
 		// observations, so a delayed replay cannot reopen a finished child.
 		restart := false
@@ -148,6 +164,16 @@ func (s *appServerSession) handleChildNotification(method string, raw json.RawMe
 	case "turn/started":
 		if n.Turn.ID == "" || !s.firstStart("turn:"+n.ThreadID+":"+n.Turn.ID) {
 			return true
+		}
+		if current := s.turns[n.ThreadID]; current != "" && !s.ended["turn:"+n.ThreadID+":"+current] {
+			_, rows, _ := s.SubTasks()
+			for _, row := range rows {
+				if row.ID == n.ThreadID && row.Live() {
+					// A thread has one active turn. A different start cannot
+					// displace it before its native result is observed.
+					return true
+				}
+			}
 		}
 		s.turns[n.ThreadID] = n.Turn.ID
 		status = core.SubTaskRunning
