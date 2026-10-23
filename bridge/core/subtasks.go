@@ -21,8 +21,8 @@ type SubTaskStatus string
 
 const (
 	SubTaskRunning SubTaskStatus = "running"
-	// SubTaskWaiting: the sub-agent stopped to wait for its own background work
-	// and will resume when that finishes (not done yet).
+	// SubTaskWaiting: the sub-agent is idle but can resume (not done yet),
+	// for example while waiting for its own background work or another input.
 	SubTaskWaiting   SubTaskStatus = "waiting"
 	SubTaskCompleted SubTaskStatus = "completed"
 	SubTaskFailed    SubTaskStatus = "failed"
@@ -33,6 +33,7 @@ const (
 type SubTask struct {
 	ID          string        `json:"id"`
 	Description string        `json:"description"`
+	ModeUnknown bool          `json:"mode_unknown,omitempty"` // backend does not expose foreground/background
 	Background  bool          `json:"background,omitempty"`
 	Step        string        `json:"step,omitempty"`    // what it is doing now (task_progress)
 	Status      SubTaskStatus `json:"status"`            // running / completed / failed / stopped
@@ -115,7 +116,7 @@ func ParseSubTaskTablePayload(content string) (*SubTaskTablePayload, bool) {
 func foregroundSubTask(r SubTaskReporter) (SubTask, bool) {
 	_, tasks, _ := r.SubTasks()
 	for i := len(tasks) - 1; i >= 0; i-- {
-		if t := tasks[i]; !t.Background && t.Running() {
+		if t := tasks[i]; !t.ModeUnknown && !t.Background && t.Running() {
 			return t, true
 		}
 	}

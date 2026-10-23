@@ -62,6 +62,8 @@ opus, Whale and Writer can be Claude Code, DSH and Codex. Give them the names an
 
 ## Features
 
+- **Child-agent status.** Codex and DSH via ACP can use the existing separate sub-agent table. DSH requires the [native lifecycle integration](integrations/dsh-acp-subtasks/README.md); ordinary tools are not child agents.
+
 ### A team, not a pile of chatbots
 
 - **Speaks only when called.** One lead answers by default. The others hear every message but speak only when @-ed or named. Several AIs in one group don't all answer at once.

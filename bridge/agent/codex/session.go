@@ -24,6 +24,7 @@ import (
 // codexSession manages a multi-turn Codex conversation.
 // First Send() uses `codex exec`, subsequent ones use `codex exec resume <threadID>`.
 type codexSession struct {
+	core.SubTaskTracker
 	workDir          string
 	model            string
 	effort           string
@@ -956,6 +957,7 @@ func (cs *codexSession) refreshContextUsageFromRollout() {
 }
 
 func (cs *codexSession) Close() error {
+	cs.CloseSubTasks()
 	cs.alive.Store(false)
 	cs.cancel()
 	cs.sendMu.Lock()

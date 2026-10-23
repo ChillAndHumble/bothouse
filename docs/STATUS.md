@@ -1,5 +1,7 @@
 # 能力与验证状态
 
+2026-10-23 Issue #86：Codex（app_server / exec）与 DSH（ACP 原生生命周期扩展）接入独立子进程表，复用渲染；补齐身份/代次隔离、后台跨轮与关闭状态。适配器回归旧 main 红、实现绿；目标 race 与 DSH 两版本真实运行时副本校验通过，全量结果见 PR。未部署、未做真实模型/Discord 验收；DSH 需另安装转发层，exec 无跨进程实时事件。用法和边界见[说明](../integrations/dsh-acp-subtasks/README.md)。
+
 2026-10-23：下载入口收敛为 Mac universal dmg 一份、Windows x64 exe 一份、Linux x64/arm64 两份；安装和自更新按相同命名并校验 SHA256SUMS。Go 沙箱全量、CUJ、回归、vet、actionlint、shell 语法及 Linux 安装测试通过；v0.1.2 发布替换与 Mac 验收以 /tmp/rename/result4.md 为准。
 
 2026-10-22：产品入口统一改名 bothouse，配置支持新目录优先/旧目录回退；平台原生发布流程与 SHA256SUMS 已实现。沙箱 Go 全量、CUJ、前端及静态检查通过。v0.1.2 的发布、真机验收与未验项以本轮交付记录 /tmp/rename/result.md 为准；未部署生产 bot。

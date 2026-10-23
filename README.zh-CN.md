@@ -60,6 +60,8 @@ opus、鲸鱼娘、笔杆可以分别是 Claude Code、DSH、Codex。换成你�
 
 ## 特性
 
+- **子 Agent 状态表。** Codex 和经 ACP 接入的 DSH 可复用独立子进程表；DSH 需安装[原生状态转发层](integrations/dsh-acp-subtasks/README.md)。普通工具调用不算子 Agent。
+
 ### 一支团队，不是一群聊天机器人
 
 - **点名才回。** 一个主角色默认接话，其他角色听得到每句话，只有被 @ 或被点名才开口。几个 AI 在一个群里不会抢答。
