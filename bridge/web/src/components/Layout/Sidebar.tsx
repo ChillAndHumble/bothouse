@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Plug,
   Puzzle,
+  Library,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -21,6 +22,7 @@ const navItems = [
   { key: 'skills', path: '/skills', icon: Puzzle },
   { key: 'chat', path: '/chat', icon: MessageSquare },
   { key: 'cron', path: '/cron', icon: Clock },
+  { key: 'library', path: '/library', icon: Library },
   { key: 'system', path: '/system', icon: Settings },
 ];
 
@@ -46,12 +48,12 @@ export default function Sidebar() {
         )}
       >
         {collapsed ? (
-          <span className="text-base font-bold tracking-tighter text-gray-900 dark:text-white">
-            CC
+          <span title="bothouse" aria-label="bothouse" className="text-base font-bold tracking-tighter text-gray-900 dark:text-white">
+            bh
           </span>
         ) : (
           <span className="text-base font-bold tracking-tight text-gray-900 dark:text-white">
-            CC<span className="text-accent">-</span>Connect
+            bothouse<span className="text-accent">.</span>
           </span>
         )}
       </div>

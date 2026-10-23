@@ -1,5 +1,6 @@
 {
   "nav": {
+    "library": "Library",
     "dashboard": "Dashboard",
     "projects": "Projects",
     "providers": "Providers",

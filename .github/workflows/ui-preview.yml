@@ -51,6 +51,9 @@ jobs:
           npm install --no-audit --no-fund
           npx playwright install --with-deps chromium
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - name: Frontend lint and tests
+        working-directory: bridge/web
+        run: pnpm install --frozen-lockfile && pnpm lint && pnpm test
       - name: 构建、隔离启动、截图
         run: .github/ui-preview/run.sh . ui-preview-out
       - if: always()
