@@ -49,7 +49,7 @@ echo "installed $3"
 	if err := os.WriteFile(filepath.Join(script, "install.sh"), []byte("exit 7\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := InstallDSHPlugin(context.Background(), "zh"); err == nil {
+	if _, err := InstallDSHPlugin(context.Background(), "zh", nil); err == nil {
 		t.Fatal("installer failure reported as success")
 	}
 	req := httptest.NewRequest(http.MethodGet, "/setup/dsh/install", nil)

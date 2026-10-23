@@ -17,6 +17,7 @@ case "$LANG_PREF" in ""|zh|en) ;; *) echo "--lang must be zh or en" >&2; exit 1 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UI="$HERE/packages/client-ui-discord"
 
+echo "== step: download"
 command -v dsh >/dev/null || { echo "dsh not found on PATH; install DeepSeek Harness first" >&2; exit 1; }
 if ! command -v pnpm >/dev/null; then
   # npm's global bin may simply be missing from PATH (pnpm already installed there).
@@ -35,6 +36,7 @@ DSH_DIR="$(cd "$(dirname "$DSH_JS")/.." && pwd)"
 WEB_APP="$DSH_DIR/node_modules/@deepseek-ai/dsh-web-app"
 [ -d "$WEB_APP" ] || { echo "dsh-web-app not found under $DSH_DIR" >&2; exit 1; }
 
+echo "== step: deps"
 if [ ! -d "$HERE/collab/node_modules" ]; then
   echo "== install collab dependencies"
   (cd "$HERE/collab" && pnpm install --frozen-lockfile --config.minimum-release-age=0)
@@ -47,6 +49,7 @@ else
   (cd "$UI" && pnpm install --ignore-workspace && pnpm run bundle)
 fi
 
+echo "== step: plugin"
 echo "== install into profile $PROFILE"
 dsh plugin --profile "$PROFILE" add "link:$WEB_APP" "link:$HERE/collab" "link:$UI"
 if [ -n "$LANG_PREF" ]; then

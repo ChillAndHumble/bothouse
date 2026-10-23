@@ -384,7 +384,7 @@ func runSetup(args []string) {
 		_ = enc.Encode(map[string]any{"vendors": core.WizardVendors, "matrix": core.VendorMatrix()})
 	case "dsh":
 		if dshInstall {
-			st, err := core.InstallDSHPlugin(context.Background(), *lang)
+			st, err := core.InstallDSHPlugin(context.Background(), *lang, nil)
 			if err != nil {
 				fail(err)
 				return

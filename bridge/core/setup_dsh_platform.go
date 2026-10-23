@@ -6,13 +6,17 @@ package core
 // (user, 2026-10-23: 「向导程序只活第一次，之后的都是能够在页面上配置」).
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
+	"io"
 	"context"
 	"errors"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -83,7 +87,7 @@ func FindDSHInstallScript() string {
 func dshOpenCommand() string {
 	cmd := "dsh " + DSHProfile
 	if h := os.Getenv("DSH_HOME"); h != "" {
-		cmd = "DSH_HOME=" + shellQuote(h) + " " + cmd
+		cmd = "DSH_HOME=" + strconv.Quote(h) + " " + cmd
 	}
 	return cmd
 }
@@ -110,8 +114,9 @@ func GetDSHStatus(ctx context.Context) DSHStatus {
 }
 
 // InstallDSHPlugin runs dsh/install.sh <profile> --lang <zh|en>; lang is the wizard's language
-// (anything but zh installs en, the two languages install.sh accepts).
-func InstallDSHPlugin(ctx context.Context, lang string) (DSHStatus, error) {
+// (anything but zh installs en, the two languages install.sh accepts). onLine, when set, gets
+// every output line as it is printed (the wizard streams them as progress).
+func InstallDSHPlugin(ctx context.Context, lang string, onLine func(string)) (DSHStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	script := FindDSHInstallScript()
@@ -124,16 +129,35 @@ func InstallDSHPlugin(ctx context.Context, lang string) (DSHStatus, error) {
 		return GetDSHStatus(ctx), errors.New("dsh/install.sh not found (set BOTHOUSE_DSH_DIR to the repo's dsh directory)")
 	}
 	if _, err := exec.LookPath("dsh"); err != nil {
-		return GetDSHStatus(ctx), errors.New("dsh not found on PATH; install DeepSeek Harness first")
+		return GetDSHStatus(ctx), errDSHMissing
 	}
 	l := "en"
 	if strings.HasPrefix(strings.ToLower(lang), "zh") {
 		l = "zh"
 	}
 	cmd := exec.CommandContext(ctx, "bash", script, DSHProfile, "--lang", l)
+	pr, pw := io.Pipe()
+	cmd.Stdout, cmd.Stderr = pw, pw
 	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
+	scanned := make(chan struct{})
+	go func() {
+		defer close(scanned)
+		sc := bufio.NewScanner(pr)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			out.WriteString(sc.Text() + "\n")
+			if onLine != nil {
+				onLine(sc.Text())
+			}
+		}
+		_, _ = io.Copy(io.Discard, pr)
+	}()
+	err := cmd.Start()
+	if err == nil {
+		err = cmd.Wait()
+	}
+	_ = pw.Close()
+	<-scanned
 	st := GetDSHStatus(ctx)
 	st.Log = out.String()
 	if err != nil {
@@ -141,6 +165,8 @@ func InstallDSHPlugin(ctx context.Context, lang string) (DSHStatus, error) {
 	}
 	return st, nil
 }
+
+var errDSHMissing = errors.New("dsh not found on PATH; install DeepSeek Harness first")
 
 func tailLines(s string, n int) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
@@ -156,6 +182,9 @@ func (m *ManagementServer) handleSetupDSHStatus(w http.ResponseWriter, r *http.R
 	mgmtJSON(w, http.StatusOK, GetDSHStatus(r.Context()))
 }
 
+// handleSetupDSHInstall streams the install as NDJSON, one object per line:
+// {"step":"download|deps|plugin","line":"…"} while install.sh prints, then
+// {"done":true,"status":{…}} or {"error":"…","log":"…"} (zh/en by the request's lang).
 func (m *ManagementServer) handleSetupDSHInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		mgmtError(w, http.StatusMethodNotAllowed, "POST required")
@@ -167,10 +196,49 @@ func (m *ManagementServer) handleSetupDSHInstall(w http.ResponseWriter, r *http.
 	if !decodeBody(w, r, &req) {
 		return
 	}
-	st, err := InstallDSHPlugin(r.Context(), req.Lang)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	enc := json.NewEncoder(w)
+	send := func(v any) {
+		_ = enc.Encode(v)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	step := "download"
+	send(map[string]any{"step": step})
+	st, err := InstallDSHPlugin(r.Context(), req.Lang, func(line string) {
+		if s, ok := strings.CutPrefix(line, "== step: "); ok {
+			step = strings.TrimSpace(s)
+		}
+		send(map[string]any{"step": step, "line": line})
+	})
 	if err != nil {
-		mgmtError(w, http.StatusBadRequest, err.Error())
+		send(map[string]any{"error": dshInstallError(err, req.Lang), "log": tailLines(st.Log, 40)})
 		return
 	}
-	mgmtJSON(w, http.StatusOK, st)
+	send(map[string]any{"done": true, "status": st})
+}
+
+// dshInstallError explains an install failure in the wizard's language; the raw log goes alongside.
+func dshInstallError(err error, lang string) string {
+	zh := strings.HasPrefix(strings.ToLower(lang), "zh")
+	switch {
+	case errors.Is(err, errDSHMissing):
+		if zh {
+			return "这台电脑还没装 DSH。先在终端运行 npm i -g @deepseek-ai/dsh，装好后点「重新检测」。"
+		}
+		return "DSH is not installed. Run npm i -g @deepseek-ai/dsh, then click Detect again."
+	case strings.Contains(err.Error(), "install.sh not found"):
+		if zh {
+			return "找不到 DSH 插件安装包。请重新下载 bothouse 后再试。"
+		}
+		return "The DSH plugin bundle is missing. Download bothouse again and retry."
+	}
+	if zh {
+		return "插件没装上。常见原因是网络连不上 npm（装依赖那一步要下载），检查网络或代理后点「重试」；下面是安装日志。"
+	}
+	return "The plugins did not install. Usually npm could not be reached while downloading dependencies; check the network or proxy and retry. The install log is below."
 }
