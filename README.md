@@ -150,6 +150,7 @@ What works today is step one: one group, several AIs, one shared memory. What we
 - **No double-grabbing.** With many projects running, a role claims a task before touching it, so two roles never collide.
 - **Roles that grow roles.** Say "we need to ship to the App Store", and the lead spins up a release specialist who reads your past decisions, does the job, and retires. You don't create them one by one.
 - **Hire a role like you hire a person.** Role packs: persona, memory template and tools in one bundle, one click into the group.
+- **A library that grows plugins and a market.** Packs that carry code plugins, and an online market to browse and install personas and avatars others made.
 - **A memory you can take with you.** New machine, new model, same team, same memory.
 - **Stop paying for repeated background.** Resident roles don't re-read the project for every task. We'll publish numbers when we have a real comparison.
 - **Team features on more platforms.** DSH web channels first, then Telegram, Slack, QQ, WeCom (single-role connections already ship with bothouse).
@@ -179,6 +180,7 @@ Modules and data flow: [Architecture](docs/ARCHITECTURE.md) (Chinese).
 | [Getting started](docs/GETTING_STARTED.md) | Install, wizard, check it's online (Chinese) |
 | [Connect Discord or Feishu](docs/connect-discord-feishu.md) | Every wizard step, let an AI configure it, third-party APIs (Chinese) |
 | [The dispatcher and the team memory](docs/ccm-and-wiki.md) | The gate (who answers) and the shared wiki memory (Chinese) |
+| [Persona library and packs](docs/persona-packs.md) | Pick personas and avatars, make your own, install packs (Chinese) |
 | [Per-role wiki and nightly review](bridge/contrib/wiki/README.md) | One wiki per role, scheduled distilling, the review (Chinese) |
 | [Guardrails and tools](bridge/contrib/hooks/README.md) | Hook rules, how to switch them off, [small tools](bridge/contrib/tools/README.md) |
 | [Teamwork details](bridge/MAOMAO.md) | Lead and subs, handoff rules, gate protocol |
