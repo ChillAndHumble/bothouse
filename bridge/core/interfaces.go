@@ -15,6 +15,12 @@ type Platform interface {
 	Stop() error
 }
 
+// ConfiguredTeamLead reports whether a platform has a configured team lead.
+// It lets the local no-gate path suppress unaddressed group messages for subs.
+type ConfiguredTeamLead interface {
+	HasConfiguredTeamLead() bool
+}
+
 // ErrNotSupported indicates a platform doesn't support a particular operation.
 var ErrNotSupported = errors.New("operation not supported by this platform")
 

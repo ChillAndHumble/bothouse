@@ -215,6 +215,9 @@ func pickInt(v any) int {
 
 func (p *Platform) Name() string { return p.name }
 
+// HasConfiguredTeamLead reports whether this platform belongs to a configured team.
+func (p *Platform) HasConfiguredTeamLead() bool { return p.teamLead != "" }
+
 // ProgressStyle implements core.ProgressStyleProvider (maomao fork).
 func (p *Platform) ProgressStyle() string {
 	if p.progressStyle == "" {

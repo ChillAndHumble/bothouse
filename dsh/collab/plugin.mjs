@@ -3,7 +3,7 @@
 //   - insert:
 //       - id: conest-collab
 //         name: /abs/path/dsh/collab/plugin.mjs
-//         config: { dataDir, workspacePath, botTokenEnv?, ownerName?, rooms?, dshMembers?, maxRelay? }
+//         config: { dataDir, workspacePath, leadFile?, fallbackLead?, botTokenEnv?, ownerName?, rooms?, dshMembers?, maxRelay? }
 import { createRequire } from 'node:module';
 import { readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -18,6 +18,7 @@ import { Tasks } from './tasks.mjs';
 import { createCliMember } from './cli-member.mjs';
 import { avatarImage, checkAvatar } from './avatars.mjs';
 import { handler as clisHandler } from './clis.mjs';
+import { LeadState } from './lead-state.mjs';
 
 export const name = 'conest-collab';
 export const inject = [
@@ -56,7 +57,10 @@ export function resolveConfig(config, env = process.env) {
   if (!Number.isSafeInteger(maxRelay) || maxRelay < 0) throw Error('conest-collab: maxRelay must be a non-negative integer');
   const botTokenEnv = c.botTokenEnv ?? 'CONEST_COLLAB_BOT_TOKEN';
   const botToken = env[botTokenEnv] ?? '';
-  return { dataDir: c.dataDir, workspacePath: c.workspacePath, rooms, dshMembers: members, maxRelay, botTokenEnv, botToken, ownerName: c.ownerName ?? '我' };
+  const leadFile = c.leadFile ?? join(env.BOTHOUSE_DATA_DIR ?? join(env.HOME ?? '.', '.bothouse'), 'lead.json');
+  if (!isAbsolute(leadFile)) throw Error('conest-collab: leadFile must be an absolute path');
+  const fallbackLead = String(c.fallbackLead ?? env.CONEST_FALLBACK_LEAD ?? '').trim();
+  return { dataDir: c.dataDir, workspacePath: c.workspacePath, leadFile, fallbackLead, rooms, dshMembers: members, maxRelay, botTokenEnv, botToken, ownerName: c.ownerName ?? '我' };
 }
 
 /** Resolve a package from the running DSH installation, never a second copy. */
@@ -77,7 +81,8 @@ export async function apply(ctx, rawConfig) {
     store.ensureRoom(room.id, room.name.trim());
     store.ensureRoomSettings(room.id);
   }
-  const hub = new Hub(store, ctx.logger);
+  const leadState = new LeadState(config.leadFile, ctx.logger);
+  const hub = new Hub(store, ctx.logger, leadState, config.fallbackLead);
   hub.teamExit = new TeamExit(hub);
   hub.setMember({ id: OWNER, name: config.ownerName, kind: 'human', online: true });
   const gateway = new CloudWebGateway(hub, { token: config.botToken, logger: ctx.logger });
@@ -155,9 +160,26 @@ export async function apply(ctx, rawConfig) {
     }
     if (path === '/collab' && req.method === 'GET') return text(res, 200, 'text/html; charset=utf-8', PAGE);
     if (path === '/collab/api/state' && req.method === 'GET') {
-      return json(res, 200, { me: OWNER, rooms: store.roomsView().map(r => ({ ...r, dispatch_mode: store.dispatchMode(r.id) })), members: hub.memberView(), thinking: Object.fromEntries([...hub.thinking].map(([k, v]) => [k, [...v]])) });
+      return json(res, 200, { me: OWNER, lead_id: hub.selectedPrimaryMember()?.id ?? null,
+        effective_lead_id: hub.primaryMember()?.id ?? null,
+        rooms: store.roomsView().map(r => ({ ...r, dispatch_mode: store.dispatchMode(r.id) })), members: hub.memberView(),
+        thinking: Object.fromEntries([...hub.thinking].map(([k, v]) => [k, [...v]])) });
     }
     if (path === '/collab/api/events' && req.method === 'GET') return events(req, res);
+    if (path === '/collab/api/lead' && req.method === 'GET') {
+      return json(res, 200, { lead_id: hub.selectedPrimaryMember()?.id ?? null,
+        effective_lead_id: hub.primaryMember()?.id ?? null });
+    }
+    if (path === '/collab/api/lead' && req.method === 'PATCH') {
+      return withBody(req, res, body => {
+        const id = String(body?.lead_id ?? '').trim();
+        const member = hub.members.get(id);
+        if (member === undefined || member.kind === 'human') throw new CollabError('member-missing', `member ${id} is not a routable role`);
+        leadState.set(id, member.name);
+        hub.emit({ type: 'lead', lead_id: id, effective_lead_id: hub.primaryMember()?.id ?? null });
+        return { lead_id: id, effective_lead_id: hub.primaryMember()?.id ?? null };
+      });
+    }
     const av = /^\/collab\/avatars\/([a-z0-9_-]+)\.png$/.exec(path);
     if (av !== null && req.method === 'GET') {
       const png = avatarImage(av[1]);

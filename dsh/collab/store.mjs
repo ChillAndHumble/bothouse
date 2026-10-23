@@ -10,9 +10,7 @@ export const MAX_TEXT = 128 * 1024;
 // 「默认混合模型」); the same names as the bridge's dispatch_mode config.
 export const DISPATCH_MODES = ['solo', 'team', 'mixed'];
 export const DEFAULT_DISPATCH_MODE = 'mixed';
-// v7 is #133 (reply_to), v8 is #139 team mode A, v9 is #139 team mode B tasks; columns are
-// added by ensureSchema() on every open (checked with PRAGMA table_info), so either merge
-// or release order ends with every column; user_version only records the newest schema known.
+// v7 is #133 (reply_to), v8 is #139 team mode A, v9 is #139 team mode B tasks.
 const SCHEMA_VERSION = 9;
 /** Columns added after v1, as [table, column, definition]; ensureSchema() adds any missing one. */
 const COLUMNS = [
@@ -42,8 +40,9 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
-    const version = this.db.prepare('PRAGMA user_version').get().user_version;
-    if (version > SCHEMA_VERSION) throw Error(`collab: store schema ${version} is newer than ${SCHEMA_VERSION}`);
+    let version = this.db.prepare('PRAGMA user_version').get().user_version;
+    if (version > 10) throw Error(`collab: store schema ${version} is newer than ${SCHEMA_VERSION}`);
+    if (version === 10) version = 9;
     this.ensureSchema(version);
     this.q = {
       room: this.db.prepare('SELECT id, name, kind, parent_id FROM rooms WHERE id = ?'),
@@ -122,6 +121,7 @@ export class Store {
         room_id INTEGER PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
         dispatch_mode TEXT NOT NULL DEFAULT '${DEFAULT_DISPATCH_MODE}'
           CHECK (dispatch_mode IN (${DISPATCH_MODES.map(m => `'${m}'`).join(', ')})))`);
+      this.db.exec('DROP TABLE IF EXISTS collab_settings');
       if (version < SCHEMA_VERSION) this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     });
   }

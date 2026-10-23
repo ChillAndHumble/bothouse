@@ -7,6 +7,7 @@ import { forDisplay, forMember, mentions, nameCalled } from './mentions.mjs';
 import { CloudWebGateway, CAPABILITIES, progressCard, PROGRESS_PREFIX, roomKey } from './cloudweb.mjs';
 import { DshMembers, finalText, describeReason, friendlyFailure, memberStatus } from './dsh-member.mjs';
 import { resolveConfig } from './plugin.mjs';
+import { LeadState } from './lead-state.mjs';
 import { Roster } from './roster.mjs';
 import { promptText, teamModeRules } from './dsh-member.mjs';
 import { Tasks, CHECK_AFTER_S } from './tasks.mjs';
@@ -76,6 +77,48 @@ test('dispatch mode: a workspace inherits its chat channel setting (PR #138 revi
   assert.equal(s.dispatchMode(ws.id), 'solo');
   s.setDispatchMode(ws.id, 'team');
   assert.equal(s.dispatchMode(1), 'team', 'setting a workspace sets its chat channel');
+});
+
+test('primary role: shared lead state routes explicitly selected roles and keeps fallback display-only', async () => {
+  const { mkdtempSync, readFileSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const leadPath = join(mkdtempSync(join(tmpdir(), 'collab-lead-')), 'lead.json');
+  const leadState = new LeadState(leadPath, quiet);
+  const store = new Store(':memory:');
+  store.ensureRoom(1, 'general');
+  const hub = new Hub(store, quiet, leadState, 'ds');
+  hub.setMember({ id: 'owner', name: '我', kind: 'human', online: true });
+  hub.setMember({ id: 'ds', name: 'DeepSeek', kind: 'dsh', online: true });
+  hub.setMember({ id: 'ju', name: '橘', kind: 'bot', online: true });
+  assert.equal(hub.selectedPrimaryMember(), undefined);
+  assert.equal(hub.primaryMember().id, 'ds');
+  writeFileSync(leadPath, JSON.stringify({ lead: 'removed' }));
+  assert.equal(hub.selectedPrimaryMember(), undefined);
+  assert.equal(hub.primaryMember().id, 'ds');
+
+  const dsh = fakeDsh();
+  dsh.attach(hub, [{ id: 'ds', name: 'DeepSeek' }]);
+  const gw = new CloudWebGateway(hub, { token: 't', logger: quiet });
+  const ju = connect(gw, 'bot=ju&name=橘');
+
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '没有点名的消息', clientKey: 'lead-none' });
+  await settle();
+  assert.equal(hub.store.openJobs().length, 0, 'fallback is display-only before explicit selection');
+
+  leadState.set('ds', 'DeepSeek');
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '没有点名的消息', clientKey: 'lead-dsh' });
+  await settle();
+  assert.equal(hub.store.openJobs().at(-1).member_id, 'ds');
+  assert.equal(ju.of('message').at(-1).mentioned, false);
+  assert.equal('lead_id' in ju.of('message').at(-1), false);
+
+  leadState.set('ju', '橘');
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '切换后没有点名', clientKey: 'lead-bot' });
+  await settle();
+  assert.equal(ju.of('message').at(-1).mentioned, false);
+  assert.equal('lead_id' in ju.of('message').at(-1), false);
+  assert.equal(JSON.parse(readFileSync(leadPath, 'utf8')).lead, 'ju');
 });
 
 test('team exit: forwards asks and returns answers to the recorded workspace', async () => {
@@ -173,6 +216,11 @@ test('cloud-web: register ack, routing, prefixes, no self-echo, reconnect replac
   assert.equal(toWhale.user_mention_id, '111');
   assert.equal(ju.of('message').length, 1, 'author never receives its own reply');
 
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '橘，你看看这个' });
+  await tick();
+  assert.equal(ju.of('message').at(-1).mentioned, true, 'a bare name at line start calls the role');
+  assert.equal(whale.of('message').at(-1).mentioned, false);
+
   const before = whale.of('message').length;
   ju.frame({ type: 'reply', reply_ctx: 'room-1', content: '✅ 已完成' });
   await tick(); await tick();
@@ -197,6 +245,28 @@ test('cloud-web: register ack, routing, prefixes, no self-echo, reconnect replac
   assert.equal(hub.members.get('ju').online, true, 'replaced socket close does not mark offline');
   ju2.close(1000);
   assert.equal(hub.members.get('ju').online, false);
+});
+
+test('cloud-web: a line-start name calls a non-primary role', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const leadPath = join(mkdtempSync(join(tmpdir(), 'cloudweb-line-name-')), 'lead.json');
+  writeFileSync(leadPath, JSON.stringify({ lead: 'whale', name: '鲸鱼娘' }));
+  const store = new Store(':memory:');
+  store.ensureRoom(1, 'general');
+  const hub = new Hub(store, quiet, new LeadState(leadPath, quiet), 'whale');
+  hub.setMember({ id: 'owner', name: '我', kind: 'human', online: true });
+  hub.setMember({ id: 'whale', name: '鲸鱼娘', kind: 'bot', online: true });
+  hub.setMember({ id: 'ju', name: '橘', kind: 'bot', online: true });
+  const gw = new CloudWebGateway(hub, { token: 't', logger: quiet });
+  const ju = connect(gw, 'bot=ju&name=橘');
+  const whale = connect(gw, 'bot=whale&name=鲸鱼娘');
+
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '橘，你看看这个', clientKey: 'line-name-sub' });
+  await tick();
+  assert.equal(ju.of('message').at(-1).mentioned, true, 'the named non-primary role is addressed');
+  assert.equal(whale.of('message').at(-1).mentioned, false, 'the selected primary is not addressed by another role name');
 });
 
 test('cloud-web: token check accepts bearer, header, or query', () => {
@@ -289,7 +359,7 @@ test('DSH member: @ admits one prompt, its turn posts the reply, duplicates neve
   const hub = makeHub();
   const dsh = fakeDsh();
   dsh.attach(hub, [{ id: 'ds', name: 'DeepSeek' }]);
-  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '先说一句' });
+  hub.store.append(1, { authorKind: 'user', author: 'owner', name: '我', text: '先说一句' });
   const { message: trigger } = hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '@DeepSeek 总结一下', clientKey: 'once' });
   assert.equal(hub.store.openJobs().length, 1, 'the job commits with the message, before any async step');
   hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '@DeepSeek 总结一下', clientKey: 'once' });
@@ -507,7 +577,7 @@ test('relay cap: agent-to-agent mentions stop starting DSH turns until a human s
   const dsh = fakeDsh();
   dsh.attach(hub, [{ id: 'ds', name: 'DeepSeek' }], { maxRelay: 2 });
   hub.setMember({ id: 'ju', name: '橘', kind: 'bot', online: true });
-  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '开始' });
+  hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: '@橘 开始' });
   for (const t of ['一', '二']) hub.post(1, { authorKind: 'role', author: 'ju', name: '橘', text: `@DeepSeek ${t}` });
   await settle();
   assert.equal(hub.store.openJobs().length, 2, 'mentions within the cap still start jobs');
@@ -561,8 +631,9 @@ test('turn/end reasons render as kind plus error message', () => {
 test('config: absolute paths, unique member ids, token from env only', () => {
   assert.throws(() => resolveConfig({ dataDir: 'rel', workspacePath: '/w' }), /dataDir/);
   assert.throws(() => resolveConfig({ dataDir: '/d', workspacePath: '/w', dshMembers: [{ id: 'owner', name: 'x' }] }), /unique/);
-  const c = resolveConfig({ dataDir: '/d', workspacePath: '/w', dshMembers: [{ id: 'ds', name: 'DeepSeek' }] }, { CONEST_COLLAB_BOT_TOKEN: 'tok' });
+  const c = resolveConfig({ dataDir: '/d', workspacePath: '/w', dshMembers: [{ id: 'ds', name: 'DeepSeek' }] }, { CONEST_COLLAB_BOT_TOKEN: 'tok', HOME: '/home' });
   assert.equal(c.botToken, 'tok');
+  assert.equal(c.leadFile, '/home/.bothouse/lead.json');
   assert.deepEqual(c.rooms, [{ id: 1, name: 'general' }]);
 });
 
@@ -791,7 +862,7 @@ test('roster: wizard roles are imported once, existing names skipped', async () 
 test('member failure publishes actionable error and clears it on retry', () => {
   const hub = makeHub();
   const members = fakeDsh().attach(hub, [{ id: 'ds', name: 'DeepSeek' }]);
-  const trigger = hub.post(1, { authorKind: 'user', author: 'owner', name: '我', text: 'hello' }).message;
+  const trigger = hub.store.append(1, { authorKind: 'user', author: 'owner', name: '我', text: 'hello' }).message;
   const job = hub.store.addJob('ds', 1, trigger.id);
   members.fail(job.id, 'No API key configured');
   assert.match(hub.memberView().find(m => m.id === 'ds').error, /没有配置.*Key/);

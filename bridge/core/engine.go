@@ -890,7 +890,7 @@ func NewEngine(name string, ag Agent, platforms []Platform, sessionStorePath str
 	if sp, ok := ag.(SkillProvider); ok {
 		e.skills.SetDirs(sp.SkillDirs())
 	}
-	e.board.addSource(e) // maomao fork: report to the process's channel task board
+	e.board.addSource(e)    // maomao fork: report to the process's channel task board
 	e.teamExit.resolver = e // team mode C exit: workspaces recorded by block D
 
 	return e
@@ -3105,6 +3105,11 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 	if msg.Recalled {
 		e.handleMessageRecall(p, msg)
 		return
+	}
+	if e.team != nil {
+		// The shared lead file can change without restarting any role. Refresh
+		// lead-only board/workspace services before handling the next message.
+		e.setDynamicTeamLead(e.isTeamLead())
 	}
 	// #139 C: a user reply to a forwarded workspace [ask] goes back to that workspace.
 	if e.routeWorkspaceAnswer(p, msg) {

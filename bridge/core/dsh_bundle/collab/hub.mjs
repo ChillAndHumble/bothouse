@@ -8,9 +8,11 @@ export class Hub {
    * @param store - Store instance.
    * @param logger - { warn(msg, ...args) }.
    */
-  constructor(store, logger) {
+  constructor(store, logger, leadState = undefined, fallbackLead = '') {
     this.store = store;
     this.logger = logger;
+    this.leadState = leadState;
+    this.fallbackLead = fallbackLead;
     /** id -> { id, name, kind: 'dsh' | 'bot' | 'human', mentionId?, online } */
     this.members = new Map();
     /** roomId -> Set<memberId> currently working */
@@ -24,6 +26,19 @@ export class Hub {
 
   /** Members whose @-forms are parsed in channel text (agents only; humans are not routed). */
   routable() { return this.memberList().filter(m => m.kind !== 'human'); }
+
+  /** The explicitly selected primary role, or undefined before a choice. */
+  selectedPrimaryMember() {
+    const selected = this.leadState?.selected();
+    const member = selected === undefined ? undefined : this.members.get(selected);
+    return member !== undefined && member.kind !== 'human' ? member : undefined;
+  }
+
+  /** UI-only fallback; callers that route messages must use selectedPrimaryMember(). */
+  primaryMember() {
+    const fallback = this.fallbackLead === '' ? undefined : this.members.get(this.fallbackLead);
+    return this.selectedPrimaryMember() ?? (fallback?.kind !== 'human' ? fallback : undefined);
+  }
 
   setMember(member) {
     this.members.set(member.id, member);
