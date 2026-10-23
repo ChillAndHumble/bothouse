@@ -28,10 +28,20 @@ function props(state: ChannelSnapshot, send: ChannelsPageProps['send'] = async (
 }
 
 describe('channels page', () => {
+  it('renders a room with a message and a configure-model card without throwing', () => {
+    // Regression: the message list once referenced a prop the page never destructured,
+    // so any room with a message threw and blanked the whole main panel.
+    const card = JSON.stringify({ title: 'model', state: 'error', action: 'configure-model' })
+    const withCard: ChannelSnapshot = { ...ready, messages: [...ready.messages, { ...ready.messages[0], id: 2, text: 'need model', card }] }
+    expect(() => render(<ChannelsPage {...props(withCard)} />)).not.toThrow()
+    expect(screen.getByText('need model')).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh.configureModel })).toBeTruthy()
+  })
+
   it('renders configured rooms, members, working state and message text without interpreting HTML', () => {
     const view = render(<ChannelsPage {...props(ready)} />)
     expect(screen.getByRole('button', { name: 'general' })).toBeTruthy()
-    expect(screen.getByText('橘 正在处理…')).toBeTruthy()
+    expect(screen.getByText('橘 正在输入…')).toBeTruthy()
     expect(screen.getByText('<script>alert(1)</script>')).toBeTruthy()
     expect(view.container.querySelector('script')).toBeNull()
     view.rerender(<ChannelsPage {...props({ ...ready, phase: 'unavailable' })} />)
