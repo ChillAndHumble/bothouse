@@ -113,6 +113,9 @@ func (p *PublicProgress) Accept(taskID, actor string) (*Task, error) {
 	}
 	old := r.record
 	old.Task = t.Clone()
+	// The human's acceptance is final: members that never reported an end are
+	// marked interrupted (grants are revoked below) instead of blocking the card.
+	interruptTaskMembers(t)
 	now := time.Now().UTC()
 	r.record.Accepted = true
 	r.record.Closed = true
@@ -132,6 +135,7 @@ func (p *PublicProgress) Accept(taskID, actor string) (*Task, error) {
 	}
 	p.pending[t.ID] = r
 	p.indexRun(r)
+	p.revokeMemberRuns(r)
 	p.mu.Unlock()
 	return t.Clone(), nil
 }
