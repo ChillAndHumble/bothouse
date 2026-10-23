@@ -32,6 +32,7 @@ import (
 // ── request / result ───────────────────────────────────────────
 
 type WizardRequest struct {
+	libraryHost string // host of the management page (handleSetupApply): cloud_web loads library pictures from it
 	Platform string `json:"platform"` // "discord" (default) | "feishu" | "lark" | "cloud_web" (自建平台)
 	Language string `json:"language,omitempty"`
 	Discord  *struct {
@@ -1424,7 +1425,11 @@ func planWizard(s WizardSnapshot, ids []wizardIdentity, req WizardRequest, state
 			pw.PlatformType = "cloud_web"
 			cur := s.projectPlatform(r.project, "cloud_web")
 			pw.Options["transport"] = "websocket"
-			pw.Options["ws_url"] = cloudWebBotURL(cwBase, r.project, r.Name, r.mentionID)
+			avatar := cloudWebQuery(fmt.Sprint(cur["ws_url"]), "avatar") // not passed = keep
+			if r.Avatar != nil {
+				avatar = cloudWebAvatar(dataDir, req.libraryHost, *r.Avatar)
+			}
+			pw.Options["ws_url"] = cloudWebBotURL(cwBase, r.project, r.Name, r.mentionID, avatar)
 			pw.Options["token"] = cwToken
 			if a, _ := cur["allow_from"].(string); strings.TrimSpace(a) == "" || strings.TrimSpace(a) == AllowFromUnset {
 				pw.Options["allow_from"] = cloudWebPresets[req.Platform].AllowFrom
@@ -1989,6 +1994,7 @@ func (m *ManagementServer) handleSetupApply(w http.ResponseWriter, r *http.Reque
 	if m.cronScheduler != nil { // a running service: the wiki's jobs start without a restart
 		env.Cron = CronOfScheduler(m.cronScheduler)
 	}
+	req.libraryHost = r.Host
 	res := ApplyWizard(r.Context(), env, req)
 	status := http.StatusOK
 	if !res.OK && !res.Saved { // saved with warnings is still a 200: the config was written

@@ -114,3 +114,17 @@ func TestLibraryAPIRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudWebAvatarParam(t *testing.T) {
+	dir := t.TempDir()
+	var img bytes.Buffer
+	_ = png.Encode(&img, image.NewRGBA(image.Rect(0, 0, 4, 4)))
+	if err := SaveLibraryAvatar(dir, "mypic", img.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	for slug, want := range map[string]string{"orange": "orange", "mypic": "http://h:9820/api/v1/library/avatar-image/mypic", "nope": "", "": ""} {
+		if got := cloudWebAvatar(dir, "h:9820", slug); got != want {
+			t.Errorf("cloudWebAvatar(%q) = %q, want %q", slug, got, want)
+		}
+	}
+}
