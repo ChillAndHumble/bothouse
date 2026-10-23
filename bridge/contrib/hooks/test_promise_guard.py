@@ -31,7 +31,11 @@ BG_BASH = ("Bash", {"command": "python3 run2.py full", "run_in_background": True
 BG_AGENT = ("Agent", {"description": "低并发重测", "prompt": "..."})
 
 
-def run(final, tools=(), before=(), stop_active=False):
+# 测试里的"现在"：transcript 用的是 2026-10-17T17:07Z（02:07 JST）前后，钉在 02:20 JST，结果不随运行日期变
+NOW = "2026-10-18T02:20:00+09:00"
+
+
+def run(final, tools=(), before=(), stop_active=False, env=None):
     """tools: [(name, input)] 或已经展开好的条目；before: 前几轮的条目。返回 hook 输出（空 = 放行）。"""
     entries = list(before) + [user("进度怎么样")]
     for t in tools:
@@ -41,7 +45,15 @@ def run(final, tools=(), before=(), stop_active=False):
         f.write("\n".join(json.dumps(e, ensure_ascii=False) for e in entries))
     try:
         inp = {"transcript_path": f.name, "stop_hook_active": stop_active, "last_assistant_message": final}
-        out = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(inp), capture_output=True, text=True, timeout=10)
+        e = {k: v for k, v in os.environ.items() if k not in ("CC_PROJECT", "CC_SESSION_KEY")}
+        e.update({"PROMISE_GUARD_NOW": NOW, "TZ": "Asia/Tokyo"}, **(env or {}))
+        with tempfile.TemporaryDirectory() as home:
+            e["HOME"] = home
+            jobs = os.path.join(home, ".bothouse", "crons")
+            os.makedirs(jobs)
+            with open(os.path.join(jobs, "jobs.json"), "w") as fixture:
+                json.dump([{"enabled": True, "exec": "outing-tick test-bot 123456789012345678 next hourly", "cron_expr": "0 9-18 * * *"}], fixture)
+            out = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(inp), capture_output=True, text=True, timeout=10, env=e)
         assert out.returncode == 0, out.stderr
         return out.stdout.strip()
     finally:
@@ -96,7 +108,9 @@ class Replay(unittest.TestCase):
 
     def test_day_outing_next_passes(self):
         # 14:05 JST 定 30m，14:35 醒，在 outing-tick 的 9–22 点里
-        self.passed("14 点 35 分左右出结果，我看完就告诉你。", [("Bash", {"command": "outing-next 30m"}, "2026-10-18T05:05:00Z")])
+        # 频道取 jobs.json 里启用的 test-bot 9-18 点 outing-tick
+        self.passed("14 点 35 分左右出结果，我看完就告诉你。", [("Bash", {"command": "outing-next 30m"}, "2026-10-18T05:05:00Z")],
+                    env={"CC_PROJECT": "test-bot", "CC_SESSION_KEY": "discord:123456789012345678"})
 
     def test_repeat_of_earlier_timer_passes(self):
         before = [user("开始吧")] + tool(*TIMER) + [say("我订了一个 19:15 的检查提醒。")]

@@ -74,6 +74,113 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.run_hook("bash-guard", p), "")
         self.assertTrue(self.denied(self.run_hook("bash-guard", p, dict(self.env, HOOK_PROXY="http://127.0.0.1:7890"))))
 
+    def test_generic_switch_without_claude_directory(self):
+        for cli in ("kimi", "qoder", "iflow"):
+            role = os.path.join(self.tmp, "role-" + cli)
+            os.makedirs(role)
+            p = subprocess.run([sys.executable, "-I", RUN, "--role", role, "off", "bash-guard"], capture_output=True, text=True, env=self.env)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertTrue(os.path.isfile(os.path.join(role, ".bothouse", "conest-hooks.json")))
+            self.assertFalse(os.path.exists(os.path.join(role, ".claude")))
+
+    # ---- Gemini CLI payloads (https://geminicli.com/docs/hooks/reference) ----
+    def gemini(self, event, **kw):
+        p = {"session_id": "g1", "transcript_path": "/tmp/gemini-session.json", "cwd": self.tmp,
+             "hook_event_name": event, "timestamp": "2026-10-23T10:00:00Z"}
+        p.update(kw)
+        return p
+
+    def test_gemini_before_tool_denies(self):
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="run_shell_command",
+                                                      tool_input={"command": "sleep 120", "is_background": False}))
+        d = json.loads(out)
+        self.assertEqual(d.get("decision"), "deny", out)
+        self.assertIn("sleep", d.get("reason", ""))
+
+    def test_gemini_before_tool_allows(self):
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="run_shell_command",
+                                                      tool_input={"command": "ls -la"}))
+        self.assertEqual(out, "")
+        # a Gemini tool no hook matches still passes
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="google_web_search",
+                                                      tool_input={"query": "x"}))
+        self.assertEqual(out, "")
+
+    def test_gemini_background_arg(self):
+        # Gemini's run_shell_command says is_background, Claude Code's Bash says run_in_background
+        out = self.run_hook("bash-guard", self.gemini("BeforeTool", tool_name="run_shell_command",
+                                                      tool_input={"command": "sleep 120", "is_background": True}))
+        self.assertEqual(json.loads(out).get("decision"), "deny", out)  # background without a timeout
+
+    def test_gemini_after_agent_blocks(self):
+        # AfterAgent -> Stop: fix-claim-guard/promise-guard read the turn from prompt/prompt_response
+        out = self.run_hook("promise-guard", self.gemini("AfterAgent", prompt="改一下 foo",
+                                                         prompt_response="改好了，我等你回来。", stop_hook_active=False))
+        d = json.loads(out) if out else {}
+        self.assertIn(d.get("decision"), (None, "deny"), out)  # never a Claude Code "block" leaking through
+        if out:
+            self.assertIn("reason", d)
+
+    def test_gemini_output_context(self):
+        # Gemini takes hookSpecificOutput.additionalContext on BeforeAgent and AfterTool, not on BeforeTool
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("conest_run", os.path.join(HERE, "run.py"))
+        run = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(run)
+        out = json.dumps({"hookSpecificOutput": {"additionalContext": "hint"}})
+        for ev in ("BeforeAgent", "AfterTool"):
+            self.assertEqual(json.loads(run.gemini_output(out, ev)), {"hookSpecificOutput": {"additionalContext": "hint"}})
+        self.assertEqual(run.gemini_output(out, "BeforeTool"), "")
+        self.assertNotIn("subagent", run.GEMINI_NAMES)
+
+    # ---- Qoder CLI payloads (https://docs.qoder.com/cli/hooks): Claude Code's shape, no translation ----
+    def qoder(self, event, **kw):
+        p = {"session_id": "q1", "transcript_path": "", "cwd": self.tmp, "hook_event_name": event,
+             "permission_mode": "default"}
+        p.update(kw)
+        return p
+
+    def test_qoder_pretooluse_denies(self):
+        out = self.run_hook("bash-guard", self.qoder("PreToolUse", tool_name="Bash",
+                                                    tool_input={"command": "sleep 120"}))
+        self.assertTrue(self.denied(out), out)  # passed straight through, Claude Code's own decision field
+
+    def test_qoder_pretooluse_allows(self):
+        out = self.run_hook("bash-guard", self.qoder("PreToolUse", tool_name="Bash",
+                                                    tool_input={"command": "ls -la"}))
+        self.assertEqual(out, "")
+
+    # ---- iFlow CLI payloads (hooks doc: env vars + the same JSON on stdin) ----
+    def iflow(self, event, **kw):
+        p = {"session_id": "i1", "cwd": self.tmp}
+        p.update(kw)
+        return p
+
+    def iflow_env(self, event, **kw):
+        e = dict(self.env, IFLOW_HOOK_EVENT_NAME=event, IFLOW_SESSION_ID="i1", IFLOW_CWD=self.tmp)
+        e.update({k: v for k, v in kw.items() if k.startswith("IFLOW_")})
+        return e
+
+    def test_iflow_pretooluse_denies(self):
+        # its doc's tool name is run_shell_command ("Common Tool Name Reference"), args in IFLOW_TOOL_ARGS
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "bash-guard"],
+                           input=json.dumps(self.iflow("PreToolUse")),
+                           capture_output=True, text=True, timeout=30, cwd=self.tmp,
+                           env=self.iflow_env("PreToolUse", IFLOW_TOOL_NAME="run_shell_command",
+                                              IFLOW_TOOL_ARGS=json.dumps({"command": "sleep 120"})))
+        self.assertEqual(r.returncode, 2, r.stderr)  # iFlow blocks on a non-zero exit code only
+        self.assertIn("sleep", r.stderr)
+        self.assertEqual(r.stdout.strip(), "")
+
+    def test_iflow_pretooluse_allows(self):
+        # the same fields may also arrive in the stdin JSON (the doc's examples read data["tool_input"])
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "bash-guard"],
+                           input=json.dumps(self.iflow("PreToolUse", tool_name="run_shell_command",
+                                                       tool_input={"command": "ls -la"})),
+                           capture_output=True, text=True, timeout=30, cwd=self.tmp,
+                           env=self.iflow_env("PreToolUse"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, ""), r.stderr)
+
     # ---- dispatch-review-guard ----
     def test_dispatch_review_both_clis(self):
         for tool, inp in (("Agent", {"prompt": "改一下 foo"}), ("subagent", {"prompt": "改一下 foo"}),
@@ -172,7 +279,7 @@ class Hooks(unittest.TestCase):
         r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "off", "nope"], capture_output=True,
                            text=True, env=self.env, cwd=sub)
         self.assertNotEqual(r.returncode, 0)
-        with open(os.path.join(role, ".claude", "conest-hooks.json")) as f:  # the file a person can edit too
+        with open(os.path.join(role, ".bothouse", "conest-hooks.json")) as f:  # the file a person can edit too
             self.assertEqual(json.load(f), {"off": sorted(set(st["off"]))})
         # bash-guard lets the switch command itself through
         self.assertEqual(self.run_hook("bash-guard", {"hook_event_name": "PreToolUse", "tool_name": "bash",
@@ -200,7 +307,7 @@ class Hooks(unittest.TestCase):
                            capture_output=True, text=True, env=env, cwd=elsewhere, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["role_dir"], role)
-        with open(os.path.join(role, ".claude", "conest-hooks.json")) as f:
+        with open(os.path.join(role, ".bothouse", "conest-hooks.json")) as f:
             self.assertEqual(json.load(f), {"off": ["bash-guard"]})
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "repo", ".claude", "conest-hooks.json")))
         kill = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "pkill -f x"}}
@@ -245,9 +352,8 @@ class Hooks(unittest.TestCase):
 
     def test_wiki_ingest_passes(self):
         # the wiki's ingest in DSH (cwd <role>/wiki/.ingest-work): the role's hooks must not refuse its scratch writes
-        # the role sits outside dispatch-review-guard's free dirs (/tmp, /private/tmp, ~/.claude), as a real role does:
-        # on Linux mkdtemp is under /tmp, where every write passes anyway and the "refused without the flag" half
-        # failed (CI on main 6ae16ce). The real home (not the test's HOME) is never a free dir; removed below.
+        # Only the payload file_path is outside free dirs. The test never writes it;
+        # all real fixtures stay under the caller's isolated HOME, including /tmp.
         base = tempfile.mkdtemp(prefix=".conest-test-ingest-", dir=os.path.expanduser("~"))
         role = os.path.join(base, "ingestrole")
         work = os.path.join(role, "wiki", ".ingest-work")
@@ -257,7 +363,7 @@ class Hooks(unittest.TestCase):
             json.dump({role: {"hooks": ["dispatch-review-guard"], "dsh_home": self.env["DSH_HOME"]}}, f)
         self.session("ingest1", [], compress=False)
         p = {"hook_event_name": "PreToolUse", "session_id": "ingest1", "transcript_path": "", "tool_name": "write",
-             "cwd": work, "tool_input": {"file_path": os.path.join(work, "draft.md"), "content": "x"}}
+             "cwd": work, "tool_input": {"file_path": "/work/ingest/draft.md", "content": "x"}}
         try:
             def run(env):
                 return subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "--conest-hook",
@@ -284,6 +390,150 @@ class Hooks(unittest.TestCase):
         self.assertIn("infra/vps.md", out)
         self.assertEqual(self.run_hook("wiki-context", p, env), "")  # same page, same session: once
         self.assertEqual(self.run_hook("wiki-context", dict(p, session_id="w2"), dict(env, CC_PROJECT="bot")), "")
+
+
+    def test_new_wait_rules_through_installed_runner(self):
+        for tool, command, blocked in (("Bash", "sleep 60", True), ("Bash", "sleep 5", False),
+                                       ("bash", "sleep 5", True)):
+            payload = {"hook_event_name": "PreToolUse", "tool_name": tool,
+                       "tool_input": {"command": command}, "transcript_path": ""}
+            self.assertEqual(self.denied(self.run_hook("bash-guard", payload)), blocked)
+
+    def test_dsh_log_read_only_when_needed(self):
+        # run.py reuses dsh-cc-compat.add_fields: the log is read for bash/job_output only, dsh_busy for sleep/wait only
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("compat", os.path.join(self.hooks, "dsh-cc-compat.py"))
+        compat = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(compat)
+        lines = ['{"type":"turn/start","data":{"turn":1}}']
+        for name, inp, reads, busy in (("edit", {"path": "x"}, 0, False), ("read", {"path": "x"}, 0, False),
+                                       ("bash", {"command": "ls"}, 1, False), ("bash", {"command": "sleep 5"}, 1, True),
+                                       ("job_output", {"job_id": "j", "wait": True}, 1, True),
+                                       ("job_output", {"job_id": "j"}, 1, False)):
+            calls = []
+            p = {"hook_event_name": "PreToolUse", "tool_input": inp}
+            compat.add_fields(p, name, False, lambda: calls.append(1) or lines)
+            self.assertEqual(len(calls), reads, name)
+            self.assertEqual("dsh_busy" in p, busy, (name, inp))
+        # the current call not in the log yet (DSH writes in 200ms batches): read up to twice more
+        calls = []
+        compat.add_fields({"hook_event_name": "PreToolUse", "tool_use_id": "c9", "tool_input": {"command": "ls"}},
+                          "bash", False, lambda: calls.append(1) or lines)
+        self.assertEqual(len(calls), 3)
+        p = {"hook_event_name": "PreToolUse", "tool_input": {"command": "sleep 5"}}
+        compat.add_fields(p, "bash", False, lambda: 1 / 0)
+        self.assertNotIn("dsh_busy", p)
+        self.assertNotIn("dsh_turn", p)
+
+    def test_dsh_broken_log_passes(self):
+        # a record busy()/turn_calls() cannot parse: no extra fields, the hook still runs, exit 0
+        self.session("broken1", [{"type": "turn/start", "data": {"turn": 1}}, {"type": "job/registered", "data": [1]},
+                                 {"type": "assistant/message", "data": [1]}])
+        for cmd, blocked in (("sleep 5", True), ("ls", False), ("pkill -f x", True)):
+            r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "bash-guard"],
+                               input=json.dumps({"hook_event_name": "PreToolUse", "session_id": "broken1",
+                                                 "transcript_path": "", "tool_name": "bash",
+                                                 "tool_input": {"command": cmd}}),
+                               capture_output=True, text=True, env=self.env, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertEqual(self.denied(r.stdout.strip()), blocked, (cmd, r.stdout))
+
+    def test_lessons_without_wiki_search_hit(self):
+        wiki = os.path.join(self.tmp, "lessons-wiki")
+        os.makedirs(wiki, exist_ok=True)
+        with open(os.path.join(wiki, "rule-candidates-recurrence.md"), "w") as f:
+            f.write("## 关键事实\n- 先核事实：3 次\n  - 10-22 abcdef12「先核实再回复」\n")
+        env = dict(self.env, GATE_WIKI=wiki)
+        p = {"hook_event_name": "UserPromptSubmit", "session_id": "lessons-test", "prompt": "hello"}
+        self.assertIn("教训表", self.run_hook("wiki-context", p, env))
+        self.assertEqual(self.run_hook("wiki-context", p, env), "")
+        self.assertEqual(self.run_hook("wiki-context", dict(p, session_id="ingest"), dict(env, WIKI_INGEST="1")), "")
+
+    def test_research_dispatch_keeps_configurable_directory(self):
+        p = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "cwd": "/project",
+             "tool_input": {"prompt": "【免审:调研】查官方说明"}, "transcript_path": "/missing"}
+        env = dict(self.env, HOOK_RESEARCHER_DIRS="/project")
+        self.assertTrue(self.denied(self.run_hook("dispatch-review-guard", p, env)))
+        p["tool_input"]["subagent_type"] = "researcher"
+        self.assertEqual(self.run_hook("dispatch-review-guard", p, env), "")
+
+
+    # ---- Antigravity (agy): run.py --agy <event> ----
+    def run_agy(self, name, event, payload, role):
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "--conest-hook", "--role", role,
+                            "--agy", event, name], input=json.dumps(payload), capture_output=True, text=True,
+                           env=self.env, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_agy_pretooluse_bash(self):
+        role = tempfile.mkdtemp(dir=self.tmp)
+        p = {"conversationId": "agy1", "workspacePaths": [role], "transcriptPath": "/nonexistent", "stepIdx": 2,
+             "modelName": "m", "toolCall": {"name": "run_command",
+                                             "args": {"CommandLine": "sleep 120", "WaitMsBeforeAsync": 2000}}}
+        out = self.run_agy("bash-guard", "PreToolUse", p, role)
+        self.assertEqual(out["decision"], "deny", out)
+        self.assertTrue(out["reason"], out)
+        p["toolCall"]["args"]["CommandLine"] = "ls"
+        self.assertEqual(self.run_agy("bash-guard", "PreToolUse", p, role), {"decision": "allow"})
+        os.makedirs(os.path.join(role, ".claude"), exist_ok=True)
+        with open(os.path.join(role, ".claude", "conest-hooks.json"), "w") as f:
+            json.dump({"off": ["all"]}, f)
+        p["toolCall"]["args"]["CommandLine"] = "sleep 120"
+        self.assertEqual(self.run_agy("bash-guard", "PreToolUse", p, role), {"decision": "allow"})
+
+    def test_agy_every_pass_prints_allow(self):
+        # agy's "decision" is Required: the passing exits (missing hook script, WIKI_INGEST, a crash) print allow too
+        role = tempfile.mkdtemp(dir=self.tmp)
+        p = {"conversationId": "agy2", "workspacePaths": [role], "toolCall": {"name": "run_command", "args": {}}}
+        self.assertEqual(self.run_agy("no-such-hook", "PreToolUse", p, role), {"decision": "allow"})
+        env = self.env
+        try:
+            self.env = dict(env, WIKI_INGEST="1")
+            self.assertEqual(self.run_agy("bash-guard", "PreToolUse", p, role), {"decision": "allow"})
+        finally:
+            self.env = env
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.hooks, "run.py"), "--conest-hook", "--role", role,
+                            "--agy", "PreToolUse", "bash-guard"], input=json.dumps({"workspacePaths": 5, "toolCall": 7}),
+                           capture_output=True, text=True, env=self.env, timeout=30)
+        self.assertEqual((r.returncode, json.loads(r.stdout)), (0, {"decision": "allow"}), r.stderr)
+
+    def test_agy_payload_and_answer(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("agyrun", os.path.join(self.hooks, "run.py"))
+        run = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(run)
+        got = run.agy_payload({"conversationId": "c", "workspacePaths": ["/w"], "transcriptPath": "/t",
+                               "toolCall": {"name": "run_command", "args": {"CommandLine": "ls"}}}, "PreToolUse")
+        self.assertEqual((got["hook_event_name"], got["session_id"], got["cwd"], got["transcript_path"],
+                          got["tool_name"], got["tool_input"]["command"]),
+                         ("PreToolUse", "c", "/w", "/t", "Bash", "ls"))
+        self.assertEqual(run.agy_answer("PreToolUse", 2, "", "no\n")[0], {"decision": "deny", "reason": "no"})
+        deny = json.dumps({"hookSpecificOutput": {"permissionDecision": "deny", "permissionDecisionReason": "r"}})
+        self.assertEqual(run.agy_answer("PreToolUse", 0, deny, "")[0], {"decision": "deny", "reason": "r"})
+        self.assertEqual(run.agy_answer("Stop", 0, json.dumps({"decision": "block", "reason": "x"}), "")[0],
+                         {"decision": "continue", "reason": "x"})
+        self.assertEqual(run.agy_answer("Stop", 0, "", "")[0], {"decision": "allow"})
+
+    def test_agy_stop_blocks_once(self):
+        role = tempfile.mkdtemp(dir=self.tmp)
+        tr = os.path.join(role, "transcript_full.jsonl")
+        steps = [
+            {"step_index": 0, "type": "USER_INPUT", "created_at": "2026-10-23T01:26:14Z",
+             "content": "<USER_REQUEST>\n登录报错了，修一下\n</USER_REQUEST>\n<ADDITIONAL_METADATA>x</ADDITIONAL_METADATA>"},
+            {"step_index": 1, "type": "PLANNER_RESPONSE", "created_at": "2026-10-23T01:26:15Z",
+             "tool_calls": [{"name": "run_command", "args": {"CommandLine": "ls"}}]},
+            {"step_index": 2, "type": "PLANNER_RESPONSE", "created_at": "2026-10-23T01:26:16Z", "content": "已修复，登录正常了。"},
+        ]
+        with open(tr, "w", encoding="utf-8") as f:
+            f.write("\n".join(json.dumps(x, ensure_ascii=False) for x in steps) + "\n")
+        p = {"conversationId": "agystop", "workspacePaths": [role], "transcriptPath": tr, "executionNum": 0,
+             "terminationReason": "model_stop", "fullyIdle": True}
+        out = self.run_agy("fix-claim-guard", "Stop", p, role)
+        self.assertEqual(out["decision"], "continue", out)
+        self.assertTrue(out["reason"])
+        self.assertEqual(self.run_agy("fix-claim-guard", "Stop", p, role), {"decision": "allow"})  # once per turn
 
 
 if __name__ == "__main__":

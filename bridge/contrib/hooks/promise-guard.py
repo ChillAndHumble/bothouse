@@ -469,7 +469,8 @@ def main():
     last = d.get("last_assistant_message")
     if isinstance(last, str) and last:
         text = last
-    missing = judge(text, tools, errs, fires, pending, None, ctx)
+    fixed = os.environ.get("PROMISE_GUARD_NOW")  # deterministic replay clock for regression tests
+    missing = judge(text, tools, errs, fires, pending, parse_ts(fixed) if fixed else None, ctx)
     if missing:
         print(json.dumps({"decision": "block", "reason": reason(missing)}, ensure_ascii=False))
 

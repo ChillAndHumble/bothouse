@@ -32,20 +32,28 @@ def main():
         return
     ctx = load_ctxsvc()
     hits = ctx.match_wiki(prompt)
-    if not hits:
-        return
     STATE.mkdir(parents=True, exist_ok=True)
     f = STATE / (sid.replace("/", "_").replace("\\", "_") + ".json")
-    sent = json.loads(f.read_text()) if f.exists() else []
+    first = not f.exists()
+    sent = json.loads(f.read_text()) if not first else []
     lines = []
     for w in hits:
         if w["path"] not in sent:
             sent.append(w["path"])
             lines.append("\n- " + w["path"] + " — " + w["desc"])
     f.write_text(json.dumps(sent))
+    out = ""
     if lines:
         out = ("（可能相关的 wiki 页，需要时去读；desc 里的「数字: 原文」是命中行号，按行号 sed -n 读命中段，不整页 cat）"
                + "".join(lines))
+    if not os.environ.get("WIKI_INGEST"):
+        spec = importlib.util.spec_from_file_location("hook_lessons", HERE / "lessons.py")
+        lessons = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lessons)
+        lessons.WIKI, lessons.search, lessons.query = ctx.WIKI, ctx.search, ctx.query
+        extra = lessons.lessons_context(prompt, first)
+        out = "\n\n".join(x for x in (out, extra) if x)
+    if out:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": out}},
                          ensure_ascii=False))
 
