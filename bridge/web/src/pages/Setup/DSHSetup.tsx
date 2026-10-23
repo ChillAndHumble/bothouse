@@ -11,6 +11,18 @@ const INSTALL_STEPS = ['download', 'deps', 'plugin'] as const;
 const CLI_OF: Record<string, DSHMember['cli']> = { claudecode: 'claude', codex: 'codex', gemini: 'gemini' };
 const DEEPSEEK = 'deepseek';
 
+/**
+ * DSH's sign-in cookie is SameSite=Strict (seen on its `?token=` 303 response), so a tab opened from the
+ * wizard on another loopback name (localhost vs 127.0.0.1) arrives without it and DSH asks to reopen the URL.
+ * DSH accepts either name, so use the wizard's own one.
+ */
+function sameSiteURL(raw: string): string {
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'];
+  const u = new URL(raw);
+  if (loopback.includes(u.hostname) && loopback.includes(window.location.hostname)) u.hostname = window.location.hostname;
+  return u.toString();
+}
+
 type Role = { key: number; name: string; runner: string; persona: string };
 
 const TEXT = {
@@ -130,8 +142,9 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
     void run(async () => {
       try {
         const r = await openDSHWeb();
-        setOpenURL(r.url);
-        if (tab) tab.location.href = r.url;
+        const url = sameSiteURL(r.url);
+        setOpenURL(url);
+        if (tab) tab.location.href = url;
       } catch (e) { tab?.close(); throw e; }
     });
   };
@@ -142,7 +155,7 @@ export default function DSHSetup({ lang, onBack }: { lang: string; onBack: () =>
   return <div className="space-y-4 max-w-3xl" data-testid="dsh-setup">
     <h2 className="text-lg font-bold">{t.title}</h2><p className="text-sm text-gray-500">{t.note}</p>
     <div className="flex flex-wrap gap-2">{t.steps.map((label, i) => <span key={label}
-      className={`rounded-full px-3 py-1 text-sm ${step === i ? 'bg-accent text-white' : i < step ? 'bg-accent/10 text-accent' : 'bg-gray-100 dark:bg-gray-800'}`}>{i < step ? '✓' : i + 1}. {label}</span>)}</div>
+      className={`rounded-full px-3 py-1 text-sm ${step === i ? 'bg-accent text-white' : i < step ? 'bg-accent/10 text-accent' : 'bg-gray-100 dark:bg-gray-800'}`}>{i < step ? '✓' : `${i + 1}.`} {label}</span>)}</div>
     <Card className="space-y-4">
       {error && <p role="alert" className="text-red-500 whitespace-pre-wrap" data-testid="dsh-error">{error}</p>}
 
