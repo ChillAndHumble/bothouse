@@ -125,7 +125,7 @@ export default function VersionBadge({ collapsed }: { collapsed: boolean }) {
         <div className="rounded-lg bg-red-500/10 px-2 py-1.5 text-xs text-red-600 dark:text-red-400 space-y-1">
           <div className="flex items-start gap-1">
             <AlertCircle size={13} className="shrink-0 mt-px" />
-            <span className="break-words">{t('update.failed')}{error ? `: ${error}` : ''}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{t('update.failed')}{error ? `: ${error}` : ''}</span>
           </div>
           <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline">
             <ExternalLink size={12} />
