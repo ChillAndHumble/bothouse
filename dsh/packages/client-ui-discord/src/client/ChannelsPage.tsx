@@ -312,6 +312,12 @@ export function ChannelsPage({ useChannels, selectRoom, send, createRoom, listMo
             stickRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 40
           }}
         >
+          {!state.members.some(m => m.kind !== 'human') && (
+            <div className={css.guide}>
+              <div>{t('guideNoMembers')}</div>
+              <button type="button" className={css.primaryButton} onClick={() => { setDialog(null) }}>{t('addMember')}</button>
+            </div>
+          )}
           {state.messages.length === 0
             ? <div className={css.empty}>{t('empty')}</div>
             : state.messages.map(m => <MessageRow key={m.id} message={m} member={byId.get(m.author)} t={t} onConfigure={() => { setModelsOpen(true) }} />)}
