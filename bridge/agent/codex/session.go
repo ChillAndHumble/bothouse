@@ -24,7 +24,7 @@ import (
 // codexSession manages a multi-turn Codex conversation.
 // First Send() uses `codex exec`, subsequent ones use `codex exec resume <threadID>`.
 type codexSession struct {
-	core.SubTaskTracker
+	subTaskTracker
 	workDir          string
 	model            string
 	effort           string

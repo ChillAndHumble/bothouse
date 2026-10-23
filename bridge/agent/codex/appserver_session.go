@@ -159,7 +159,7 @@ type appServerRequestUserInputAnswer struct {
 }
 
 type appServerSession struct {
-	core.SubTaskTracker
+	subTaskTracker
 	url           string
 	workDir       string
 	model         string
@@ -1368,7 +1368,7 @@ func (s *appServerSession) handleItemStarted(item map[string]any) {
 		s.emit(core.Event{Type: core.EventToolUse, ToolName: "Sleep", ToolInput: (time.Duration(ms) * time.Millisecond).String()})
 
 	case "collabAgentToolCall":
-		updateCollaborationSubTasks(&s.SubTaskTracker, item)
+		updateCollaborationSubTasks(&s.subTaskTracker, item)
 		tool, _ := item["tool"].(string)
 		s.emit(core.Event{Type: core.EventToolUse, ToolName: strings.TrimSuffix("Agent:"+tool, ":")})
 	}
@@ -1506,7 +1506,7 @@ func (s *appServerSession) handleItemCompleted(item map[string]any) {
 		s.emit(core.Event{Type: core.EventToolResult, ToolName: "ImageGen", ToolResult: truncate(strings.TrimSpace(result), 500), ToolStatus: strings.TrimSpace(status), ToolSuccess: &success})
 
 	case "collabAgentToolCall":
-		updateCollaborationSubTasks(&s.SubTaskTracker, item)
+		updateCollaborationSubTasks(&s.subTaskTracker, item)
 		tool, _ := item["tool"].(string)
 		status, _ := item["status"].(string)
 		success := appServerToolSuccess(status, nil)

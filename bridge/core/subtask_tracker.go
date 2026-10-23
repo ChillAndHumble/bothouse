@@ -75,7 +75,9 @@ search:
 			if row.ID != task.ID {
 				continue
 			}
-			if row.Status == task.Status || (!row.Live() && task.Live() && !restart) {
+			// Closing an already completed child must not replace its result
+			// with stopped. Only an explicit new activation reopens a row.
+			if row.Status == task.Status || (!row.Live() && !restart) {
 				return
 			}
 			// A new activation belongs in the current batch, never in a

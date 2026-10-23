@@ -117,7 +117,14 @@ func TestCodexSubTasksChildTurnIsolationAndClose(t *testing.T) {
 	if len(s.events) != 0 {
 		t.Fatal("child output escaped parent isolation")
 	}
-	s.handleNotification("turn/started", json.RawMessage("{\"threadId\":\"child\",\"turn\":{\"status\":\"inProgress\"}}"))
+	s.handleNotification("turn/started", json.RawMessage("{\"threadId\":\"child\",\"turn\":{\"id\":\"turn-2\",\"status\":\"inProgress\"}}"))
+	s.handleNotification("turn/completed", json.RawMessage("{\"threadId\":\"child\",\"turn\":{\"id\":\"turn-2\",\"status\":\"completed\"}}"))
+	s.handleNotification("turn/started", json.RawMessage("{\"threadId\":\"child\",\"turn\":{\"id\":\"turn-2\",\"status\":\"inProgress\"}}"))
+	_, rows, _ = r.SubTasks()
+	if rows[0].Status != core.SubTaskCompleted {
+		t.Fatal("duplicate turn start reopened completed child")
+	}
+	s.handleNotification("turn/started", json.RawMessage("{\"threadId\":\"child\",\"turn\":{\"id\":\"turn-3\",\"status\":\"inProgress\"}}"))
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -152,5 +159,47 @@ func TestCodexSubTasksStateMapIdentityAndAcceptedClose(t *testing.T) {
 		if ev.ToolInput != "" || ev.ToolResult != "" {
 			t.Fatalf("collaboration leaked content: %+v", ev)
 		}
+	}
+}
+
+func TestCodexSubTasksDuplicateResumePreservesResult(t *testing.T) {
+	for _, backend := range []string{"exec", "app_server"} {
+		t.Run(backend, func(t *testing.T) {
+			var session any
+			var receive func(map[string]any)
+			toolKey, idsKey, statesKey := "resume_agent", "receiver_thread_ids", "agents_states"
+			if backend == "exec" {
+				s := &codexSession{ctx: context.Background(), events: make(chan core.Event, 16)}
+				session = s
+				receive = func(item map[string]any) { s.handleCollaboration(item, true) }
+			} else {
+				s := &appServerSession{ctx: context.Background(), events: make(chan core.Event, 16)}
+				session = s
+				toolKey, idsKey, statesKey = "resumeAgent", "receiverThreadIds", "agentsStates"
+				receive = func(item map[string]any) { item["type"] = "collabAgentToolCall"; s.handleItemCompleted(item) }
+			}
+			r := reporter(t, session)
+			state := func(tool, id, status string) {
+				receive(map[string]any{"tool": tool, "id": id, "status": "completed", idsKey: []any{"child"}, statesKey: map[string]any{"child": map[string]any{"status": status}}})
+			}
+			state("wait", "wait-1", "completed")
+			state(toolKey, "resume-1", "running")
+			_, rows, _ := r.SubTasks()
+			if rows[0].Status != core.SubTaskRunning {
+				t.Fatal("new resume did not start child")
+			}
+			state("wait", "wait-2", "completed")
+			state(toolKey, "resume-1", "running")
+			state("wait", "close-1", "shutdown")
+			_, rows, _ = r.SubTasks()
+			if rows[0].Status != core.SubTaskCompleted {
+				t.Fatal("duplicate resume or later shutdown overwrote result")
+			}
+			state(toolKey, "resume-2", "running")
+			_, rows, _ = r.SubTasks()
+			if rows[0].Status != core.SubTaskRunning {
+				t.Fatal("new resume ID was ignored")
+			}
+		})
 	}
 }

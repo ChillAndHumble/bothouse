@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/chenhg5/cc-connect/core"
 )
@@ -11,10 +12,23 @@ import (
 var _ core.SubTaskReporter = (*codexSession)(nil)
 var _ core.SubTaskReporter = (*appServerSession)(nil)
 
+type subTaskTracker struct {
+	core.SubTaskTracker
+	starts sync.Map // native tool/turn IDs already used to reopen a child
+}
+
+func (t *subTaskTracker) firstStart(id string) bool {
+	if id == "" {
+		return false
+	}
+	_, seen := t.starts.LoadOrStore(id, struct{}{})
+	return !seen
+}
+
 // Both transports carry the same collaboration record, with different casing.
 // Only receiver IDs and native agent states are public; prompts, messages and
 // the collaboration tool's own ID/status never become child rows.
-func updateCollaborationSubTasks(table *core.SubTaskTracker, item map[string]any) {
+func updateCollaborationSubTasks(table *subTaskTracker, item map[string]any) {
 	tool, _ := item["tool"].(string)
 	tool = strings.ToLower(strings.ReplaceAll(tool, "_", ""))
 	switch tool {
@@ -51,6 +65,12 @@ func updateCollaborationSubTasks(table *core.SubTaskTracker, item map[string]any
 	if sender == "" {
 		sender, _ = item["sender_thread_id"].(string)
 	}
+	restart := false
+	if status, _ := item["status"].(string); tool == "resumeagent" && status == "completed" {
+		if id, _ := item["id"].(string); id != "" {
+			restart = table.firstStart("resume:" + id)
+		}
+	}
 	for _, raw := range ids {
 		id, _ := raw.(string)
 		if id == "" || id == sender {
@@ -68,7 +88,7 @@ func updateCollaborationSubTasks(table *core.SubTaskTracker, item map[string]any
 			}
 			mapped = core.SubTaskRunning
 		}
-		table.UpdateSubTask(core.SubTask{ID: id, Status: mapped, Background: true}, tool == "resumeagent" && mapped == core.SubTaskRunning)
+		table.UpdateSubTask(core.SubTask{ID: id, Status: mapped, Background: true}, restart && mapped == core.SubTaskRunning)
 	}
 }
 
@@ -93,6 +113,7 @@ func (s *appServerSession) handleChildNotification(method string, raw json.RawMe
 	var n struct {
 		ThreadID string `json:"threadId"`
 		Turn     struct {
+			ID     string `json:"id"`
 			Status string `json:"status"`
 		} `json:"turn"`
 	}
@@ -102,8 +123,14 @@ func (s *appServerSession) handleChildNotification(method string, raw json.RawMe
 	var status core.SubTaskStatus
 	switch method {
 	case "turn/started":
+		if n.Turn.ID == "" || !s.firstStart("turn:"+n.ThreadID+":"+n.Turn.ID) {
+			return true
+		}
 		status = core.SubTaskRunning
 	case "turn/completed":
+		if n.Turn.ID != "" {
+			s.starts.Store("turn:"+n.ThreadID+":"+n.Turn.ID, struct{}{})
+		}
 		switch n.Turn.Status {
 		case "completed":
 			status = core.SubTaskCompleted

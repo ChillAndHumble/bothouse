@@ -10,9 +10,9 @@ import (
 
 // maomao fork: the channel's sub-agent table ("子进程表").
 //
-// Claude Code reports each sub-agent it starts (Agent tool, foreground or
-// run_in_background) through system/task_* events. The agent adapter keeps one
-// row per sub-agent; the engine posts the table as its own message, separate
+// Agent adapters report native child lifecycles (for example Claude Code's
+// system/task_* events). The adapter keeps one row per sub-agent; the engine
+// posts the table as its own message, separate
 // from the progress card, and edits it whenever a row changes — also after the
 // main turn ended, because a background sub-agent keeps reporting then.
 

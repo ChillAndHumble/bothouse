@@ -21,6 +21,7 @@ func TestSubTaskTrackerBatchResumeAndClosure(t *testing.T) {
 	}
 	s.UpdateSubTask(SubTask{ID: "a", Status: SubTaskCompleted}, false)
 	s.UpdateSubTask(SubTask{ID: "a", Status: SubTaskRunning}, false)
+	s.UpdateSubTask(SubTask{ID: "a", Status: SubTaskStopped}, false)
 	_, rows, _ = s.SubTasks()
 	if rows[0].Status != SubTaskCompleted {
 		t.Fatal("stale running snapshot resurrected child")
