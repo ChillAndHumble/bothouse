@@ -2077,6 +2077,15 @@ func (e *Engine) ExecuteTimerJob(job *TimerJob) error {
 		iKey = workspaceDir + ":" + sessionKey
 	}
 	if !session.TryLock() {
+		// inject_if_busy: fold the prompt into the running turn, the same way a gate mid-turn
+		// message is (same checks: canInjectInto); otherwise, or on failure, fall through to queuing.
+		// It carries the scheduled-turn mark and sender header a new timer turn would, so it is
+		// not taken for something the user just said.
+		if job.InjectIfBusy && e.canInjectInto(agent, iKey) &&
+			e.injectIntoRunningTurn(iKey, e.buildSenderPrompt(withScheduledMark(msg.Content), msg.UserID, msg.UserName, msg.Platform, msg.SessionKey, msg.ChannelKey), msg.ReplyCtx, nil, nil) {
+			slog.Info("timer: session busy, job injected into current turn", "id", job.ID, "session", sessionKey)
+			return nil
+		}
 		// maomao fork: queued behind the running turn like a cron job (see ExecuteCronJob).
 		switch e.queueScheduledTurn(effectivePlatform, targetPlatform, msg, session, sessions, iKey, agent, workspaceDir) {
 		case queueAccepted:
