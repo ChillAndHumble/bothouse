@@ -272,7 +272,7 @@ export class CloudWebGateway {
     return true;
   }
 
-  /** Answer one team_workspace frame (see CAP_TEAM_WORKSPACE): op list | create. */
+  /** Answer one team_workspace frame (see CAP_TEAM_WORKSPACE): op list | create | claim. */
   teamWorkspace(d) {
     const { store } = this.hub;
     if (!supportsWorkspaces(store)) return { ok: false, error: 'unsupported' };
@@ -283,8 +283,23 @@ export class CloudWebGateway {
     try {
       if (d.op === 'dispatch_mode') return { ok: true, ...store.dispatchSetting(id) };
       if (d.op === 'list') {
-        const rooms = store.rooms().filter(r => r.kind === 'workspace' && r.parent_id === id).map(view);
+        // One shared pool per server: every workspace, whichever chat channel handed off to it last.
+        // parent_id and active (tasks in progress, tasks.mjs countActive) let the bridge skip a
+        // workspace another chat is using when it adopts one from the pool.
+        const rooms = store.rooms().filter(r => r.kind === 'workspace' && r.id !== id).map(r => ({
+          ...view(r), parent_id: r.parent_id == null ? '' : roomKey(r.parent_id),
+          active: this.tasks?.countActive(r.id) ?? 0,
+        }));
         return { ok: true, self: view(self), rooms };
+      }
+      if (d.op === 'claim') {
+        // The chat channel handing off to a pool workspace becomes its parent, so the unified
+        // exit (team-exit.mjs) sends the workspace's asks and reports there (last handoff wins).
+        const raw = String(d.workspace_id ?? '').replace(/^room-/, '');
+        if (!/^\d+$/.test(raw)) return { ok: false, error: 'room-missing' };
+        const w = store.claimWorkspace(id, Number(raw));
+        this.hub.emit({ type: 'rooms', rooms: store.roomsView() });
+        return { ok: true, room: view(w) };
       }
       if (d.op === 'create') {
         // A's createWorkspace numbers 工作区n+1 itself; the bridge takes the name it gets back.
