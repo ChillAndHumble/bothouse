@@ -294,12 +294,18 @@ export class CloudWebGateway {
       }
       if (d.op === 'claim') {
         // The chat channel handing off to a pool workspace becomes its parent, so the unified
-        // exit (team-exit.mjs) sends the workspace's asks and reports there (last handoff wins).
+        // exit (team-exit.mjs) sends asks and reports of this handoff's task there (task id returned).
         const raw = String(d.workspace_id ?? '').replace(/^room-/, '');
         if (!/^\d+$/.test(raw)) return { ok: false, error: 'room-missing' };
         const w = store.claimWorkspace(id, Number(raw));
         this.hub.emit({ type: 'rooms', rooms: store.roomsView() });
-        return { ok: true, room: view(w) };
+        // The workspace gets the task id with the handoff, so its [ask]/[report] can quote it.
+        const chat = store.room(w.parent_id);
+        this.hub.post(w.id, {
+          authorKind: 'system', author: 'system', name: 'system', clientKey: `team-handoff:${w.task}`,
+          text: `📬 交接任务编号 ${w.task}（来自 ${chat?.name ? `#${chat.name}` : `room-${w.parent_id}`}）。这件活的回复第一行写 [ask] ${w.task} 或 [report] ${w.task}。`,
+        });
+        return { ok: true, room: view(w), task: w.task };
       }
       if (d.op === 'create') {
         // A's createWorkspace numbers 工作区n+1 itself; the bridge takes the name it gets back.

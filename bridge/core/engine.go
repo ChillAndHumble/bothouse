@@ -448,6 +448,7 @@ type Engine struct {
 	teamWS                       *teamWorkspaces  // team mode D: Discord 工作区 channels (team_workspace.go; nil = off)
 	board                        *channelBoardHub // maomao fork: channel task board (channel_board.go); shared by the process
 	memoryIndex                  string           // maomao fork: MEMORY.md for fresh contexts (memoryindex.go; "" = off)
+	voiceDesk                    voiceDeskState   // maomao fork: voice desk (voice_desk.go)
 	dirHistory                   *DirHistory
 	baseWorkDir                  string
 	projectState                 *ProjectStateStore
@@ -3481,6 +3482,7 @@ func (e *Engine) maybeAutoResetSessionOnIdle(p Platform, msg *Message, sessions 
 		return nil
 	}
 
+	e.closeWorkspaceHandoffs(msg.SessionKey, lastActive) // tasks this workspace session worked on are over
 	slog.Info("auto-resetting idle session",
 		"session_key", msg.SessionKey,
 		"session_id", session.ID,
@@ -6402,6 +6404,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			// Mark clean exit so unsolicited reader preserves buffered events.
 			state.mu.Lock()
 			state.eventsNeedResync = false
+			// maomao fork: a cancel that raced with a normal end of the turn must not
+			// silence the next turn's error (queued turns don't pass the reset at turn start).
+			state.turnCancelled = false
 			injected := state.injectedReplyCtxs // maomao fork: messages injected mid-turn (gate.go)
 			state.injectedReplyCtxs = nil
 			state.mu.Unlock()
@@ -7977,6 +7982,7 @@ func (e *Engine) startFreshSession(sessions *SessionManager, interactiveKey, ses
 
 	// Clear old session's agent session ID so it cannot be resumed
 	old := sessions.GetOrCreateActive(sessionKey)
+	e.closeWorkspaceHandoffs(sessionKey, old.GetUpdatedAt()) // tasks this workspace session worked on are over
 	oldAgentID := old.GetAgentSessionID()
 	pendingFrom, pendingReason := old.TakeHandoffFrom() // /new twice before a turn
 	old.SetAgentSessionID("", "")
@@ -11454,13 +11460,7 @@ func (e *Engine) stopInteractiveSessionWithOptions(sessionKey string, notifyQueu
 
 		if pending != nil {
 			pending.resolve()
-		}
-		if notifyQueued {
-			e.notifyDroppedQueuedMessages(state, fmt.Errorf("session cancelled"))
-		} else {
-			state.mu.Lock()
-			state.pendingMessages = nil
-			state.mu.Unlock()
+			pending = nil // not again if CancelTurn fails and normal cleanup runs
 		}
 
 		// Mark eventsNeedResync so the next turn drains stale events from
@@ -11475,7 +11475,18 @@ func (e *Engine) stopInteractiveSessionWithOptions(sessionKey string, notifyQueu
 			slog.Warn("agent session CancelTurn failed, falling back to Close",
 				"session_key", sessionKey, "error", cancelErr)
 			// Fall through to normal cleanup below.
+			e.interactiveMu.Lock()
 			goto normalCleanup
+		}
+		// maomao fork: only the running turn is cancelled. Messages queued behind it stay
+		// queued and are answered by the next turns of this same session (the cancelled
+		// turn's drain picks them up); they get no "❌ session cancelled" (review
+		// ~/.claude/reviews/agy-abort-reset.md: 「不能无声消失」, user 10-23「取消后不报错」).
+		// A silent stop (a recalled message) still drops them, as before.
+		if !notifyQueued {
+			state.mu.Lock()
+			state.pendingMessages = nil
+			state.mu.Unlock()
 		}
 
 		slog.Info("agent session turn cancelled, session kept alive",
