@@ -272,7 +272,7 @@ export class CloudWebGateway {
     return true;
   }
 
-  /** Answer one team_workspace frame (see CAP_TEAM_WORKSPACE): op list | create | claim. */
+  /** Answer one team_workspace frame (see CAP_TEAM_WORKSPACE): op list | create | claim | release. */
   teamWorkspace(d) {
     const { store } = this.hub;
     if (!supportsWorkspaces(store)) return { ok: false, error: 'unsupported' };
@@ -283,35 +283,44 @@ export class CloudWebGateway {
     try {
       if (d.op === 'dispatch_mode') return { ok: true, ...store.dispatchSetting(id) };
       if (d.op === 'list') {
-        // One shared pool per server: every workspace, whichever chat channel handed off to it last.
-        // parent_id and active (tasks in progress, tasks.mjs countActive) let the bridge skip a
-        // workspace another chat is using when it adopts one from the pool.
-        const rooms = store.rooms().filter(r => r.kind === 'workspace' && r.id !== id).map(r => ({
-          ...view(r), parent_id: r.parent_id == null ? '' : roomKey(r.parent_id),
-          active: this.tasks?.countActive(r.id) ?? 0,
-        }));
+        // One shared pool per server: every workspace with its owner ("" = free, released after
+        // its last task) and active (tasks in progress, tasks.mjs countActive), so the bridge
+        // adopts only a free one and never claims a workspace another chat channel owns.
+        const rooms = store.rooms().filter(r => r.kind === 'workspace' && r.id !== id).map(r => {
+          const owner = store.workspaceOwner(r.id);
+          return {
+            ...view(r), parent_id: r.parent_id == null ? '' : roomKey(r.parent_id),
+            owner: owner == null ? '' : roomKey(owner),
+            active: this.tasks?.countActive(r.id) ?? 0,
+          };
+        });
         return { ok: true, self: view(self), rooms };
       }
       if (d.op === 'claim') {
-        // The chat channel handing off to a pool workspace becomes its parent, so the unified
-        // exit (team-exit.mjs) sends asks and reports of this handoff's task there (task id returned).
+        // The chat channel handing off to a free pool workspace becomes its owner, so the unified
+        // exit (team-exit.mjs) sends the workspace's asks and reports there; one another chat
+        // channel owns is refused (error workspace-owned).
         const raw = String(d.workspace_id ?? '').replace(/^room-/, '');
         if (!/^\d+$/.test(raw)) return { ok: false, error: 'room-missing' };
-        const w = store.claimWorkspace(id, Number(raw));
+        const w = store.claimWorkspace(id, Number(raw), { bridge: true });
         this.hub.emit({ type: 'rooms', rooms: store.roomsView() });
-        // The workspace gets the task id with the handoff, so its [ask]/[report] can quote it.
-        const chat = store.room(w.parent_id);
-        this.hub.post(w.id, {
-          authorKind: 'system', author: 'system', name: 'system', clientKey: `team-handoff:${w.task}`,
-          text: `📬 交接任务编号 ${w.task}（来自 ${chat?.name ? `#${chat.name}` : `room-${w.parent_id}`}）。这件活的回复第一行写 [ask] ${w.task} 或 [report] ${w.task}。`,
-        });
-        return { ok: true, room: view(w), task: w.task };
+        return { ok: true, room: { ...view(w), claim: store.claimId(w.id) } };
+      }
+      if (d.op === 'release') {
+        // The bridge reset the workspace lead's session after its last task: back to the pool,
+        // its sessions cleared. Refused (error busy) while tasks are in work there, and (error
+        // stale-claim) when d.claim names an earlier claim than the current one.
+        if (self.kind !== 'workspace') return { ok: false, error: 'not-workspace' };
+        const claim = d.claim == null || d.claim === '' ? null : String(d.claim);
+        const released = this.tasks ? this.tasks.release(id, claim) : store.releaseWorkspace(id, claim);
+        if (released) this.hub.emit({ type: 'rooms', rooms: store.roomsView() });
+        return { ok: true, room: view(self) };
       }
       if (d.op === 'create') {
         // A's createWorkspace numbers 工作区n+1 itself; the bridge takes the name it gets back.
-        const w = store.createWorkspace(id);
+        const w = store.createWorkspace(id, { bridge: true });
         this.hub.emit({ type: 'rooms', rooms: store.roomsView() });
-        return { ok: true, room: view(w) };
+        return { ok: true, room: { ...view(w), claim: store.claimId(w.id) } };
       }
     } catch (error) {
       return { ok: false, error: error?.code ?? String(error?.message ?? error) };
