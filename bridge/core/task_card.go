@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // TaskState represents the execution lifecycle state of a task.
 type TaskState string
@@ -55,8 +58,26 @@ type TaskEvent struct {
 	FactStage       FactStage     `json:"fact_stage"`
 	Summary         string        `json:"summary"`
 	Detail          string        `json:"detail,omitempty"`
-	IsKeyFact       bool          `json:"is_key_fact"`
-	Timestamp       time.Time     `json:"timestamp"`
+	// Pointer marks a Summary that only points readers at the task thread
+	// ("X 更新了进度，详见任务线程"); inside the thread it is noise.
+	Pointer   bool      `json:"pointer,omitempty"`
+	IsKeyFact bool      `json:"is_key_fact"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// ThreadText is the single text a task thread shows for this event: the
+// reporter's own words when Summary only points at the thread, otherwise the
+// summary followed by any detail.
+func (ev TaskEvent) ThreadText() string {
+	detail := strings.TrimSpace(ev.Detail)
+	switch {
+	case detail == "":
+		return ev.Summary
+	case ev.Pointer:
+		return detail
+	default:
+		return ev.Summary + "\n" + detail
+	}
 }
 
 // Task represents a persistent, trackable task unit with Discord card and thread bindings.
@@ -78,6 +99,7 @@ type Task struct {
 	MessageID          string       `json:"message_id,omitempty"`
 	CardURL            string       `json:"card_url,omitempty"` // platform-generated permalink, never supplied by a progress report
 	ThreadID           string       `json:"thread_id,omitempty"`
+	ThreadTitle        string       `json:"thread_title,omitempty"` // name last given to the thread; it follows Title
 	Seq                int64        `json:"seq"`
 	CreatedAt          time.Time    `json:"created_at"`
 	UpdatedAt          time.Time    `json:"updated_at"`

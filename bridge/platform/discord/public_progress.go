@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -94,6 +95,7 @@ func (p *Platform) EnsureTaskCard(ctx context.Context, task *core.Task, lang cor
 	}
 	p.cardViews.remember(task.MessageID, cardRender{lang: string(lang), embeds: render})
 	if task.ThreadID != "" && task.CardURL != "" {
+		p.syncTaskThreadName(ctx, task)
 		return nil
 	}
 	ch, err := p.session.Channel(task.ChannelID, discordgo.WithContext(ctx))
@@ -115,7 +117,7 @@ func (p *Platform) EnsureTaskCard(ctx context.Context, task *core.Task, lang cor
 	// Threads attached to a message have that message's ID. Recover a lost ACK.
 	thread, err := p.session.Channel(task.MessageID, discordgo.WithContext(ctx))
 	if err == nil {
-		task.ThreadID = thread.ID
+		task.ThreadID, task.ThreadTitle = thread.ID, thread.Name
 		return nil
 	}
 	var rest *discordgo.RESTError
@@ -126,8 +128,27 @@ func (p *Platform) EnsureTaskCard(ctx context.Context, task *core.Task, lang cor
 	if err != nil {
 		return err
 	}
-	task.ThreadID = thread.ID
+	task.ThreadID, task.ThreadTitle = thread.ID, truncateDiscordThreadName(task.Title, 90)
 	return nil
+}
+
+// syncTaskThreadName renames the card's thread when the card title changed
+// after the thread was opened (a batch card is titled by its first member
+// until the lead reports a start title). A thread the card merely lives in
+// is the user's own and is never renamed. The rename is cosmetic: a refusal
+// (archived/locked thread, rename rate limit) is only logged and never blocks
+// the card or the thread's messages. Each title is tried once, and a rate
+// limit fails fast instead of sleeping through the delivery's deadline.
+func (p *Platform) syncTaskThreadName(ctx context.Context, task *core.Task) {
+	name := truncateDiscordThreadName(task.Title, 90)
+	if task.ThreadID == task.ChannelID || name == "" || name == task.ThreadTitle {
+		return
+	}
+	task.ThreadTitle = name
+	unarchive := false
+	if _, err := p.session.ChannelEdit(task.ThreadID, &discordgo.ChannelEdit{Name: name, Archived: &unarchive}, discordgo.WithContext(ctx), discordgo.WithRetryOnRatelimit(false)); err != nil {
+		slog.Warn("discord: task thread rename failed", "task_id", task.ID, "thread", task.ThreadID, "error", err)
+	}
 }
 
 func (p *Platform) PublishTaskFact(ctx context.Context, task *core.Task, ev core.TaskEvent, lang core.Language) error {
@@ -138,19 +159,14 @@ func (p *Platform) PublishTaskFact(ctx context.Context, task *core.Task, ev core
 		return errors.New("task thread unavailable")
 	}
 	// Source: reuse the Discord text limit so supplementary Unicode also stays
-	// below the embed description limit. Each part has its own recovery marker.
-	parts := core.SplitMessageCodeFenceAware(ev.Summary, maxDiscordLen)
+	// below the embed description limit. One event is one message unless it
+	// is longer than that; each part has its own recovery marker.
+	parts := core.SplitMessageCodeFenceAware(ev.ThreadText(), maxDiscordLen)
 	if len(parts) == 0 {
 		parts = []string{""}
 	}
-	if ev.Detail != "" {
-		parts = append(parts, core.SplitMessageCodeFenceAware(ev.Detail, maxDiscordLen)...)
-	}
 	for i, part := range parts {
-		marker := "cc-task-event:" + ev.ID
-		if i > 0 {
-			marker += fmt.Sprintf(":detail:%d", i)
-		}
+		marker := taskFactMarker(task, ev, i, len(parts))
 		if err := p.publishTaskFactPart(ctx, task, ev, lang, marker, part); err != nil {
 			// Missing access or thread is permanent for this account; core
 			// reports it visibly instead of blocking later facts on retries.
@@ -164,13 +180,29 @@ func (p *Platform) PublishTaskFact(ctx context.Context, task *core.Task, ev core
 	return nil
 }
 
+// taskFactMarker is the small footer that lets a retry find an event already
+// posted in this thread: "#<seq>" in the card's own thread (one thread per
+// task, so the sequence is unique there), with "·n/m" for the parts of an
+// over-long event. When the card lives in the user's thread, several cards
+// share it and each counts from 1, so the footer carries the event ID, which
+// includes the card's ID.
+func taskFactMarker(task *core.Task, ev core.TaskEvent, i, n int) string {
+	marker := "#" + ev.ID
+	if ev.Seq > 0 && (task.ThreadID != task.ChannelID || ev.ID == "") {
+		marker = fmt.Sprintf("#%d", ev.Seq)
+	}
+	if n > 1 {
+		marker += fmt.Sprintf(" · %d/%d", i+1, n)
+	}
+	return marker
+}
+
 func (p *Platform) publishTaskFactPart(ctx context.Context, task *core.Task, ev core.TaskEvent, lang core.Language, marker, part string) error {
 	id, err := p.findPublicFact(ctx, task.ThreadID, marker, ev.Timestamp)
 	if err != nil || id != "" {
 		return err
 	}
 	embed := &discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("📌 %s", core.NewI18n(lang).T(core.MsgTaskKeyFact)),
 		Description: part,
 		Footer:      &discordgo.MessageEmbedFooter{Text: marker},
 		Timestamp:   ev.Timestamp.Format(time.RFC3339),

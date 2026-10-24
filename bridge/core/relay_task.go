@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 )
 
 // A receipt is committed before execution. Delivery retries never run tools
@@ -28,6 +29,7 @@ type taskRelay struct {
 	r           *publicRun
 	req         RelayRequest
 	name, token string
+	started     time.Time // when this dispatch was accepted
 }
 
 // Task relays share execution tracking with ordinary relays, but keep each
@@ -151,7 +153,7 @@ func (p *PublicProgress) beginTaskRelay(req RelayRequest, name string) (*taskRel
 		r.record = old
 		return nil, nil, err
 	}
-	d := &taskRelay{p: p, r: r, req: req, name: name, token: randomProgressID(32)} // source: existing public progress token size
+	d := &taskRelay{p: p, r: r, req: req, name: name, token: randomProgressID(32), started: time.Now().UTC()} // source: existing public progress token size
 	p.mu.Lock()
 	if p.relayRuns == nil {
 		p.relayRuns = map[string]*taskRelay{}
@@ -196,6 +198,7 @@ func (p *PublicProgress) reportTaskRelay(d *taskRelay, req PublicProgressRequest
 	r.record.Relays[d.req.RequestID] = receipt
 	p.appendEvent(r, TaskEventProgress, NewI18n(r.record.Lang).Tf(MsgTaskRelayProgress, d.name), true)
 	r.record.Task.Events[len(r.record.Task.Events)-1].Detail = req.Summary
+	r.record.Task.Events[len(r.record.Task.Events)-1].Pointer = true
 	r.record.Task.Events[len(r.record.Task.Events)-1].ReporterProject = d.req.To
 	if err := p.save(r); err != nil {
 		r.record = old
@@ -227,8 +230,14 @@ func (d *taskRelay) finish(response string, runErr error) error {
 		detail += "\n\n" + runErr.Error()
 	}
 	r.record.Task.Events[len(r.record.Task.Events)-1].Detail = strings.TrimSpace(detail)
+	r.record.Task.Events[len(r.record.Task.Events)-1].Pointer = true
 	if runErr == nil {
 		r.record.Task.Events[len(r.record.Task.Events)-1].ReporterProject = d.req.To
+		if memberReported(r.record.Task, d.req.To, d.started) {
+			// The member already put its result on its row; the relay's whole
+			// final reply would only repeat it in the thread. The card still notes it.
+			r.record.Task.Events[len(r.record.Task.Events)-1].IsKeyFact = false
+		}
 	}
 	if !taskRelayActive(r) {
 		r.record.Task.LatestProgress = previousSummary
@@ -263,4 +272,17 @@ func (d *taskRelay) memberNote() string {
 		return ""
 	}
 	return "\nYour rows on this card (same --seq/--kind/--message rules, own sequence from 1, private to you):\n" + strings.Join(cmds, "\n")
+}
+
+// memberReported reports whether project's bot finished a member row on the
+// card during this dispatch (since its start), i.e. it already posted this
+// dispatch's result there. A row it finished for an earlier dispatch says
+// nothing about this one.
+func memberReported(t *Task, project string, since time.Time) bool {
+	for _, m := range t.Members {
+		if m.ReporterProject == project && m.ParentID == "" && !m.Live() && m.Status != "" && !m.EndedAt.Before(since) {
+			return true
+		}
+	}
+	return false
 }

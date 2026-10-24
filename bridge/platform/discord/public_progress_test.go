@@ -30,6 +30,8 @@ type progressREST struct {
 	edits       []string // raw body of each PATCH
 	callbacks   []string // raw body of each interaction callback
 	anyMentions bool     // accept sends that do not suppress mentions (preview cards)
+	renames     []string // raw body of each channel PATCH (thread rename)
+	renameCode  int      // non-zero: reply to a channel PATCH with this HTTP status
 }
 
 func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -84,6 +86,20 @@ func (r *progressREST) RoundTrip(req *http.Request) (*http.Response, error) {
 			r.loseACK = false
 			return nil, errors.New("lost successful POST response")
 		}
+	case req.Method == "PATCH" && !strings.Contains(req.URL.Path, "/messages/"):
+		raw, _ := io.ReadAll(req.Body)
+		r.renames = append(r.renames, string(raw))
+		if r.renameCode != 0 {
+			h := http.Header{"Content-Type": []string{"application/json"}}
+			b, _ := json.Marshal(map[string]any{"code": 50083, "message": "Thread is archived"})
+			if r.renameCode == 429 {
+				// Source: Discord's thread rename limit is 2 per 10 minutes per channel.
+				h.Set("Retry-After", "600")
+				b, _ = json.Marshal(map[string]any{"message": "You are being rate limited.", "retry_after": 600, "global": false})
+			}
+			return &http.Response{StatusCode: r.renameCode, Header: h, Body: io.NopCloser(strings.NewReader(string(b))), Request: req}, nil
+		}
+		body = &discordgo.Channel{ID: channel, Type: discordgo.ChannelTypeGuildPublicThread}
 	case req.Method == "PATCH":
 		raw, _ := io.ReadAll(req.Body)
 		r.edits = append(r.edits, string(raw))
@@ -158,9 +174,10 @@ func TestPublicTaskWorkerDetailResumesAfterLostACK(t *testing.T) {
 	session.MaxRestRetries = 0
 	worker := &Platform{session: session, botID: "worker"}
 	task := &core.Task{ID: "shared-task", ChannelID: "room", ThreadID: "shared-thread"}
-	ev := core.TaskEvent{ID: "shared-task:result", Summary: "Worker result", Detail: strings.Repeat("进展🙂", maxDiscordLen), Timestamp: time.Now()}
-	// Simulate a partial delivery: summary confirmed, first detail POST lost ACK.
-	if err := worker.publishTaskFactPart(context.Background(), task, ev, core.LangEnglish, "cc-task-event:"+ev.ID, ev.Summary); err != nil {
+	ev := core.TaskEvent{ID: "shared-task:7", Seq: 7, Summary: "Worker result", Detail: strings.Repeat("进展🙂", maxDiscordLen), Timestamp: time.Now()}
+	parts := core.SplitMessageCodeFenceAware(ev.ThreadText(), maxDiscordLen)
+	// Simulate a partial delivery: first part confirmed, the next POST lost ACK.
+	if err := worker.publishTaskFactPart(context.Background(), task, ev, core.LangEnglish, taskFactMarker(task, ev, 0, len(parts)), parts[0]); err != nil {
 		t.Fatal(err)
 	}
 	transport.loseACK = true
@@ -170,7 +187,6 @@ func TestPublicTaskWorkerDetailResumesAfterLostACK(t *testing.T) {
 	if err := worker.PublishTaskFact(context.Background(), task, ev, core.LangEnglish); err != nil {
 		t.Fatal(err)
 	}
-	parts := append([]string{ev.Summary}, core.SplitMessageCodeFenceAware(ev.Detail, maxDiscordLen)...)
 	messages := transport.messages[task.ThreadID]
 	if transport.sends != len(parts) || len(messages) != len(parts) || len(transport.messages[task.ChannelID]) != 0 {
 		t.Fatal("missing detail, duplicate delivery, or escaped shared thread")
@@ -299,5 +315,94 @@ func TestPublicTaskFactPermanentRefusalClassified(t *testing.T) {
 		if err == nil || errors.Is(err, core.ErrTaskFactUndeliverable) != tc.permanent {
 			t.Fatalf("status %d: err=%v permanent=%v", tc.status, err, tc.permanent)
 		}
+	}
+}
+
+// The task thread shows one message per update: no repeated "key update"
+// header, the reporter's own words instead of the "see task thread" pointer,
+// and a short sequence marker instead of the internal event id.
+func TestPublicTaskFactIsOneTidyMessage(t *testing.T) {
+	transport := &progressREST{messages: map[string][]*discordgo.Message{}, botID: "worker"}
+	session, _ := discordgo.New("Bot fixture-worker")
+	session.Client = &http.Client{Transport: transport}
+	session.MaxRestRetries = 0
+	worker := &Platform{session: session, botID: "worker"}
+	task := &core.Task{ID: "task-abc", ChannelID: "room", ThreadID: "thread"}
+	ev := core.TaskEvent{ID: "task-abc:10", Seq: 10, Summary: "C酱 更新了进度，详见任务线程", Detail: "started", Pointer: true, Timestamp: time.Now()}
+	for i := 0; i < 2; i++ { // the retry finds the posted message by its marker
+		if err := worker.PublishTaskFact(context.Background(), task, ev, core.LangChinese); err != nil {
+			t.Fatal(err)
+		}
+	}
+	messages := transport.messages[task.ThreadID]
+	if len(messages) != 1 || transport.sends != 1 {
+		t.Fatalf("want one message, got %d (sends %d)", len(messages), transport.sends)
+	}
+	e := messages[0].Embeds[0]
+	if e.Title != "" || e.Description != "started" || e.Footer == nil || e.Footer.Text != "#10" {
+		t.Fatalf("untidy fact: title=%q description=%q footer=%+v", e.Title, e.Description, e.Footer)
+	}
+	assigned := core.TaskEvent{ID: "task-abc:9", Seq: 9, Summary: "已派给 肥鱼", Detail: "只测试置顶", Timestamp: time.Now()}
+	if err := worker.PublishTaskFact(context.Background(), task, assigned, core.LangChinese); err != nil {
+		t.Fatal(err)
+	}
+	if got := transport.messages[task.ThreadID][0].Embeds[0].Description; got != "已派给 肥鱼\n只测试置顶" {
+		t.Fatalf("summary and detail should share one message, got %q", got)
+	}
+}
+
+// Renaming the thread is cosmetic: an archived thread or the rename rate limit
+// must not fail the card or hold up the thread's messages.
+func TestPublicTaskThreadRenameFailureDoesNotBlockCard(t *testing.T) {
+	for _, code := range []int{400, 429} {
+		transport := &progressREST{messages: map[string][]*discordgo.Message{}, botID: "lead", renameCode: code}
+		session, _ := discordgo.New("Bot fixture-lead")
+		session.Client = &http.Client{Transport: transport}
+		session.MaxRestRetries = 0
+		p := &Platform{session: session, botID: "lead"}
+		task := &core.Task{ID: "task-r", Title: "New title", ChannelID: "room", MessageID: "100", ThreadID: "thr", CardURL: "https://discord.com/channels/g/room/100", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := p.EnsureTaskCard(ctx, task, core.LangEnglish); err != nil {
+			t.Fatalf("status %d: rename failure blocked the card: %v", code, err)
+		}
+		if ctx.Err() != nil {
+			t.Fatalf("status %d: rename waited out the deadline", code)
+		}
+		cancel()
+		if len(transport.renames) != 1 || !strings.Contains(transport.renames[0], `"archived":false`) {
+			t.Fatalf("status %d: want one rename that unarchives, got %q", code, transport.renames)
+		}
+		// The failed title is not retried on every card update.
+		if err := p.EnsureTaskCard(context.Background(), task, core.LangEnglish); err != nil || len(transport.renames) != 1 {
+			t.Fatalf("status %d: rename retried (%d) or failed: %v", code, len(transport.renames), err)
+		}
+		if err := p.PublishTaskFact(context.Background(), task, core.TaskEvent{ID: "task-r:2", Seq: 2, Summary: "update", Timestamp: time.Now()}, core.LangEnglish); err != nil || len(transport.messages["thr"]) != 1 {
+			t.Fatalf("status %d: thread message not sent: %v", code, err)
+		}
+	}
+}
+
+// Several cards can live in one user thread and each counts from 1; the
+// second card's update must not be mistaken for the first card's.
+func TestPublicTaskFactsOfCardsSharingUserThread(t *testing.T) {
+	transport := &progressREST{messages: map[string][]*discordgo.Message{}, botID: "lead"}
+	session, _ := discordgo.New("Bot fixture-lead")
+	session.Client = &http.Client{Transport: transport}
+	session.MaxRestRetries = 0
+	p := &Platform{session: session, botID: "lead"}
+	first := &core.Task{ID: "task-a", ChannelID: "userthread", ThreadID: "userthread"}
+	second := &core.Task{ID: "task-b", ChannelID: "userthread", ThreadID: "userthread"}
+	if err := p.PublishTaskFact(context.Background(), first, core.TaskEvent{ID: "task-a:1", Seq: 1, Summary: "first card", Timestamp: time.Now()}, core.LangEnglish); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.PublishTaskFact(context.Background(), second, core.TaskEvent{ID: "task-b:1", Seq: 1, Summary: "second card", Timestamp: time.Now()}, core.LangEnglish); err != nil {
+		t.Fatal(err)
+	}
+	messages := transport.messages["userthread"]
+	if len(messages) != 2 || messages[0].Embeds[0].Description != "second card" {
+		t.Fatalf("second card's update was dropped: %d messages", len(messages))
+	}
+	if e := messages[0].Embeds[0]; e.Title != "" || e.Footer == nil || e.Footer.Text != "#task-b:1" {
+		t.Fatalf("untidy shared-thread fact: title=%q footer=%+v", e.Title, e.Footer)
 	}
 }
